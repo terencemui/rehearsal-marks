@@ -14,4 +14,7 @@ export {
   removeMarker,
   setAliases,
 } from './markers';
+export { parseTime } from './time';
+export { SCHEMA_VERSION, parseProjectFile, serializeProjectFile } from './projectFile';
+export type { AudioMeta, ProjectFileData, ProjectInfo } from './projectFile';
 export type { LabeledMarker, Marker } from './marker';

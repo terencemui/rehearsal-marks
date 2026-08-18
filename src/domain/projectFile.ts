@@ -1,0 +1,211 @@
+import { DomainError } from './errors';
+import { deriveLabels } from './labels';
+import type { Marker } from './marker';
+import { setAliases } from './markers';
+
+/** The only schema version this app reads and writes. */
+export const SCHEMA_VERSION = 1;
+
+/** The `project` section of a project file. */
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  /** Epoch ms. */
+  createdAt: number;
+  /** Epoch ms. */
+  updatedAt: number;
+}
+
+/**
+ * Recording identity — the facts that make a label set applicable to exactly
+ * one recording. `sha256` is the hard check; `duration` is a soft check.
+ */
+export interface AudioMeta {
+  sha256: string;
+  /** Seconds, float. */
+  duration: number;
+  mimeType: string;
+  filename: string;
+  sizeBytes: number;
+  source: string;
+  license: string;
+  attribution: string;
+}
+
+/** Domain data carried by a project file, in both serialize and parse directions. */
+export interface ProjectFileData {
+  project: ProjectInfo;
+  markers: Marker[];
+  audioMeta: AudioMeta;
+}
+
+/**
+ * Serializes a project to the versioned `project.json` format — the zip
+ * export's data file and the community label-set format. Markers are written
+ * in time order with their derived `label` for human review only: labels are
+ * re-derived by time rank on import, never trusted from the file.
+ */
+export function serializeProjectFile(data: ProjectFileData): string {
+  const file = {
+    schemaVersion: SCHEMA_VERSION,
+    project: data.project,
+    markers: deriveLabels(data.markers).map((m) => ({
+      id: m.id,
+      time: m.time,
+      label: m.label,
+      aliases: m.aliases,
+      createdAt: m.createdAt,
+    })),
+    audioMeta: data.audioMeta,
+  };
+
+  // Pretty-printed: label-set files are reviewed by humans in PRs.
+  return JSON.stringify(file, null, 2);
+}
+
+/**
+ * Parses a `project.json` file. Tolerates unknown fields within a known
+ * version (forward compatibility), rejects newer schema versions with a clear
+ * error, and validates the structure it does know — so a malformed or
+ * hand-edited file fails loudly instead of corrupting state.
+ *
+ * Marker `label`s in the file are ignored: labels are informational and
+ * re-derived by time rank on import, so a hand-edited file cannot break the
+ * no-holes invariant. The other domain invariants — unique marker ids and the
+ * alias rules — are enforced here too, so a hand-edited file cannot corrupt
+ * state that every later operation assumes.
+ */
+export function parseProjectFile(text: string): ProjectFileData {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw invalidFile('The file is not valid JSON.');
+  }
+  const root = assertObject(raw, 'the file root');
+
+  const schemaVersion = root.schemaVersion;
+  if (typeof schemaVersion !== 'number' || !Number.isInteger(schemaVersion) || schemaVersion < 1) {
+    throw invalidFile('"schemaVersion" must be a positive integer.');
+  }
+  if (schemaVersion > SCHEMA_VERSION) {
+    throw new DomainError(
+      `This file uses schema version ${schemaVersion}, but this app supports version ${SCHEMA_VERSION}. Update the app to import it.`,
+      'unsupported-schema-version',
+    );
+  }
+
+  return {
+    project: readProject(root.project),
+    markers: readMarkers(root.markers),
+    audioMeta: readAudioMeta(root.audioMeta),
+  };
+}
+
+type JsonObject = Record<string, unknown>;
+
+function invalidFile(reason: string): DomainError {
+  return new DomainError(`Invalid project file: ${reason}`, 'invalid-project-file');
+}
+
+function assertObject(value: unknown, path: string): JsonObject {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw invalidFile(`${path} must be an object.`);
+  }
+  // TS narrows the guard to `object`; a non-null, non-array object is a JsonObject.
+  return value as JsonObject;
+}
+
+function assertArray(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) {
+    throw invalidFile(`${path} must be an array.`);
+  }
+  return value;
+}
+
+function assertString(value: unknown, path: string): string {
+  if (typeof value !== 'string') {
+    throw invalidFile(`${path} must be a string.`);
+  }
+  return value;
+}
+
+function assertFiniteNumber(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw invalidFile(`${path} must be a finite number.`);
+  }
+  return value;
+}
+
+function assertNonNegativeNumber(value: unknown, path: string): number {
+  const number = assertFiniteNumber(value, path);
+  if (number < 0) {
+    throw invalidFile(`${path} must not be negative.`);
+  }
+  return number;
+}
+
+function readProject(value: unknown): ProjectInfo {
+  const raw = assertObject(value, '"project"');
+  return {
+    id: assertString(raw.id, '"project.id"'),
+    name: assertString(raw.name, '"project.name"'),
+    createdAt: assertFiniteNumber(raw.createdAt, '"project.createdAt"'),
+    updatedAt: assertFiniteNumber(raw.updatedAt, '"project.updatedAt"'),
+  };
+}
+
+function readMarkers(value: unknown): Marker[] {
+  const raw = assertArray(value, '"markers"');
+  const markers = raw.map((item, index) => {
+    const marker = assertObject(item, `"markers[${index}]"`);
+    return {
+      id: assertString(marker.id, `"markers[${index}].id"`),
+      time: assertNonNegativeNumber(marker.time, `"markers[${index}].time"`),
+      aliases: assertArray(marker.aliases, `"markers[${index}].aliases"`).map((alias, aliasIndex) =>
+        assertString(alias, `"markers[${index}].aliases[${aliasIndex}]"`),
+      ),
+      createdAt: assertFiniteNumber(marker.createdAt, `"markers[${index}].createdAt"`),
+    };
+  });
+
+  // Marker ids are stable identity for aliases, undo, and export; two markers
+  // sharing one would make later operations target the wrong marker.
+  const seenIds = new Set<string>();
+  for (const m of markers) {
+    if (seenIds.has(m.id)) {
+      throw invalidFile(`"markers" contain duplicate id "${m.id}".`);
+    }
+    seenIds.add(m.id);
+  }
+
+  // Route every marker through the domain's own setAliases: it trims and
+  // enforces every alias rule against the final derived label set, so a
+  // hand-edited file cannot smuggle in state the app itself could not create.
+  let validated = markers;
+  for (const m of markers) {
+    try {
+      validated = setAliases(validated, m.id, m.aliases);
+    } catch (error) {
+      if (error instanceof DomainError) {
+        throw invalidFile(`marker "${m.id}": ${error.message}`);
+      }
+      throw error;
+    }
+  }
+  return validated;
+}
+
+function readAudioMeta(value: unknown): AudioMeta {
+  const raw = assertObject(value, '"audioMeta"');
+  return {
+    sha256: assertString(raw.sha256, '"audioMeta.sha256"'),
+    duration: assertNonNegativeNumber(raw.duration, '"audioMeta.duration"'),
+    mimeType: assertString(raw.mimeType, '"audioMeta.mimeType"'),
+    filename: assertString(raw.filename, '"audioMeta.filename"'),
+    sizeBytes: assertNonNegativeNumber(raw.sizeBytes, '"audioMeta.sizeBytes"'),
+    source: assertString(raw.source, '"audioMeta.source"'),
+    license: assertString(raw.license, '"audioMeta.license"'),
+    attribution: assertString(raw.attribution, '"audioMeta.attribution"'),
+  };
+}
