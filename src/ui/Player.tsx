@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { AudioController, PeakData, RenderMode } from '../audio';
 import {
   addMarker,
@@ -18,6 +26,17 @@ import { MarkerFlags } from './MarkerFlags';
 import { MarkerInspector } from './MarkerInspector';
 import { STATUS_TEXT } from './status';
 import { UndoToast } from './UndoToast';
+import {
+  ZOOM_STEP,
+  clampScrollLeft,
+  contentWidth,
+  minPxPerSec,
+  scrollLeftForTime,
+  timeAtClientX as timeAtOffset,
+  wheelNotches,
+  zoomAround,
+  type ZoomView,
+} from './zoom';
 import './player.css';
 
 export interface PlayerProps {
@@ -40,6 +59,8 @@ const UNDO_WINDOW_MS = 5000;
 const LONG_PRESS_MS = 500;
 /** Movement beyond this cancels a long-press (a drag or a scroll). */
 const LONG_PRESS_SLOP_PX = 10;
+/** A pinch with fingers closer than this has no trustworthy anchor yet. */
+const PINCH_MIN_START_PX = 20;
 
 /** A deletion held for undo: the marker, its label, and any restore failure. */
 interface UndoState {
@@ -60,8 +81,17 @@ interface UndoState {
  * only for nudge and delete. Everything audible goes through the `controller`;
  * marker state persists through the shell-owned `autosave` (T09), which also
  * feeds the status line.
+ *
+ * T08 zoom: the shell is a horizontally scrollable window over the content
+ * (`pxPerSec × duration` px wide). The zoom level lives here as `pxPerSec`,
+ * and the content width is applied to the controller's container — wavesurfer
+ * renders to whatever width it is given, and the ruler's percentage ticks
+ * stretch with it — so the audio seam never learns about zoom. Ctrl/cmd+scroll
+ * and two-finger pinch adjust the level around the cursor; jumps scroll the
+ * target into view.
  */
 export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
+  const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<RenderMode | null>(null);
   const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
@@ -87,6 +117,73 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
   const duration = playback.duration > 0 ? playback.duration : current.audioMeta.duration;
   const selected = labeled.find((marker) => marker.id === selectedId) ?? null;
 
+  // T08 zoom. `pxPerSec` is null until the duration is known, then settles at
+  // the floor (or fit-to-view for short recordings) — the precision view the
+  // issue calls for. Scroll stays in the DOM (`shell.scrollLeft`); the view
+  // re-renders only when the level changes, and the flags overlay scrolls
+  // natively with the content.
+  const [pxPerSec, setPxPerSec] = useState<number | null>(null);
+  // The zoom state as the window-level gesture listeners see it: fresh values
+  // through a ref, the same pattern as the keydown handler below.
+  const viewRef = useRef<{ pxPerSec: number; duration: number } | null>(null);
+  viewRef.current =
+    pxPerSec !== null && duration > 0 ? { pxPerSec, duration } : null;
+  const pinchRef = useRef<{
+    startView: ZoomView;
+    startDistance: number;
+    cursorOffset: number;
+  } | null>(null);
+  // A zoom's scroll, held until the new width has committed (see the layout
+  // effect below) — the CSSOM clamps scrollLeft against the current content
+  // width at assignment time, so writing it early would drop the anchor.
+  const pendingScrollRef = useRef<number | null>(null);
+  // A one-finger horizontal pan: the browser keeps vertical page scroll
+  // (`touch-action: pan-y`), this content scroll is ours.
+  const panRef = useRef<{
+    startX: number;
+    startY: number;
+    startScrollLeft: number;
+    pxPerSec: number;
+    duration: number;
+    active: boolean;
+  } | null>(null);
+
+  // A layout effect, not a passive one: the initial level must be set before
+  // the first painted frame, or that frame shows the flags overlay collapsed
+  // to nothing and the playhead at the wrong position.
+  useLayoutEffect(() => {
+    if (pxPerSec !== null) return;
+    const shell = shellRef.current;
+    if (shell === null || duration <= 0) return;
+    setPxPerSec(minPxPerSec(shell.getBoundingClientRect().width, duration));
+  }, [duration, pxPerSec]);
+
+  // Applies the zoom's scroll once the content width for the committed level
+  // is in the DOM. Also re-fits when the window widens past the current
+  // level: content must never be narrower than the viewport's fit.
+  useLayoutEffect(() => {
+    const scroll = pendingScrollRef.current;
+    if (scroll !== null) {
+      pendingScrollRef.current = null;
+      const shell = shellRef.current;
+      if (shell !== null) shell.scrollLeft = scroll;
+    }
+  }, [pxPerSec]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (shell === null || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      setPxPerSec((level) => {
+        if (level === null || duration <= 0) return level;
+        const min = minPxPerSec(shell.getBoundingClientRect().width, duration);
+        return level < min ? min : level;
+      });
+    });
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, [duration]);
+
   /** Applies a mutation: the autosave gets it, React mirrors it back. */
   const update = useCallback(
     (fn: (current: ProjectRecord) => ProjectRecord): void => {
@@ -111,19 +208,52 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
     updateMarkers((markers) => addMarker(markers, marker));
   }
 
-  /** The position under a pointer x-coordinate, in recording seconds. */
-  function timeAtClientX(clientX: number): number {
-    const container = containerRef.current;
-    if (container === null) return 0;
-    const bounds = container.getBoundingClientRect();
-    if (bounds.width === 0) return 0;
-    return clampToDuration(((clientX - bounds.left) / bounds.width) * duration);
+  /**
+   * Adds a marker at the playhead — M or the visible button. When paused, the
+   * new flag is scrolled into view: a zoomed-out view must show where the
+   * mark landed. During playback the view stays put, so a marking pass never
+   * yanks the screen out from under the listener.
+   */
+  function addAtPlayhead(): void {
+    addAt(playback.currentTime);
+    if (!playback.playing) revealTime(playback.currentTime);
+  }
+
+  /** Scrolls the view to `time` — centered, pinned to the content edges. */
+  function revealTime(time: number): void {
+    const shell = shellRef.current;
+    const view = viewRef.current;
+    if (shell !== null && view !== null) {
+      shell.scrollLeft = scrollLeftForTime(
+        time,
+        shell.getBoundingClientRect().width,
+        view.duration,
+        view.pxPerSec,
+      );
+    }
+  }
+
+  /**
+   * The position under a pointer x-coordinate, in recording seconds — or
+   * null while the view has no zoom level yet, where no position is honest.
+   */
+  function timeAtClientX(clientX: number): number | null {
+    const shell = shellRef.current;
+    const view = viewRef.current;
+    if (shell === null || view === null) return null;
+    const bounds = shell.getBoundingClientRect();
+    if (bounds.width === 0) return null;
+    // The viewport is the shell's rect; the click's offset within the content
+    // adds the scroll. This stays exact at every zoom level.
+    return clampToDuration(timeAtOffset(clientX, bounds.left, shell.scrollLeft, view.pxPerSec));
   }
 
   /** Clicking a flag: jump to the marker and select it for nudge/delete. */
   function select(marker: LabeledMarker): void {
     setSelectedId(marker.id);
     controller.seek(marker.time);
+    // Jumps always bring the target into view.
+    revealTime(marker.time);
   }
 
   function deleteSelected(): void {
@@ -203,7 +333,7 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
       // The primary marking path: a marker at the playhead, mid-playback,
       // without pausing.
       event.preventDefault();
-      addAt(playback.currentTime);
+      addAtPlayhead();
       return;
     }
     // Arrows are plain chords only: Shift+arrows stay the browser's (scroll,
@@ -227,6 +357,9 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
       if (target === null) return;
       event.preventDefault();
       controller.seek(target.time);
+      // Jumps always bring the target into view (T08) — the zoomed view
+      // must never leave the jumped-to marker off-screen.
+      revealTime(target.time);
       return;
     }
     if (plain && /^[a-z]$/i.test(event.key)) {
@@ -237,6 +370,7 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
       if (target !== null) {
         event.preventDefault();
         controller.seek(target.time);
+        revealTime(target.time);
       }
       return;
     }
@@ -315,17 +449,20 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
     };
   }, [autosave, controller]);
 
-  // The playhead as a percentage of the known duration; pins to the edges so
-  // a trailing position can never overflow the view.
-  const playheadPercent =
-    playback.duration > 0
-      ? Math.min(100, (playback.currentTime / playback.duration) * 100)
+  // The playhead in content pixels; pins to the recording's end so a trailing
+  // position can never overflow the content.
+  const playheadLeft =
+    pxPerSec !== null && duration > 0
+      ? Math.min(playback.currentTime, duration) * pxPerSec
       : 0;
+  // The content's width — the waveform, flags, and ruler all span it.
+  const viewWidth = pxPerSec !== null && duration > 0 ? contentWidth(pxPerSec, duration) : undefined;
 
   function onDoubleClick(event: React.MouseEvent): void {
     // Flags stop their own double-clicks from reaching here (a flag
     // double-click is just two flag clicks) — this runs only on the surface.
-    addAt(timeAtClientX(event.clientX));
+    const time = timeAtClientX(event.clientX);
+    if (time !== null) addAt(time);
   }
 
   function onTouchStart(event: React.TouchEvent): void {
@@ -335,7 +472,8 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
     suppressNextClick.current = false;
     const { clientX: x, clientY: y } = event.touches[0];
     const timer = setTimeout(() => {
-      addAt(timeAtClientX(x));
+      const time = timeAtClientX(x);
+      if (time !== null) addAt(time);
       suppressNextClick.current = true;
       // The synthesized click normally follows within a beat; if the browser
       // never delivers one, don't let the flag eat a later genuine click.
@@ -361,12 +499,12 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
     }
   }
 
-  function cancelLongPress(): void {
+  const cancelLongPress = useCallback((): void => {
     const press = longPress.current;
     if (press === null) return;
     clearTimeout(press.timer);
     longPress.current = null;
-  }
+  }, []);
 
   /** Capture-phase guard: a long-press's trailing click must not seek. */
   function onClickCapture(event: React.MouseEvent): void {
@@ -375,6 +513,177 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
     event.stopPropagation();
     event.preventDefault();
   }
+
+  // Zoom gestures register as native listeners: React's root-level wheel and
+  // touchmove handlers are passive, so their synthetic events cannot cancel
+  // the browser's scroll/pinch. The handlers read fresh zoom state through
+  // `viewRef` (reassigned every render) and stay registered once.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (shell === null) return;
+
+    /**
+     * Commits a zoom: the level through React, the scroll through the DOM —
+     * but only after the new width commits, since the CSSOM clamps scrollLeft
+     * against the *current* content width at assignment time and never
+     * re-expands the clamp. A level that did not change needs no commit and
+     * can apply its scroll directly.
+     */
+    const applyZoom = (next: ZoomView, current: number): void => {
+      if (next.pxPerSec !== current) {
+        setPxPerSec(next.pxPerSec);
+        pendingScrollRef.current = next.scrollLeft;
+      } else {
+        shell.scrollLeft = next.scrollLeft;
+      }
+    };
+
+    const onWheel = (event: WheelEvent): void => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      // Ctrl/cmd+scroll is this app's zoom — never the page's, even while
+      // the recording is still loading.
+      event.preventDefault();
+      const view = viewRef.current;
+      if (view === null) return;
+      const rect = shell.getBoundingClientRect();
+      const factor = Math.pow(ZOOM_STEP, -wheelNotches(event.deltaY, event.deltaMode));
+      applyZoom(
+        zoomAround(
+          { pxPerSec: view.pxPerSec, scrollLeft: shell.scrollLeft },
+          factor,
+          event.clientX - rect.left,
+          rect.width,
+          view.duration,
+        ),
+        view.pxPerSec,
+      );
+    };
+
+    /** Begins a pinch anchored at the current midpoint, once the fingers are
+     * far enough apart that the anchor means something. */
+    const beginPinch = (touches: TouchList): void => {
+      const view = viewRef.current;
+      if (view === null) return;
+      const rect = shell.getBoundingClientRect();
+      const [a, b] = [touches[0], touches[1]];
+      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (distance < PINCH_MIN_START_PX) return;
+      const midX = (a.clientX + b.clientX) / 2;
+      pinchRef.current = {
+        startView: { pxPerSec: view.pxPerSec, scrollLeft: shell.scrollLeft },
+        startDistance: distance,
+        cursorOffset: midX - rect.left,
+      };
+    };
+
+    const onPinchStart = (event: TouchEvent): void => {
+      if (event.touches.length < 2) {
+        pinchRef.current = null;
+        return;
+      }
+      // Two or more fingers are never a long-press: a pending marker must
+      // not fire because the gesture turned into something else.
+      cancelLongPress();
+      panRef.current = null;
+      // Three-plus fingers: leave any running pinch untouched and ignore the
+      // extras — an accidental extra touch must not freeze the zoom.
+      if (event.touches.length === 2) beginPinch(event.touches);
+    };
+
+    const onPinchMove = (event: TouchEvent): void => {
+      if (event.touches.length === 2) {
+        // Two fingers belong to the pinch, whatever the browser was about to
+        // do with them (page zoom included).
+        event.preventDefault();
+        if (pinchRef.current === null) {
+          // Fingers that landed too close to anchor now have room — restart
+          // from here instead of slamming the level from a 5 px base.
+          beginPinch(event.touches);
+        }
+        const pinch = pinchRef.current;
+        const view = viewRef.current;
+        if (pinch === null || view === null) return;
+        const rect = shell.getBoundingClientRect();
+        const [a, b] = [event.touches[0], event.touches[1]];
+        const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        // Recompute from the gesture's start each move, so the level follows
+        // the finger spread absolutely — no per-event drift.
+        applyZoom(
+          zoomAround(
+            pinch.startView,
+            distance / pinch.startDistance,
+            pinch.cursorOffset,
+            rect.width,
+            view.duration,
+          ),
+          view.pxPerSec,
+        );
+        return;
+      }
+      if (event.touches.length === 1) {
+        // One finger pans the content (the browser keeps vertical page
+        // scroll; the horizontal content scroll is ours). The pan engages on
+        // a clearly horizontal drag — the same slop that cancels a
+        // long-press — and a pan is not a tap, so no trailing click-seek.
+        const pan = panRef.current;
+        if (pan === null) return;
+        const touch = event.touches[0];
+        const dx = touch.clientX - pan.startX;
+        const dy = touch.clientY - pan.startY;
+        if (!pan.active) {
+          if (Math.abs(dx) <= LONG_PRESS_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
+          pan.active = true;
+        }
+        event.preventDefault();
+        shell.scrollLeft = clampScrollLeft(
+          pan.startScrollLeft - dx,
+          shell.getBoundingClientRect().width,
+          pan.duration,
+          pan.pxPerSec,
+        );
+      }
+      // Three-plus fingers: keep the running gesture; nothing to do.
+    };
+
+    const onPinchEnd = (event: TouchEvent): void => {
+      if (event.touches.length < 2) {
+        pinchRef.current = null;
+        panRef.current = null;
+      }
+    };
+
+    // The single-finger pan's origin — armed on every one-finger touchstart,
+    // alongside the long-press timer it can cancel.
+    const onPanStart = (event: TouchEvent): void => {
+      if (event.touches.length !== 1) return;
+      const view = viewRef.current;
+      if (view === null) return;
+      const touch = event.touches[0];
+      panRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startScrollLeft: shell.scrollLeft,
+        pxPerSec: view.pxPerSec,
+        duration: view.duration,
+        active: false,
+      };
+    };
+
+    shell.addEventListener('wheel', onWheel, { passive: false });
+    shell.addEventListener('touchstart', onPinchStart, { passive: false });
+    shell.addEventListener('touchstart', onPanStart);
+    shell.addEventListener('touchmove', onPinchMove, { passive: false });
+    shell.addEventListener('touchend', onPinchEnd);
+    shell.addEventListener('touchcancel', onPinchEnd);
+    return () => {
+      shell.removeEventListener('wheel', onWheel);
+      shell.removeEventListener('touchstart', onPinchStart);
+      shell.removeEventListener('touchstart', onPanStart);
+      shell.removeEventListener('touchmove', onPinchMove);
+      shell.removeEventListener('touchend', onPinchEnd);
+      shell.removeEventListener('touchcancel', onPinchEnd);
+    };
+  }, [cancelLongPress]);
 
   return (
     <main>
@@ -388,6 +697,7 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
         </p>
       </header>
       <div
+        ref={shellRef}
         className="player-waveform-shell"
         onClickCapture={onClickCapture}
         onDoubleClick={onDoubleClick}
@@ -396,17 +706,22 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
         onTouchEnd={cancelLongPress}
         onTouchCancel={cancelLongPress}
       >
-        <div ref={containerRef} className="player-waveform" />
+        <div
+          ref={containerRef}
+          className="player-waveform"
+          style={viewWidth !== undefined ? { width: `${viewWidth}px` } : undefined}
+        />
         <MarkerFlags
           markers={labeled}
           duration={duration}
           selectedId={selectedId}
           onSelect={select}
+          width={viewWidth}
         />
         {/* pointer-events: none — clicks pass through to the seek surface. */}
         <div
           className="player-playhead"
-          style={{ left: `${playheadPercent}%` }}
+          style={{ left: `${playheadLeft}px` }}
           aria-hidden="true"
         />
       </div>
@@ -423,7 +738,7 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
           type="button"
           disabled={mode === null}
           title="Shortcut: M"
-          onClick={() => addAt(playback.currentTime)}
+          onClick={() => addAtPlayhead()}
         >
           Add marker
         </button>

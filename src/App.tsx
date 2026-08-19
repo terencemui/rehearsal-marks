@@ -253,7 +253,11 @@ function App({
 
   if (session !== null) {
     return (
+      // Keyed by project: a fresh recording must start a fresh player — the
+      // zoom level, marker state, and selection are per-session, never
+      // carried across recordings.
       <Player
+        key={session.autosave.get().id}
         autosave={session.autosave}
         peaks={session.peaks}
         controller={session.controller}
