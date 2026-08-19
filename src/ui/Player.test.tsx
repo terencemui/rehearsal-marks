@@ -5,6 +5,7 @@ import type { LoadResult } from '../audio';
 import { createAutosave } from '../storage';
 import type { MockController } from '../test/controller-fixture';
 import { mockController } from '../test/controller-fixture';
+import { uploadLoad } from '../test/load-fixture';
 import { marker } from '../test/marker-fixture';
 import { projectRecord } from '../test/project-fixture';
 import { closeTestStorages, testStorage } from '../test/storage-fixture';
@@ -53,7 +54,7 @@ describe('Player', () => {
     // The blob and the pre-decoded peaks go to the seam; the container the
     // controller renders into is the player's waveform element.
     expect(controller.load).toHaveBeenCalledTimes(1);
-    const options = vi.mocked(controller.load).mock.calls[0][0];
+    const options = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(options.blob).toBe(record.audio);
     expect(options.peaks).toBe(peaks);
     expect(options.container).toBeInstanceOf(HTMLDivElement);
@@ -75,7 +76,8 @@ describe('Player', () => {
     render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
 
     expect(await screen.findByText(/timeline still works/)).toBeInTheDocument();
-    expect(vi.mocked(controller.load).mock.calls[0][0].peaks).toBeNull();
+    const options = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
+    expect(options.peaks).toBeNull();
     storage.close();
   });
 

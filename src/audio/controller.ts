@@ -11,7 +11,9 @@
 
 import WaveSurfer from 'wavesurfer.js';
 import { renderRuler } from '../playback/renderRuler';
+import { YouTubePlaybackError } from './errors';
 import { extractPeaks, type PeakData } from './peaks';
+import { loadYouTubeSource, type YouTubeSession } from './youtube';
 
 /** How the loaded recording is rendered. */
 export type RenderMode = 'waveform' | 'ruler';
@@ -21,18 +23,37 @@ export interface LoadResult {
   mode: RenderMode;
   /** Seconds. The decode pass's duration in waveform mode; the media element's in ruler mode. */
   duration: number;
+  /**
+   * The load failure, when the source could not play — the player acts on it
+   * instead of showing a silent dead view. Absent when playback is available.
+   */
+  error?: YouTubePlaybackError;
 }
 
-export interface LoadOptions {
-  /** The cached recording bytes; `null` when streaming from `url`. */
-  blob: Blob | null;
-  /** The remote recording URL; `null` when playing a local blob. */
-  url: string | null;
-  /** The element the waveform (or ruler) renders into. */
-  container: HTMLElement;
-  /** Decoded peaks; `null` means the decode failed — render a ruler-only timeline. */
-  peaks: PeakData | null;
-}
+/**
+ * What `load` is asked to play, discriminated by source exactly like the
+ * stored record: an upload carries bytes (or a streaming URL) and decoded
+ * peaks; a YouTube project carries only its canonical URL.
+ */
+export type LoadOptions =
+  | {
+      source: 'upload';
+      /** The cached recording bytes; `null` when streaming from `url`. */
+      blob: Blob | null;
+      /** The remote recording URL; `null` when playing a local blob. */
+      url: string | null;
+      /** The element the waveform (or ruler) renders into. */
+      container: HTMLElement;
+      /** Decoded peaks; `null` means the decode failed — render a ruler-only timeline. */
+      peaks: PeakData | null;
+    }
+  | {
+      source: 'youtube';
+      /** The canonical YouTube URL — the recording identity. */
+      url: string;
+      /** The element the video and ruler render into. */
+      container: HTMLElement;
+    };
 
 /**
  * A snapshot of playback: the playhead, the play/pause flag, and the volume.
@@ -105,6 +126,7 @@ interface PlaybackTarget {
 export function createAudioController(): AudioController {
   let wavesurfer: WaveSurfer | null = null;
   let audio: HTMLAudioElement | null = null;
+  let youtube: YouTubeSession | null = null;
   let objectUrl: string | null = null;
   let target: PlaybackTarget | null = null;
   const listeners = new Set<(state: PlaybackState) => void>();
@@ -146,6 +168,10 @@ export function createAudioController(): AudioController {
       audio.pause();
       audio.removeAttribute('src');
       audio = null;
+    }
+    if (youtube !== null) {
+      youtube.destroy();
+      youtube = null;
     }
     if (objectUrl !== null) {
       URL.revokeObjectURL(objectUrl);
@@ -282,8 +308,23 @@ export function createAudioController(): AudioController {
   return {
     extractPeaks,
 
-    async load({ blob, url, container, peaks }) {
+    async load(options: LoadOptions) {
       teardown();
+      if (options.source === 'youtube') {
+        // One switch at load time: the YouTube backend owns its iframe,
+        // playhead polling, and the shared ruler, behind the same target
+        // the public methods dispatch onto.
+        const session = loadYouTubeSource({
+          url: options.url,
+          volume: state.volume,
+          container: options.container,
+          onState: emit,
+        });
+        youtube = session;
+        target = { toggle: session.toggle, seek: session.seek, setVolume: session.setVolume };
+        return await session.ready;
+      }
+      const { blob, url, peaks, container } = options;
       // The waveform needs decoded peaks, and peaks exist only after the one
       // decode pass over the full blob — so a URL stream (the library's
       // first load) is always a ruler until its blob lands and a later
@@ -318,6 +359,10 @@ export function createAudioController(): AudioController {
       }
       if (audio !== null && Number.isFinite(audio.currentTime)) {
         return audio.currentTime;
+      }
+      if (youtube !== null) {
+        const time = youtube.getCurrentTime();
+        if (typeof time === 'number' && Number.isFinite(time)) return time;
       }
       return state.currentTime;
     },

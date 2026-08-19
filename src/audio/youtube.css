@@ -1,0 +1,13 @@
+/* The YouTube backend's host elements — the video stays visible, per the
+   API's terms; the shared ruler (styled by playback/ruler.css) sits below. */
+
+.rm-youtube-player {
+  margin-bottom: 8px;
+}
+
+.rm-youtube-player iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+}

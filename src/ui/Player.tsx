@@ -430,6 +430,7 @@ export function Player({
     let cancelled = false;
     controller
       .load({
+        source: 'upload',
         blob: streamUrl !== null ? null : audioBlobRef.current,
         url: streamUrl,
         container,
