@@ -4,10 +4,20 @@ import type { ProjectRecord } from './records';
 /**
  * The save-state line's vocabulary: `dirty` and `saving` both read as
  * "Saving…" in the UI; `storage-full` and `error` are the two failure states
- * the user must see. There is no manual save anywhere — `flush` exists only
- * for page teardown and tests.
+ * the user must see. There is no user-facing save anywhere — `flush` settles
+ * pending writes on session exit, page teardown, and in tests.
  */
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'storage-full' | 'error';
+
+/**
+ * The SaveStatus a failed write surfaces as: quota failures are the one
+ * failure class the user can act on; everything else is a generic error.
+ * One translation for every screen that writes — the player's autosave and
+ * the workspace's rename/delete paths.
+ */
+export function saveStatusFor(error: unknown): SaveStatus {
+  return error instanceof StorageError && error.code === 'storage-full' ? 'storage-full' : 'error';
+}
 
 /**
  * Debounced autosave over one project record: every mutation is applied to
@@ -88,11 +98,7 @@ export function createAutosave(
       savedVersion = version;
     } catch (error) {
       lastError = translateError(error);
-      setStatus(
-        lastError instanceof StorageError && lastError.code === 'storage-full'
-          ? 'storage-full'
-          : 'error',
-      );
+      setStatus(saveStatusFor(lastError));
       throw lastError;
     }
     setStatus(currentVersion > savedVersion ? 'dirty' : 'saved');

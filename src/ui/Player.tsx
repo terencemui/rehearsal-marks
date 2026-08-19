@@ -1,40 +1,34 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { AudioController, PeakData, RenderMode } from '../audio';
-import { createAutosave } from '../storage';
-import type { ProjectRecord, SaveStatus, Storage } from '../storage';
+import type { Autosave, SaveStatus } from '../storage';
+import { STATUS_TEXT } from './status';
 import './player.css';
 
 export interface PlayerProps {
-  /** The project to play — the upload pipeline's freshly created record. */
-  record: ProjectRecord;
+  /**
+   * The session's autosave — owned by the shell, which flushes it before
+   * returning to the Projects screen, so the list never reads stale data.
+   */
+  autosave: Autosave;
   /** Decoded peaks, or `null` when decoding failed (ruler-only mode). */
   peaks: PeakData | null;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
-  storage: Storage;
+  /** Back to the Projects screen; the shell flushes before unmounting. */
+  onExit: () => void;
 }
-
-const STATUS_TEXT: Record<SaveStatus, string> = {
-  idle: 'Saved',
-  dirty: 'Saving…',
-  saving: 'Saving…',
-  saved: 'Saved',
-  'storage-full': 'Storage full — free up space to keep saving.',
-  error: 'Save failed.',
-};
 
 /**
  * The player screen: waveform (or ruler-only timeline) plus the project's
  * name and the autosave status line. Everything audible goes through the
- * `controller`; the screen itself only owns persistence via autosave.
+ * `controller`; persistence goes through the shell-owned `autosave`.
  */
-export function Player({ record, peaks, controller, storage }: PlayerProps) {
+export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<RenderMode | null>(null);
-  const [status, setStatus] = useState<SaveStatus>('idle');
-  const [autosave] = useState(() =>
-    createAutosave(record, { save: (next) => storage.projects.save(next) }),
-  );
+  const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
+  // The record's identity — name and audio — never changes in the player.
+  const record = autosave.get();
   // The playback store lives behind the seam; React subscribes to it directly.
   const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
 
@@ -73,8 +67,14 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
         // Ruler mode has no decode duration; the record's 0 is a placeholder.
         // The media element's metadata is the recording's true duration —
         // persisting it keeps the project list (T09) and exports honest, so
-        // the one write outside the upload path earns its place.
-        if (result.duration > 0 && result.duration !== autosave.get().audioMeta.duration) {
+        // the one write outside the upload path earns its place. The
+        // epsilon keeps media-element measurement noise from dirtying the
+        // record — a no-op rewrite would re-stamp updatedAt and reorder the
+        // list for a change no one made.
+        if (
+          result.duration > 0 &&
+          Math.abs(result.duration - autosave.get().audioMeta.duration) > 0.001
+        ) {
           autosave.mutate((current) => ({
             ...current,
             audioMeta: { ...current.audioMeta, duration: result.duration },
@@ -110,6 +110,9 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
   return (
     <main>
       <header>
+        <button type="button" onClick={onExit}>
+          Projects
+        </button>
         <h1>{record.name}</h1>
         <p role="status" data-save-status={status}>
           {STATUS_TEXT[status]}

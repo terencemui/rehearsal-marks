@@ -4,7 +4,7 @@
  * one source of truth; storage writes go through the injected `save`.
  */
 
-import { DecodeError } from '../audio';
+import { decodePeaksOrNull } from '../audio';
 import type { PeakData } from '../audio';
 import { newId } from '../domain';
 import { sha256 } from '../storage';
@@ -117,12 +117,7 @@ export async function createProjectFromUpload(
   const rejection = uploadRejection(file);
   if (rejection !== null) return { ok: false, guidance: rejection };
 
-  let peaks: PeakData | null = null;
-  try {
-    peaks = await extractPeaks(file);
-  } catch (error) {
-    if (!(error instanceof DecodeError)) throw error;
-  }
+  const peaks = await decodePeaksOrNull(extractPeaks, file);
 
   const createdAt = now();
   const project: ProjectRecord = {

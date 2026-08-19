@@ -3,7 +3,7 @@
  * math behind it. wavesurfer is imported only inside `controller.ts`.
  */
 export { DecodeError } from './errors';
-export { bucketedPeaks, extractPeaks, DEFAULT_PEAK_COLUMNS } from './peaks';
+export { bucketedPeaks, decodePeaksOrNull, extractPeaks, DEFAULT_PEAK_COLUMNS } from './peaks';
 export type { PeakData } from './peaks';
 export { formatRulerTime, rulerTicks } from './ruler';
 export type { RulerTick } from './ruler';

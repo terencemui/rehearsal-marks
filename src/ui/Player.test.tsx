@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createAutosave } from '../storage';
 import type { MockController } from '../test/controller-fixture';
 import { mockController } from '../test/controller-fixture';
 import { projectRecord } from '../test/project-fixture';
@@ -12,18 +13,20 @@ afterEach(closeTestStorages);
 /** Renders a loaded player whose load result matches the record's duration. */
 async function renderLoadedPlayer(controller: MockController = mockController()) {
   const storage = await testStorage();
+  const record = projectRecord();
   // Match the record's own duration so the load triggers no autosave write.
   controller.load = vi.fn(async () => ({ mode: 'waveform' as const, duration: 123.456 }));
+  const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
   const view = render(
     <Player
-      record={projectRecord()}
+      autosave={autosave}
       peaks={{ peaks: [[0, 1]], duration: 123.456 }}
       controller={controller}
-      storage={storage}
+      onExit={vi.fn()}
     />,
   );
   await screen.findByRole('button', { name: 'Play' });
-  return { ...view, controller, storage };
+  return { ...view, controller, storage, autosave };
 }
 
 describe('Player', () => {
@@ -36,8 +39,11 @@ describe('Player', () => {
     });
     const record = projectRecord();
     const peaks = { peaks: [[0, 1]], duration: 123.456 };
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player record={record} peaks={peaks} controller={controller} storage={storage} />);
+    render(
+      <Player autosave={autosave} peaks={peaks} controller={controller} onExit={vi.fn()} />,
+    );
 
     expect(screen.getByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     expect(await screen.findByRole('status')).toHaveTextContent('Saved');
@@ -61,8 +67,10 @@ describe('Player', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 5 })),
     });
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player record={projectRecord()} peaks={null} controller={controller} storage={storage} />);
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
 
     expect(await screen.findByText(/timeline still works/)).toBeInTheDocument();
     expect(vi.mocked(controller.load).mock.calls[0][0].peaks).toBeNull();
@@ -75,9 +83,10 @@ describe('Player', () => {
       load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 42 })),
     });
     const record = projectRecord({ audioMeta: { ...projectRecord().audioMeta, duration: 0 } });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
     const { unmount } = render(
-      <Player record={record} peaks={null} controller={controller} storage={storage} />,
+      <Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />,
     );
     await screen.findByText(/timeline still works/);
     unmount();
@@ -97,10 +106,52 @@ describe('Player', () => {
         throw new Error('media element failed');
       }),
     });
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player record={projectRecord()} peaks={null} controller={controller} storage={storage} />);
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
 
     expect(await screen.findByText(/timeline still works/)).toBeInTheDocument();
+    storage.close();
+  });
+
+  it('returns to the Projects screen from the header button', async () => {
+    const user = userEvent.setup();
+    const onExit = vi.fn();
+    const storage = await testStorage();
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    render(<Player autosave={autosave} peaks={null} controller={mockController()} onExit={onExit} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Projects' }));
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    storage.close();
+  });
+
+  it('does not write the record over sub-millisecond duration noise', async () => {
+    const storage = await testStorage();
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    // The media element reports the record's duration plus measurement noise:
+    // past the debounce window, nothing may have been scheduled.
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 123.4560004 })),
+    });
+
+    render(
+      <Player
+        autosave={autosave}
+        peaks={{ peaks: [[0, 1]], duration: 123.456 }}
+        controller={controller}
+        onExit={vi.fn()}
+      />,
+    );
+    await screen.findByRole('button', { name: 'Play' });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    expect(await storage.projects.get(record.id)).toBeUndefined();
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
     storage.close();
   });
 });
@@ -132,7 +183,9 @@ describe('Player playback controls', () => {
     expect(controller.togglePlay).toHaveBeenCalledTimes(1);
 
     // The play button owns Space while focused — its native activation is the
-    // one toggle; the window handler must not double it.
+    // one toggle; the window handler must not double it. (Two tabs: the
+    // Projects button sits first in the header.)
+    await user.tab();
     await user.tab();
     expect(screen.getByRole('button', { name: 'Play' })).toHaveFocus();
     await user.keyboard(' ');
