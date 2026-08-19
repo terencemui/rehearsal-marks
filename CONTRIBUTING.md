@@ -8,10 +8,10 @@ task.
 The same workflow is documented in the app's Help tab; this file is the
 GitHub-facing version with the review rules made explicit.
 
-> **Status:** the Library tab and the label-set export are still in
-> development. This file documents the target workflow in full so the path is
-> in place from day one; the app-side steps (open the recording, export the
-> label set) become usable as those features land.
+> **Status:** the Library tab is still in development; the label-set export is
+> live. This file documents the target workflow in full so the path is in
+> place from day one — the export step works today, and the Library step
+> becomes usable when the tab lands.
 
 ## What a label set is
 
@@ -48,13 +48,13 @@ copyrightable expression — sharing them is unproblematic.
    markers while listening (press `M` as each rehearsal mark goes by). Labels
    come out A, B, C… in time order automatically; correct any timestamps with
    the nudge buttons in the inspector.
-2. **Export the label set.** In the player, choose **Export → Label set
-   (JSON)**. This writes one `project.json` carrying your markers and the
-   recording's identity.
+2. **Export the label set.** On the Projects screen, choose **Export labels**
+   on the project's row. This downloads one JSON file carrying your markers
+   and the recording's identity.
 3. **Fork this repository.** On GitHub, fork `terencemui/rehearsal-marks`.
-4. **Add the file at `library/labelsets/<entry-id>.json`**, where
-   `<entry-id>` is the recording's id in `library/library.json` — one file, no
-   other changes.
+4. **Add the file at `library/labelsets/<entry-id>.json`** (renaming the
+   exported file to `<entry-id>.json`), where `<entry-id>` is the recording's
+   id in `library/library.json` — one file, no other changes.
 5. **Open a pull request** against `main` with that single file. In the
    description, name the piece and performer, and confirm the checklist below.
 6. **Address review.** A maintainer runs the review checklist in

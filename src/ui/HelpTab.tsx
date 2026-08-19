@@ -16,8 +16,7 @@ export function HelpTab() {
       <h2>Help</h2>
       <p className="help-intro">
         Everything about this app in one place. Your work never leaves your browser. The Library
-        tab and export (project zip and label set) are still in development — where this page
-        mentions them, they are on their way.
+        tab is still in development — where this page mentions it, it is on its way.
       </p>
 
       <section aria-labelledby="help-keyboard">
@@ -161,9 +160,9 @@ export function HelpTab() {
             so you can free space deliberately.
           </li>
           <li>
-            <strong>Export is the backstop.</strong> Export a project as a single zip (your markers
-            plus the audio) and you hold a copy nothing in the browser can touch — re-import it
-            any time, on any machine.
+            <strong>Export is the backstop.</strong> Each project row has an Export button: it
+            downloads a single zip (your markers plus the audio) and you hold a copy nothing in
+            the browser can touch — re-import it any time, on any machine.
           </li>
         </ul>
       </section>
@@ -201,16 +200,16 @@ export function HelpTab() {
             A, B, C… in time order automatically.
           </li>
           <li>
-            In the player, choose <strong>Export → Label set (JSON)</strong>. This writes one{' '}
-            <code>project.json</code> carrying your markers and the recording's identity (sha256,
-            duration, source, license, attribution) — the facts that make the set applicable to
-            exactly one recording.
+            On the Projects screen, choose <strong>Export labels</strong> on that project's row.
+            This downloads one JSON file carrying your markers and the recording's identity
+            (sha256, duration, source, license, attribution) — the facts that make the set
+            applicable to exactly one recording.
           </li>
           <li>
             Fork the{' '}
             <a href="https://github.com/terencemui/rehearsal-marks">rehearsal-marks repo</a> and
-            add the file at <code>library/labelsets/&lt;entry-id&gt;.json</code> — one file, one
-            recording, nothing else.
+            add the exported file, renamed to <code>&lt;entry-id&gt;.json</code>, at{' '}
+            <code>library/labelsets/</code> — one file, one recording, nothing else.
           </li>
           <li>
             Open a pull request with that single file. Reviewers verify the checklist in
