@@ -11,7 +11,9 @@ export { estimateStoredSize } from './records';
 export type {
   LibraryEntryRecord,
   LibraryEntrySummary,
+  PlayerMode,
   ProjectRecord,
+  ProjectSource,
   ProjectSummary,
 } from './records';
 export { createStorage } from './repository';

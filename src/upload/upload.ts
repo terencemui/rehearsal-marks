@@ -125,6 +125,7 @@ export async function createProjectFromUpload(
     name: projectNameFromFile(file.name),
     createdAt,
     updatedAt: createdAt,
+    source: 'upload',
     audio: file,
     audioMeta: {
       sha256: await sha256(file),
@@ -137,6 +138,8 @@ export async function createProjectFromUpload(
       attribution: '',
     },
     markers: [],
+    // Uploads open in Label mode: creating a project to mark it.
+    playerMode: 'label',
   };
   await save(project);
   return { ok: true, project, peaks };

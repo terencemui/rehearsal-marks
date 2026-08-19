@@ -153,6 +153,9 @@ describe('seedProject', () => {
     expect(record.createdAt).toBe(123_456);
     expect(record.updatedAt).toBe(123_456);
     expect(record.audio).toBe(AUDIO);
+    // Seeded projects are upload-shaped records that open in Playback mode.
+    expect(record.source).toBe('upload');
+    expect(record.playerMode).toBe('playback');
     expect(record.markers.map((m) => m.id)).toEqual(['m1', 'm2']);
     // The catalog is authoritative for identity: its hash and audio URL win,
     // the label set carries the rest of the recording's facts.

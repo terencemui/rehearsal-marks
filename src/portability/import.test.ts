@@ -2,18 +2,22 @@ import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 import { sha256 } from '../storage';
 import type { ProjectRecord } from '../storage';
-import { projectRecord } from '../test/project-fixture';
+import { projectRecord, uploadAudio } from '../test/project-fixture';
 import { exportLabelSetJson, exportProjectZip } from './export';
 import { importLabelSet, importProjectZip, uniqueProjectName } from './import';
 import { PROJECT_JSON_PATH } from './zip';
+
+/** An upload-shaped record whose audio is known non-null. */
+type UploadRecord = ProjectRecord & { audio: Blob };
 
 /**
  * A record whose stored sha256 is the real hash of its audio — a zip built
  * from it passes import's integrity check, the way real app exports do.
  */
-async function hashableRecord(overrides: Partial<ProjectRecord> = {}): Promise<ProjectRecord> {
+async function hashableRecord(overrides: Partial<ProjectRecord> = {}): Promise<UploadRecord> {
   const record = projectRecord(overrides);
-  return { ...record, audioMeta: { ...record.audioMeta, sha256: await sha256(record.audio) } };
+  const audio = uploadAudio(record);
+  return { ...record, audio, audioMeta: { ...record.audioMeta, sha256: await sha256(audio) } };
 }
 
 /** Imports a zip with the given workspace names and a captured save. */
@@ -39,7 +43,9 @@ describe('importProjectZip', () => {
     expect(saved.updatedAt).toBe(42_000);
     expect(saved.markers).toEqual(record.markers);
     expect(saved.audioMeta).toEqual(record.audioMeta);
-    expect(new Uint8Array(await saved.audio.arrayBuffer())).toEqual(
+    expect(saved.source).toBe('upload');
+    expect(saved.playerMode).toBe('label');
+    expect(new Uint8Array(await uploadAudio(saved).arrayBuffer())).toEqual(
       new Uint8Array(await record.audio.arrayBuffer()),
     );
     expect(save).toHaveBeenCalledWith(saved);

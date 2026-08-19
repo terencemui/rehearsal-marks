@@ -10,7 +10,7 @@ import { exportProjectZip } from './portability';
 import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
 import { mockController } from './test/controller-fixture';
-import { projectRecord } from './test/project-fixture';
+import { projectRecord, uploadAudio } from './test/project-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
 import App from './App';
 
@@ -823,7 +823,7 @@ describe('App export and import', () => {
     // The stored sha256 must be the audio's real hash for the import's
     // integrity check to pass — exactly what the upload path computes.
     const record = projectRecord();
-    record.audioMeta.sha256 = await sha256(record.audio);
+    record.audioMeta.sha256 = await sha256(uploadAudio(record));
     await storage.projects.save(record);
     const { downloads, download } = captureDownloads();
     const { container } = await renderApp(mockController(), storage, download);
@@ -851,14 +851,14 @@ describe('App export and import', () => {
     const stored = await storage.projects.get(importedSummary.id);
     expect(stored!.audioMeta.sha256).toBe(record.audioMeta.sha256);
     expect(stored!.markers).toEqual(record.markers);
-    expect(new Uint8Array(await stored!.audio.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(new Uint8Array(await uploadAudio(stored!).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
   });
 
   it('clears a stale failure line when a later zip import succeeds', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     const record = projectRecord();
-    record.audioMeta.sha256 = await sha256(record.audio);
+    record.audioMeta.sha256 = await sha256(uploadAudio(record));
     await storage.projects.save(record);
     let saves = 0;
     // The rename's save fails; the zip import's save (the next one) succeeds.
@@ -899,13 +899,13 @@ describe('App export and import', () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     const brahms = projectRecord();
-    brahms.audioMeta.sha256 = await sha256(brahms.audio);
+    brahms.audioMeta.sha256 = await sha256(uploadAudio(brahms));
     const mozart = projectRecord({
       id: 'mozart',
       name: 'Mozart K. 466',
       audio: new Blob([new Uint8Array([9, 9, 9])], { type: 'audio/mpeg' }),
     });
-    mozart.audioMeta = { ...mozart.audioMeta, sha256: await sha256(mozart.audio) };
+    mozart.audioMeta = { ...mozart.audioMeta, sha256: await sha256(uploadAudio(mozart)) };
     await storage.projects.save(brahms);
     await storage.projects.save(mozart);
     const { downloads, download } = captureDownloads();
