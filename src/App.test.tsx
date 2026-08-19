@@ -6,6 +6,7 @@ import type { PeakData } from './audio';
 import { parseProjectFile, serializeProjectFile } from './domain';
 import type { ProjectFileData } from './domain';
 import type { CatalogEntry } from './library/catalog';
+import { exportProjectZip } from './portability';
 import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
 import { mockController } from './test/controller-fixture';
@@ -14,9 +15,13 @@ import { closeTestStorages, testStorage } from './test/storage-fixture';
 import App from './App';
 
 /** Renders the app on a fresh fake-indexeddb database with a mocked seam. */
-async function renderApp(controller = mockController(), storage?: Storage) {
+async function renderApp(
+  controller = mockController(),
+  storage?: Storage,
+  download?: (blob: Blob, filename: string) => void,
+) {
   const opened = storage ?? (await testStorage());
-  const view = render(<App controllerFactory={() => controller} storage={opened} />);
+  const view = render(<App controllerFactory={() => controller} storage={opened} download={download} />);
   return { ...view, storage: opened, controller };
 }
 
@@ -794,5 +799,156 @@ describe('App Library tab', () => {
 
     expect(controller.extractPeaks).toHaveBeenCalledTimes(1);
     expect(await storage.projects.list()).toHaveLength(1);
+  });
+});
+
+describe('App export and import', () => {
+  /** The app's three file inputs, in document order: upload, zip import, label import. */
+  function fileInputs(container: HTMLElement): HTMLInputElement[] {
+    return [...container.querySelectorAll('input[type="file"]')] as HTMLInputElement[];
+  }
+
+  /** Captures downloads instead of handing them to the browser. */
+  function captureDownloads() {
+    const downloads: Array<{ blob: Blob; filename: string }> = [];
+    return {
+      downloads,
+      download: vi.fn((blob: Blob, filename: string) => downloads.push({ blob, filename })),
+    };
+  }
+
+  it('round-trips a project end-to-end: export the zip, import it back as a new project', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    // The stored sha256 must be the audio's real hash for the import's
+    // integrity check to pass — exactly what the upload path computes.
+    const record = projectRecord();
+    record.audioMeta.sha256 = await sha256(record.audio);
+    await storage.projects.save(record);
+    const { downloads, download } = captureDownloads();
+    const { container } = await renderApp(mockController(), storage, download);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+    expect(downloads[0].filename).toBe('Brahms Op. 118 No. 2.zip');
+
+    // Import the very zip that was just exported.
+    const zip = new File(
+      [await downloads[0].blob.arrayBuffer()],
+      'Brahms Op. 118 No. 2.zip',
+      { type: 'application/zip' },
+    );
+    await user.upload(fileInputs(container)[1], zip);
+
+    // The workspace now holds both: the original and a fresh import with a
+    // suffixed name — import created, it never overwrote.
+    await screen.findByText('Brahms Op. 118 No. 2 (2)');
+    const projects = await storage.projects.list();
+    expect(projects).toHaveLength(2);
+    const importedSummary = projects.find((p) => p.id !== record.id)!;
+    expect(importedSummary.name).toBe('Brahms Op. 118 No. 2 (2)');
+    const stored = await storage.projects.get(importedSummary.id);
+    expect(stored!.audioMeta.sha256).toBe(record.audioMeta.sha256);
+    expect(stored!.markers).toEqual(record.markers);
+    expect(new Uint8Array(await stored!.audio.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
+  });
+
+  it('clears a stale failure line when a later zip import succeeds', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    const record = projectRecord();
+    record.audioMeta.sha256 = await sha256(record.audio);
+    await storage.projects.save(record);
+    let saves = 0;
+    // The rename's save fails; the zip import's save (the next one) succeeds.
+    const flaky: Storage = {
+      ...storage,
+      projects: {
+        ...storage.projects,
+        save: async (next) => {
+          saves += 1;
+          if (saves === 1) throw new StorageError('Browser storage is full.', 'storage-full');
+          await storage.projects.save(next);
+        },
+      },
+    };
+    const { container } = await renderApp(mockController(), flaky);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    // A rename hits the full store and leaves the failure line up.
+    const row = screen.getByRole('listitem');
+    await user.click(within(row).getByRole('button', { name: 'Rename' }));
+    const input = screen.getByRole('textbox', { name: 'Project name' });
+    await user.clear(input);
+    await user.type(input, 'New Name{enter}');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Storage full — free up space to keep saving.',
+    );
+
+    // A zip import then succeeds — the failure line must clear.
+    const zip = await exportProjectZip(record);
+    const file = new File([await zip.arrayBuffer()], 'brahms.zip', { type: 'application/zip' });
+    await user.upload(fileInputs(container)[1], file);
+
+    await screen.findByText('Brahms Op. 118 No. 2 (2)');
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+  });
+
+  it('exports a label set that applies to its own recording and is refused by another', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    const brahms = projectRecord();
+    brahms.audioMeta.sha256 = await sha256(brahms.audio);
+    const mozart = projectRecord({
+      id: 'mozart',
+      name: 'Mozart K. 466',
+      audio: new Blob([new Uint8Array([9, 9, 9])], { type: 'audio/mpeg' }),
+    });
+    mozart.audioMeta = { ...mozart.audioMeta, sha256: await sha256(mozart.audio) };
+    await storage.projects.save(brahms);
+    await storage.projects.save(mozart);
+    const { downloads, download } = captureDownloads();
+    const { container } = await renderApp(mockController(), storage, download);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    const brahmsRow = screen.getByText('Brahms Op. 118 No. 2').closest('li')!;
+    await user.click(within(brahmsRow).getByRole('button', { name: 'Export labels' }));
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+    expect(downloads[0].filename).toBe('Brahms Op. 118 No. 2.labels.json');
+    const labelsFile = new File(
+      [await downloads[0].blob.arrayBuffer()],
+      'labels.json',
+      { type: 'application/json' },
+    );
+
+    // Applying it to a project on a different recording is refused, with the
+    // explanation — and the project is left untouched.
+    const mozartRow = screen.getByText('Mozart K. 466').closest('li')!;
+    await user.click(within(mozartRow).getByRole('button', { name: 'Import labels' }));
+    await user.click(within(mozartRow).getByRole('button', { name: 'Replace' }));
+    await user.upload(fileInputs(container)[2], labelsFile);
+    expect(await screen.findByRole('alert')).toHaveTextContent('made for a different recording');
+    expect((await storage.projects.get('mozart'))!.markers).toEqual(mozart.markers);
+
+    // On its own recording it applies: the alert clears and the markers land.
+    await user.click(within(brahmsRow).getByRole('button', { name: 'Import labels' }));
+    await user.click(within(brahmsRow).getByRole('button', { name: 'Replace' }));
+    await user.upload(fileInputs(container)[2], labelsFile);
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
+    expect((await storage.projects.get('project-1'))!.markers).toEqual(brahms.markers);
+  });
+
+  it('explains when the imported file is not a project zip at all', async () => {
+    const user = userEvent.setup();
+    const { container } = await renderApp();
+
+    await user.upload(
+      fileInputs(container)[1],
+      new File(['not a zip'], 'fake.zip', { type: 'application/zip' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('isn’t a valid project zip');
   });
 });
