@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createAudioController, decodePeaksOrNull } from './audio';
 import type { AudioController, PeakData } from './audio';
+import { errorMessage } from './domain';
+import { parseCatalog, resolveUrl } from './library/catalog';
+import type { CatalogEntry } from './library/catalog';
+import { LibraryError } from './library/errors';
+import { downloadAndCache, fetchLabelset, seededProjectId, seedProject } from './library/load';
 import { validateProjectName } from './projects/summary';
-import { createAutosave, createStorage, saveStatusFor, StorageError } from './storage';
+import { createAutosave, createStorage, saveStatusFor, sha256, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
 import { createProjectFromUpload } from './upload';
+import { LibraryScreen } from './ui/LibraryScreen';
 import { Player } from './ui/Player';
 import { ProjectsScreen } from './ui/ProjectsScreen';
 import { UploadPicker } from './ui/UploadPicker';
@@ -22,14 +28,73 @@ interface Session {
   autosave: Autosave;
   peaks: PeakData | null;
   controller: AudioController;
+  /**
+   * When set, the player streams this URL instead of the record's audio
+   * blob — the library's first load, where playback must start while the
+   * download still runs. The blob lands in the record behind the scenes.
+   */
+  streamUrl?: string | null;
+  /** Replaces the player's ruler note (the library stream explains itself differently). */
+  rulerNote?: string;
 }
 
 type Tab = 'projects' | 'library' | 'help';
 
+/** The catalog manifest's path, resolved against where the app is served. */
+const CATALOG_URL = new URL(import.meta.env.BASE_URL + 'library.json', window.location.href).toString();
+
+/**
+ * The streaming session's audio placeholder: playback runs off `streamUrl`,
+ * so the record never reads this blob — it exists only so the record's
+ * shape stays whole until the verified download replaces it. The deferred
+ * save below guarantees it is never persisted.
+ */
+const EMPTY_BLOB = new Blob();
+
+/**
+ * The library's fetch surface, translating every network failure into the
+ * LibraryError the tab surfaces. Catalog and label sets come back as text;
+ * the audio comes back as a blob for hashing. Every fetch carries a
+ * timeout: a request that never settles must not leave the tab loading
+ * forever — or a streaming session's save waiting indefinitely.
+ */
+const TEXT_FETCH_TIMEOUT_MS = 15_000;
+const AUDIO_FETCH_TIMEOUT_MS = 120_000;
+
+async function fetchLibraryText(url: string): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(TEXT_FETCH_TIMEOUT_MS) });
+  } catch {
+    throw fetchFailure();
+  }
+  if (!response.ok) throw fetchFailure();
+  return response.text();
+}
+
+async function fetchLibraryAudio(url: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(AUDIO_FETCH_TIMEOUT_MS) });
+  } catch {
+    throw fetchFailure();
+  }
+  if (!response.ok) throw fetchFailure();
+  return response.blob();
+}
+
+function fetchFailure(): LibraryError {
+  return new LibraryError(
+    "The library couldn't be reached. Check your connection and try again.",
+    'fetch-failed',
+  );
+}
+
 /**
  * The app shell: the Projects tab is home — the list, upload, rename,
- * delete, and reopen — with Library and Help as placeholders until their
- * tickets land. Opening a project (upload or click) drops into the player;
+ * delete, and reopen. The Library tab (T11) lists the community catalog and
+ * loads entries into editable projects; Help is a placeholder until its
+ * ticket lands. Opening a project (upload or click) drops into the player;
  * leaving flushes the session's autosave before the list is re-read, so the
  * workspace never shows stale data.
  */
@@ -46,6 +111,18 @@ function App({
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
+  /**
+   * The Library tab's failure channels, kept separate so one cannot wipe the
+   * other: the catalog fetch owns `catalogNotice` (cleared on success),
+   * loads own `libraryNotice` (cleared when a new load starts) — a failed
+   * download's notice must survive later successful catalog fetches.
+   */
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
+  const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
+  const [loadingEntryId, setLoadingEntryId] = useState<string | null>(null);
+  /** Bumped by the catalog's retry button — refetches without a tab round-trip. */
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
 
   /**
    * Serializes session creation and every workspace mutation (upload, open,
@@ -58,6 +135,13 @@ function App({
   const openTokenRef = useRef(0);
   /** Decoded peaks per project, so reopening never re-decodes an unchanged blob. */
   const peaksCacheRef = useRef(new Map<string, PeakData | null>());
+  /**
+   * Entries whose first-load download is still in flight. The guard keeps a
+   * second Load — possible after the user exits the streaming session and
+   * the seeded project does not exist yet — from running the whole first-
+   * load flow again and seeding a duplicate once both downloads land.
+   */
+  const pendingLibrarySeedsRef = useRef(new Set<string>());
 
   /** Re-reads the workspace list; a failed read surfaces as a notice, never a rejection. */
   async function refreshProjects(source: Storage): Promise<void> {
@@ -96,6 +180,45 @@ function App({
     // was still running.
     openTokenRef.current += 1;
   }, [tab]);
+
+  // The Library tab fetches the manifest on every visit (normal HTTP caching
+  // keeps repeat visits cheap, and a redeployed catalog shows up on the next
+  // visit). A failure parks the tab in its error state; Retry bumps the
+  // attempt counter to refetch without a tab round-trip.
+  useEffect(() => {
+    if (tab !== 'library' || storage === null) return;
+    let cancelled = false;
+    void fetchLibraryText(CATALOG_URL)
+      .then((text) => parseCatalog(text))
+      .then((entries) => {
+        if (cancelled) return;
+        setCatalog(entries);
+        // A past catalog failure clears only once a fetch actually succeeds.
+        setCatalogNotice(null);
+      })
+      .catch((error) => {
+        if (!cancelled) setCatalogNotice(errorMessage(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, storage, catalogAttempt]);
+
+  /**
+   * The "Loaded" join: entry audio URL → seeded project id. The match is
+   * the recording's sha256 (the stable identity seeding stamps into the
+   * project), so the join survives a catalog redeploy that moves the audio
+   * URL — the same rule `loadLibraryEntry` applies before seeding.
+   */
+  const loadedProjects = useMemo(() => {
+    const bySource = new Map<string, string>();
+    if (catalog === null) return bySource;
+    for (const entry of catalog) {
+      const seededId = seededProjectId(projects, entry);
+      if (seededId !== undefined) bySource.set(entry.audioUrl, seededId);
+    }
+    return bySource;
+  }, [projects, catalog]);
 
   async function handleFile(file: File): Promise<void> {
     if (storage === null || workingRef.current) return;
@@ -174,7 +297,10 @@ function App({
         controller,
       });
     } catch {
+      // Opens come from the Projects list and the Library tab's "Loaded —
+      // Open" — the failure must reach whichever tab issued it.
       setNotice("Couldn't open that project. Try again.");
+      setLibraryNotice("Couldn't open that project. Try again.");
     } finally {
       workingRef.current = false;
       setOpeningId(null);
@@ -251,6 +377,149 @@ function App({
     }
   }
 
+  /**
+   * Loads a library entry. An already-seeded entry just opens its project —
+   * never a duplicate. A cached entry (a repeat load) seeds instantly and
+   * offline from the verified cache. A first load streams the audio URL into
+   * the player immediately while the download runs, verifies against the
+   * catalog's sha256, caches it, and lets the seeded project gain the blob
+   * behind the playing stream.
+   */
+  async function loadLibraryEntry(entry: CatalogEntry): Promise<void> {
+    if (storage === null || workingRef.current) return;
+    const seeded = seededProjectId(projects, entry);
+    if (seeded !== undefined) {
+      void openProject(seeded);
+      return;
+    }
+    // A first-load download already in flight for this entry: its seed will
+    // land on its own — a second run would seed a duplicate.
+    if (pendingLibrarySeedsRef.current.has(entry.id)) return;
+    workingRef.current = true;
+    setLoadingEntryId(entry.id);
+    // A fresh load attempt starts clean — an old failure must not stick to
+    // a different entry's row.
+    setLibraryNotice(null);
+    const controller = controllerFactory();
+    const token = openTokenRef.current;
+    try {
+      const cached = await storage.library.get(entry.id);
+      if (cached !== undefined) {
+        // Repeat load: the verified cache has audio + label set — instant,
+        // and entirely offline: the cache is checked before any fetch, so
+        // nothing here touches the network.
+        const record = seedProject(entry, cached.labelset, cached.audio, Date.now());
+        // Peaks first: a decode failure (the browser's AudioContext cap)
+        // must not leave a seeded project behind with no session to show
+        // for it — nothing is persisted unless the session can open.
+        let peaks = peaksCacheRef.current.get(entry.id);
+        if (peaks === undefined) {
+          try {
+            peaks = await decodePeaksOrNull((blob) => controller.extractPeaks(blob), record.audio);
+          } catch (error) {
+            controller.destroy();
+            throw error;
+          }
+          peaksCacheRef.current.set(entry.id, peaks);
+        }
+        await storage.projects.save(record);
+        // Cache under both keys: the record id for future opens, the entry
+        // id so a later re-seed of the same recording skips the decode too.
+        peaksCacheRef.current.set(record.id, peaks);
+        if (token !== openTokenRef.current) {
+          controller.destroy();
+          return;
+        }
+        setSession({
+          autosave: createAutosave(record, { save: (next) => storage.projects.save(next) }),
+          peaks,
+          controller,
+        });
+        await refreshProjects(storage);
+        return;
+      }
+      // First load: the small label set comes down first — it is the entry's
+      // markers and identity — then the player streams the URL now
+      // (ruler-only: the waveform needs the blob's decode pass, which lands
+      // next session). The record is provisional: its placeholder blob must
+      // never be persisted, so every autosave write awaits the verified
+      // download before touching storage — and reports "Saving…" honestly
+      // while it waits, instead of claiming a save that never happened.
+      pendingLibrarySeedsRef.current.add(entry.id);
+      const labelsetUrl = resolveUrl(CATALOG_URL, entry.labelsetUrl);
+      const labelset = await fetchLabelset({ ...entry, labelsetUrl }, fetchLibraryText);
+      const provisional = seedProject(entry, labelset, EMPTY_BLOB, Date.now());
+      let settleDownload: (audio: Blob) => void;
+      let failDownload: (error: unknown) => void;
+      const downloadOutcome = new Promise<Blob>((resolve, reject) => {
+        settleDownload = resolve;
+        failDownload = reject;
+      });
+      // A failed download with no pending save (the user never edited) must
+      // not reject into the void as an unhandled rejection — the Library
+      // notice is its report; the awaited-save path still sees the error.
+      downloadOutcome.catch(() => {});
+      const autosave = createAutosave(provisional, {
+        save: async (record) => {
+          // Pending until the download settles: on success the verified
+          // blob is stamped in and the record persists; on failure every
+          // pending write rejects, so the status line surfaces the error
+          // instead of reporting edits that were never written.
+          const audio = await downloadOutcome;
+          await storage.projects.save({ ...record, audio });
+        },
+      });
+      if (token !== openTokenRef.current) {
+        controller.destroy();
+        pendingLibrarySeedsRef.current.delete(entry.id);
+        return;
+      }
+      setSession({
+        autosave,
+        peaks: null,
+        controller,
+        streamUrl: entry.audioUrl,
+        rulerNote:
+          'Streaming from the library — the waveform appears next time you open this recording.',
+      });
+      void downloadAndCache(entry, labelset, {
+        fetchAudio: fetchLibraryAudio,
+        sha256,
+        saveCache: (cachedEntry) => storage.library.save(cachedEntry),
+      })
+        .then(async (audio) => {
+          pendingLibrarySeedsRef.current.delete(entry.id);
+          settleDownload(audio);
+          // The player keeps streaming the URL; only the persisted record
+          // gains the verified blob. Mutating the autosave writes it —
+          // whether the session is still open or the user already left.
+          autosave.mutate((record) => ({ ...record, audio }));
+          await autosave.flush();
+          await refreshProjects(storage);
+        })
+        .catch((error) => {
+          pendingLibrarySeedsRef.current.delete(entry.id);
+          failDownload(error);
+          // The session (if any) keeps streaming; the seeded project just
+          // never exists. The status line inside the player shows the error
+          // through the rejected autosave write; this notice survives for
+          // the Library tab.
+          setLibraryNotice(errorMessage(error));
+        });
+    } catch (error) {
+      controller.destroy();
+      pendingLibrarySeedsRef.current.delete(entry.id);
+      setLibraryNotice(
+        error instanceof StorageError && error.code === 'storage-full'
+          ? 'Browser storage is full — free up space, then try loading again.'
+          : errorMessage(error),
+      );
+    } finally {
+      workingRef.current = false;
+      setLoadingEntryId(null);
+    }
+  }
+
   if (session !== null) {
     return (
       // Keyed by project: a fresh recording must start a fresh player — the
@@ -261,6 +530,8 @@ function App({
         autosave={session.autosave}
         peaks={session.peaks}
         controller={session.controller}
+        streamUrl={session.streamUrl}
+        rulerNote={session.rulerNote}
         onExit={() => void closeSession()}
       />
     );
@@ -300,12 +571,38 @@ function App({
           />
         </>
       )}
-      {tab === 'library' && (
-        <section>
-          <h2>Library</h2>
-          <p>The community library arrives in a later update.</p>
-        </section>
-      )}
+      {tab === 'library' &&
+        (catalog === null ? (
+          <section>
+            <h2>Library</h2>
+            {catalogNotice !== null ? (
+              <>
+                <p role="alert" className="library-notice">
+                  {catalogNotice}
+                </p>
+                <button type="button" onClick={() => setCatalogAttempt((n) => n + 1)}>
+                  Try again
+                </button>
+              </>
+            ) : (
+              <p>Loading the catalog…</p>
+            )}
+            {libraryNotice !== null && (
+              <p role="alert" className="library-notice">
+                {libraryNotice}
+              </p>
+            )}
+          </section>
+        ) : (
+          <LibraryScreen
+            entries={catalog}
+            loadedProjects={loadedProjects}
+            loadingId={loadingEntryId}
+            notice={libraryNotice}
+            onLoad={(entry) => void loadLibraryEntry(entry)}
+            onOpen={(id) => void openProject(id)}
+          />
+        ))}
       {tab === 'help' && (
         <section>
           <h2>Help</h2>

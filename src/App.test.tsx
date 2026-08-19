@@ -1,9 +1,12 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DecodeError } from './audio';
 import type { PeakData } from './audio';
-import { createStorage, StorageError } from './storage';
+import { parseProjectFile, serializeProjectFile } from './domain';
+import type { ProjectFileData } from './domain';
+import type { CatalogEntry } from './library/catalog';
+import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
 import { mockController } from './test/controller-fixture';
 import { projectRecord } from './test/project-fixture';
@@ -21,7 +24,103 @@ function mp3File(name = 'brahms-op118.mp3'): File {
   return new File([new Uint8Array([1, 2, 3, 4])], name, { type: 'audio/mpeg' });
 }
 
-afterEach(closeTestStorages);
+/** The app's catalog URL — resolved the same way App.tsx resolves it. */
+const catalogUrl = new URL(import.meta.env.BASE_URL + 'library.json', window.location.href).toString();
+
+const LIBRARY_AUDIO_URL = 'https://example.org/audio/goldberg-aria.mp3';
+
+function catalogEntry(sha: string): CatalogEntry {
+  return {
+    id: 'goldberg-aria',
+    composer: 'J. S. Bach',
+    piece: 'Goldberg Variations, BWV 988 — Aria',
+    performer: 'Kimiko Ishizaka',
+    duration: 230.4,
+    license: 'CC0',
+    attribution: 'Kimiko Ishizaka, via the Open Goldberg Variations',
+    audioUrl: LIBRARY_AUDIO_URL,
+    sha256: sha,
+    labelsetUrl: './labelsets/goldberg-aria.json',
+  };
+}
+
+/** A contributed label set carrying the recording's identity, as `project.json`. */
+function labelsetFile(sha: string): string {
+  const data: ProjectFileData = {
+    project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0 },
+    markers: [
+      { id: 'm1', time: 10, aliases: [], createdAt: 1 },
+      { id: 'm2', time: 222.35, aliases: ['Recap'], createdAt: 2 },
+    ],
+    audioMeta: {
+      sha256: sha,
+      duration: 230.4,
+      mimeType: 'audio/mpeg',
+      filename: 'goldberg-aria.mp3',
+      sizeBytes: 4,
+      source: LIBRARY_AUDIO_URL,
+      license: 'CC0',
+      attribution: 'Kimiko Ishizaka, via the Open Goldberg Variations',
+    },
+  };
+  return serializeProjectFile(data);
+}
+
+/** The minimal fetch surface App.tsx consumes. */
+function jsonResponse(body: string) {
+  return { ok: true, text: async () => body, blob: async () => new Blob([body]) };
+}
+
+function blobResponse(blob: Blob) {
+  return { ok: true, text: async () => '', blob: async () => blob };
+}
+
+/**
+ * Stubs the network for the library tests: the catalog and label set come
+ * back as JSON, the audio as a blob, everything else fails. Returns the spy
+ * so tests can assert which URLs the app actually hit.
+ */
+function stubLibraryFetch(options: {
+  entry: CatalogEntry;
+  labelset: string;
+  audio: Blob;
+  /** When true, only the catalog is reachable — the offline test. */
+  offline?: boolean;
+}) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === catalogUrl) {
+      return jsonResponse(JSON.stringify({ schemaVersion: 1, entries: [options.entry] }));
+    }
+    // The app resolves the label set path against the catalog's URL.
+    const labelsetUrl = new URL(options.entry.labelsetUrl, catalogUrl).toString();
+    if (url === labelsetUrl && !options.offline) {
+      return jsonResponse(options.labelset);
+    }
+    if (url === options.entry.audioUrl && !options.offline) {
+      return blobResponse(options.audio);
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+/** A promise the test settles by hand — the mid-download moment, paused. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+afterEach(async () => {
+  await closeTestStorages();
+  vi.unstubAllGlobals();
+});
 
 describe('App upload flow', () => {
   it('drops the user straight into the player, named after the file and persisted', async () => {
@@ -127,13 +226,18 @@ describe('App Projects workspace', () => {
   it('shows the empty state with both first-run paths', async () => {
     const user = userEvent.setup();
     const { storage } = await renderApp();
+    stubLibraryFetch({
+      entry: catalogEntry('a'.repeat(64)),
+      labelset: labelsetFile('a'.repeat(64)),
+      audio: new Blob(),
+    });
 
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create project' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Browse the library' }));
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument();
-    expect(screen.getByText(/later update/)).toBeInTheDocument();
+    expect(await screen.findByText(/Public-domain recordings/)).toBeInTheDocument();
 
     storage.close();
   });
@@ -156,7 +260,7 @@ describe('App Projects workspace', () => {
     const extractOptions = vi.mocked(controller.extractPeaks).mock.calls[0][0];
     expect(new Uint8Array(await extractOptions.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
     const loadOptions = vi.mocked(controller.load).mock.calls[0][0];
-    expect(new Uint8Array(await loadOptions.blob.arrayBuffer())).toEqual(
+    expect(new Uint8Array(await loadOptions.blob!.arrayBuffer())).toEqual(
       new Uint8Array([1, 2, 3, 4]),
     );
     expect(await storage.projects.get(record.id)).toEqual(
@@ -379,6 +483,316 @@ describe('App Projects workspace', () => {
       'Something went wrong deleting the project.',
     );
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
+    expect(await storage.projects.list()).toHaveLength(1);
+  });
+});
+
+describe('App Library tab', () => {
+  it('fetches the catalog and lists every recording fact', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([9, 9])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    stubLibraryFetch({ entry, labelset: labelsetFile(entry.sha256), audio });
+    await renderApp();
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+
+    expect(await screen.findByText('Goldberg Variations, BWV 988 — Aria')).toBeInTheDocument();
+    expect(
+      screen.getByText('J. S. Bach · Kimiko Ishizaka · 3:50.400 · CC0'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Attribution: Kimiko Ishizaka, via the Open Goldberg Variations'),
+    ).toBeInTheDocument();
+  });
+
+  it('surfaces the failure honestly when the catalog cannot be fetched, with a retry', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      throw new Error('offline');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await renderApp();
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't be reached/i);
+
+    // Retry refetches without leaving the tab.
+    fetchMock.mockResolvedValue(
+      jsonResponse(JSON.stringify({ schemaVersion: 1, entries: [] })) as unknown as Response,
+    );
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText(/Public-domain recordings/)).toBeInTheDocument();
+  });
+
+  it('loading an entry streams its audio url immediately, then seeds an editable project once the verified download lands', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([7, 8, 9])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    stubLibraryFetch({ entry, labelset: labelsetFile(entry.sha256), audio });
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 230.4 })),
+    });
+    const { storage } = await renderApp(controller);
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+
+    // The player is up immediately, streaming the url — playback before the
+    // download finishes — with the stream's ruler note.
+    expect(
+      await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Streaming from the library/)).toBeInTheDocument();
+    const loadOptions = vi.mocked(controller.load).mock.calls[0][0];
+    expect(loadOptions.blob).toBeNull();
+    expect(loadOptions.url).toBe(LIBRARY_AUDIO_URL);
+
+    // The background download verified against the catalog's sha256, cached
+    // audio + label set, and seeded the editable project with the marks.
+    await vi.waitFor(async () => {
+      const cached = await storage.library.get(entry.id);
+      expect(cached).toBeDefined();
+      expect(await cached!.audio.arrayBuffer()).toEqual(await audio.arrayBuffer());
+    });
+    const seeded = await storage.projects.list();
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0].source).toBe(LIBRARY_AUDIO_URL);
+    const record = await storage.projects.get(seeded[0].id);
+    expect(record!.markers.map((m) => m.id)).toEqual(['m1', 'm2']);
+
+    // Back on the Library tab the entry is Loaded and opens the seeded copy.
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    expect(await screen.findByRole('button', { name: 'Loaded — Open' })).toBeInTheDocument();
+  });
+
+  it('a cached entry opens from cache without downloading — repeat loads work offline', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([5, 6, 7])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    const storage = await testStorage();
+    await storage.library.save({
+      id: entry.id,
+      audio,
+      labelset: parseProjectFile(labelsetFile(entry.sha256)),
+      cachedAt: 1_700_000_000_000,
+    });
+    // Offline: only the catalog is reachable; any labelset or audio fetch fails.
+    const fetchMock = stubLibraryFetch({
+      entry,
+      labelset: labelsetFile(entry.sha256),
+      audio,
+      offline: true,
+    });
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 230.4 })),
+    });
+    await renderApp(controller, storage);
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+
+    // The player opened on the cached blob — no url, no label set download.
+    expect(
+      await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' }),
+    ).toBeInTheDocument();
+    const loadOptions = vi.mocked(controller.load).mock.calls[0][0];
+    expect(loadOptions.url).toBeNull();
+    expect(new Uint8Array(await loadOptions.blob!.arrayBuffer())).toEqual(new Uint8Array([5, 6, 7]));
+    // Only the catalog fetch ever ran.
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([catalogUrl]);
+    const seeded = await storage.projects.list();
+    expect(seeded).toHaveLength(1);
+    const record = await storage.projects.get(seeded[0].id);
+    expect(record!.markers.map((m) => m.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('a loaded entry opens its seeded project instead of seeding a duplicate', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([1, 2])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    const storage = await testStorage();
+    const seededRecord = projectRecord({
+      id: 'seeded-1',
+      name: 'My goldberg copy',
+      audioMeta: { ...projectRecord().audioMeta, source: LIBRARY_AUDIO_URL },
+    });
+    await storage.projects.save(seededRecord);
+    const fetchMock = stubLibraryFetch({
+      entry,
+      labelset: labelsetFile(entry.sha256),
+      audio,
+      offline: true,
+    });
+    await renderApp(mockController(), storage);
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Loaded — Open' }));
+
+    // The seeded project opened; no labelset or audio fetch ever ran.
+    expect(await screen.findByRole('heading', { name: 'My goldberg copy' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([catalogUrl]);
+    expect(await storage.projects.list()).toHaveLength(1);
+  });
+
+  it('a second Load while the download is in flight is a no-op — no duplicate seed', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([4, 4])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    const labelsetUrl = new URL(entry.labelsetUrl, catalogUrl).toString();
+    // The audio download is paused by hand — the window where the user can
+    // exit the stream (no edits pending) and click Load again.
+    const audioGate = deferred<Blob>();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === catalogUrl) {
+        return jsonResponse(JSON.stringify({ schemaVersion: 1, entries: [entry] }));
+      }
+      if (url === labelsetUrl) return jsonResponse(labelsetFile(entry.sha256));
+      if (url === entry.audioUrl) {
+        return audioGate.promise.then(blobResponse);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { storage } = await renderApp(
+      mockController({ load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 230.4 })) }),
+    );
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' }),
+    ).toBeInTheDocument();
+
+    // Leave mid-download (nothing pending — the exit is instant) and Load
+    // again: the in-flight download must win, not a second full run.
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByRole('tablist');
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+
+    // The second Load ran nothing: the only extra call is the catalog
+    // refetch on re-entering the tab — no second labelset or audio fetch.
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      catalogUrl,
+      labelsetUrl,
+      entry.audioUrl,
+      catalogUrl,
+    ]);
+
+    audioGate.resolve(audio);
+    await vi.waitFor(async () => {
+      expect(await storage.projects.list()).toHaveLength(1);
+    });
+    expect(await storage.library.get(entry.id)).toBeDefined();
+  });
+
+  it('a failed audio download seeds nothing and the failure survives on the Library tab', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([1])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    const labelsetUrl = new URL(entry.labelsetUrl, catalogUrl).toString();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === catalogUrl) {
+          return jsonResponse(JSON.stringify({ schemaVersion: 1, entries: [entry] }));
+        }
+        if (url === labelsetUrl) return jsonResponse(labelsetFile(entry.sha256));
+        throw new Error('network down');
+      }),
+    );
+    const { storage } = await renderApp(
+      mockController({ load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 230.4 })) }),
+    );
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' }),
+    ).toBeInTheDocument();
+
+    // Back on the Library tab the failure must be visible — and must not be
+    // wiped by the successful catalog refetch on re-entry.
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByRole('tablist');
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't be reached/i);
+    expect(await storage.projects.list()).toEqual([]);
+    expect(await storage.library.get(entry.id)).toBeUndefined();
+  });
+
+  it('a failed download surfaces as a save error in the player — edits are never a silent loss', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([2])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    const labelsetUrl = new URL(entry.labelsetUrl, catalogUrl).toString();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === catalogUrl) {
+          return jsonResponse(JSON.stringify({ schemaVersion: 1, entries: [entry] }));
+        }
+        if (url === labelsetUrl) return jsonResponse(labelsetFile(entry.sha256));
+        throw new Error('network down');
+      }),
+    );
+    const { storage } = await renderApp(
+      mockController({ load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 230.4 })) }),
+    );
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+    await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' });
+
+    // An edit during the stream: the write awaits the download, which fails —
+    // the status line must report the failure, never "Saved".
+    await user.keyboard('m');
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent('Save failed.');
+    });
+    expect(await storage.projects.list()).toEqual([]);
+  });
+
+  it('re-seeding a deleted library project reuses the cached peaks instead of re-decoding', async () => {
+    const user = userEvent.setup();
+    const audio = new Blob([new Uint8Array([6, 6])], { type: 'audio/mpeg' });
+    const entry = catalogEntry(await sha256(audio));
+    const storage = await testStorage();
+    await storage.library.save({
+      id: entry.id,
+      audio,
+      labelset: parseProjectFile(labelsetFile(entry.sha256)),
+      cachedAt: 1_700_000_000_000,
+    });
+    stubLibraryFetch({ entry, labelset: labelsetFile(entry.sha256), audio, offline: true });
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 230.4 })),
+    });
+    await renderApp(controller, storage);
+
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+    await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' });
+
+    // Delete the seeded project, then load the entry again: the entry-keyed
+    // peaks survive the project's deletion, so no second decode runs.
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByRole('tablist');
+    const row = screen.getByRole('listitem');
+    await user.click(within(row).getByRole('button', { name: 'Delete' }));
+    await user.click(within(row).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('tab', { name: 'Library' }));
+    await user.click(await screen.findByRole('button', { name: 'Load' }));
+    await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' });
+
+    expect(controller.extractPeaks).toHaveBeenCalledTimes(1);
     expect(await storage.projects.list()).toHaveLength(1);
   });
 });

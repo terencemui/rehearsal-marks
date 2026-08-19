@@ -28,6 +28,14 @@ export interface ProjectSummary {
   sizeBytes: number;
   /** Epoch ms. */
   updatedAt: number;
+  /** The recording's origin — a library audio URL, or empty for uploads. */
+  source: string;
+  /**
+   * The recording's sha256 — the stable identity the "Loaded" join matches
+   * on, so a catalog redeploy that moves the audio URL still finds the
+   * seeded project.
+   */
+  sha256: string;
 }
 
 /**

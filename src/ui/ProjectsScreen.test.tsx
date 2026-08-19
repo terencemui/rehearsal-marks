@@ -13,6 +13,8 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     markerCount: 2,
     sizeBytes: 285,
     updatedAt: 1_700_000_000_000,
+    source: '',
+    sha256: 'abc123',
     ...overrides,
   };
 }
