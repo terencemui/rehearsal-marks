@@ -10,9 +10,8 @@
  */
 
 import WaveSurfer from 'wavesurfer.js';
+import { renderRuler } from '../playback/renderRuler';
 import { extractPeaks, type PeakData } from './peaks';
-import { rulerTicks } from './ruler';
-import './ruler.css';
 
 /** How the loaded recording is rendered. */
 export type RenderMode = 'waveform' | 'ruler';
@@ -245,11 +244,23 @@ export function createAudioController(): AudioController {
       },
     };
 
+    // The shared ruler renders into the container; its seek callback drives
+    // this backend's media element and the playback store together, and
+    // reports the position the element actually took (it may clamp the
+    // assignment to a revised duration).
+    const renderTimeline = (duration: number) =>
+      renderRuler(container, duration, (time) => {
+        element.currentTime = time;
+        const applied = element.currentTime;
+        emit({ currentTime: applied });
+        return applied;
+      });
+
     return new Promise<LoadResult>((resolve) => {
       element.addEventListener(
         'loadedmetadata',
         () => {
-          renderRuler(container, element, element.duration, (time) => emit({ currentTime: time }));
+          renderTimeline(element.duration);
           resetPlayback(element.duration);
           resolve({ mode: 'ruler', duration: element.duration });
         },
@@ -259,7 +270,7 @@ export function createAudioController(): AudioController {
       element.addEventListener(
         'error',
         () => {
-          renderRuler(container, element, 0, (time) => emit({ currentTime: time }));
+          renderTimeline(0);
           resetPlayback(0);
           resolve({ mode: 'ruler', duration: 0 });
         },
@@ -328,48 +339,4 @@ export function createAudioController(): AudioController {
 
     destroy: teardown,
   };
-}
-
-/**
- * Draws a ruler-only timeline: labeled tick lines over a clickable surface
- * that seeks the media element. DOM, not canvas — the ruler is the degraded
- * view, kept deliberately simple. `onSeek` reports each click-driven seek so
- * the playback store can move the playhead immediately.
- */
-function renderRuler(
-  container: HTMLElement,
-  element: HTMLAudioElement,
-  duration: number,
-  onSeek: (time: number) => void,
-): void {
-  container.replaceChildren();
-  const ruler = document.createElement('div');
-  ruler.className = 'rm-ruler';
-  ruler.setAttribute('role', 'slider');
-  ruler.setAttribute('aria-label', 'Recording timeline');
-  ruler.setAttribute('aria-valuemin', '0');
-  ruler.setAttribute('aria-valuemax', String(duration));
-  ruler.setAttribute('aria-valuenow', '0');
-
-  for (const tick of rulerTicks(duration)) {
-    const mark = document.createElement('span');
-    mark.className = 'rm-ruler-tick';
-    mark.style.left = duration > 0 ? `${(tick.time / duration) * 100}%` : '0%';
-    const label = document.createElement('span');
-    label.className = 'rm-ruler-tick-label';
-    label.textContent = tick.label;
-    mark.appendChild(label);
-    ruler.appendChild(mark);
-  }
-
-  ruler.addEventListener('click', (event) => {
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    const bounds = ruler.getBoundingClientRect();
-    const ratio = (event.clientX - bounds.left) / bounds.width;
-    element.currentTime = Math.min(1, Math.max(0, ratio)) * duration;
-    ruler.setAttribute('aria-valuenow', String(element.currentTime));
-    onSeek(element.currentTime);
-  });
-
-  container.appendChild(ruler);
 }
