@@ -47,3 +47,25 @@ function invalidTime(input: string): DomainError {
     'invalid-time-format',
   );
 }
+
+/**
+ * Renders a marker timestamp the way the spec displays them: `mm:ss.mmm`,
+ * or `h:mm:ss.mmm` once the recording reaches an hour (the recording's
+ * duration picks the shape, so every timestamp on one project reads alike).
+ * Times are rounded to the displayed millisecond — the full float lives in
+ * the marker; this is display-only. Negative times clamp to zero rather than
+ * rendering a sign.
+ */
+export function formatTime(seconds: number, duration: number): string {
+  const totalMs = Math.max(0, Math.round(seconds * 1000));
+  const hours = Math.floor(totalMs / 3_600_000);
+  const minutes = Math.floor((totalMs % 3_600_000) / 60_000);
+  const secs = Math.floor((totalMs % 60_000) / 1000);
+  const ms = totalMs % 1000;
+
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(secs).padStart(2, '0');
+  const mmm = String(ms).padStart(3, '0');
+
+  return duration >= 3600 ? `${hours}:${mm}:${ss}.${mmm}` : `${mm}:${ss}.${mmm}`;
+}

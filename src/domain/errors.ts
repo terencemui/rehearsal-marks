@@ -18,3 +18,8 @@ export class DomainError extends Error {
     this.name = 'DomainError';
   }
 }
+
+/** An error's message, for the inline messages the UI shows from catches. */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
