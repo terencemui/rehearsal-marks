@@ -5,7 +5,10 @@ import {
   createMarker,
   deriveLabels,
   errorMessage,
+  markerForLetter,
   moveMarker,
+  nextMarker,
+  previousMarker,
   removeMarker,
   setAliases as setMarkerAliases,
 } from '../domain';
@@ -56,9 +59,12 @@ interface UndoState {
  * The player screen: waveform (or ruler-only timeline), marker flags, and the
  * selected marker's inspector. Markers are the T06 core: add at the playhead
  * (M or the button), add at a position (double-click / long-press), select,
- * delete with a five-second undo, nudge, re-time, and alias. Everything
- * audible goes through the `controller`; the screen owns marker state through
- * autosave, which also persists every mutation.
+ * delete with a five-second undo, nudge, re-time, and alias. T07 adds the
+ * keyboard-only practice flow: ↑/↓ and A–Z jump between markers, ←/→ seek
+ * ∓5s — all suppressed while typing. Jumping never selects; selection exists
+ * only for nudge and delete. Everything audible goes through the `controller`;
+ * the screen owns marker state through autosave, which also persists every
+ * mutation.
  */
 export function Player({ record, peaks, controller, storage }: PlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -171,6 +177,9 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
   // fresh markers, selection, and playhead without re-registering per tick.
   const keyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   keyDownRef.current = (event: KeyboardEvent) => {
+    // One action per press: holding a key repeats the event at the OS repeat
+    // rate, which would storm seeks and marker jumps.
+    if (event.repeat) return;
     const target = event.target;
     // Shortcuts are suppressed while focus is in a text input. Space gets one
     // extra exception: a focused button owns it through native activation —
@@ -191,6 +200,9 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
       return;
     }
     if (inTextInput) return;
+    // Before the recording loads there is nothing to seek, jump to, or mark —
+    // the transport is disabled and the shortcuts are too.
+    if (mode === null) return;
 
     const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
     if (plain && (event.key === 'm' || event.key === 'M')) {
@@ -198,6 +210,40 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
       // without pausing.
       event.preventDefault();
       addAt(playback.currentTime);
+      return;
+    }
+    // Arrows are plain chords only: Shift+arrows stay the browser's (scroll,
+    // selection), Alt+arrows are the marker nudge below.
+    const plainArrows = plain && !event.shiftKey;
+    if (plainArrows && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      // Plain arrows seek ∓5s from the live playhead — the store's value can
+      // trail the audible position by a timeupdate interval.
+      event.preventDefault();
+      controller.seek(controller.getCurrentTime() + (event.key === 'ArrowLeft' ? -5 : 5));
+      return;
+    }
+    if (plainArrows && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      // ↑/↓ jump between markers anchored at the live playhead, wrapping at
+      // the ends. Jumping never selects — selection exists only for nudge and
+      // delete — and never touches playback state. A key with nothing to jump
+      // to is left alone, so arrow scrolling still works.
+      const anchor = controller.getCurrentTime();
+      const target =
+        event.key === 'ArrowDown' ? nextMarker(labeled, anchor) : previousMarker(labeled, anchor);
+      if (target === null) return;
+      event.preventDefault();
+      controller.seek(target.time);
+      return;
+    }
+    if (plain && /^[a-z]$/i.test(event.key)) {
+      // A–Z jumps straight to that marker — "take it from C" is one keypress.
+      // M never reaches here: the block above reserves it for adding. Letters
+      // without a marker pass through untouched.
+      const target = markerForLetter(labeled, event.key);
+      if (target !== null) {
+        event.preventDefault();
+        controller.seek(target.time);
+      }
       return;
     }
     if (plain && (event.key === 'Delete' || event.key === 'Backspace')) {

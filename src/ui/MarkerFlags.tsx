@@ -28,7 +28,13 @@ export function MarkerFlags({ markers, duration, selectedId, onSelect }: MarkerF
           className="player-flag"
           aria-pressed={marker.id === selectedId}
           style={{ left: `${(marker.time / duration) * 100}%` }}
-          onClick={() => onSelect(marker)}
+          onClick={(event) => {
+            onSelect(marker);
+            // The flag is a pointer target, not a focus stop: leaving focus on
+            // it would make the next Space re-activate the flag (jump back to
+            // it) instead of meaning play/pause.
+            event.currentTarget.blur();
+          }}
           // A flag owns its double-clicks and long-presses: two clicks on a
           // flag are two selections, never a new marker on the surface below.
           onDoubleClick={(event) => event.stopPropagation()}
