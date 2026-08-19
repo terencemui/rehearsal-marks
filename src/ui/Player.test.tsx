@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { LoadResult } from '../audio';
 import { createAutosave } from '../storage';
 import type { MockController } from '../test/controller-fixture';
 import { mockController } from '../test/controller-fixture';
+import { marker } from '../test/marker-fixture';
 import { projectRecord } from '../test/project-fixture';
 import { closeTestStorages, testStorage } from '../test/storage-fixture';
 import { Player } from './Player';
@@ -238,11 +240,10 @@ describe('Player playback controls', () => {
 const RECORD_SECONDS = 123.456;
 
 /** Renders a player whose playback duration matches the record. */
-async function renderMarkingPlayer() {
+async function renderMarkingPlayer(record = projectRecord()) {
   const controller = mockController();
   const storage = await testStorage();
   controller.load = vi.fn(async () => ({ mode: 'waveform' as const, duration: RECORD_SECONDS }));
-  const record = projectRecord();
   const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
   const view = render(
     <Player
@@ -684,5 +685,257 @@ describe('Player marking — adjusting', () => {
     expect(markerFlags.map((flag) => flag.textContent)).toEqual(['A', 'B']);
     expect(markerFlags[1]).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('region', { name: 'Marker B' })).toBeInTheDocument();
+  });
+});
+
+/* T07 navigation. The fixture record's markers sit at 10s (A) and 20s (B). */
+
+/** The flags with aria-pressed — selection must never follow a jump. */
+function selectedFlags(container: HTMLElement): HTMLElement[] {
+  return flags(container).filter((flag) => flag.getAttribute('aria-pressed') === 'true');
+}
+
+describe('Player navigation — arrow jumps', () => {
+  it('jumps ↓ to the next marker, ↑ back, wrapping at both ends', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+
+    // The mock publishes each seek's landing like the real controller, so
+    // the next keypress anchors where the playhead actually is.
+    await user.keyboard('{ArrowDown}');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+
+    // From B the next marker is A again — the wrap.
+    await user.keyboard('{ArrowDown}');
+    expect(controller.seek).toHaveBeenLastCalledWith(10);
+
+    await user.keyboard('{ArrowUp}');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+  });
+
+  it('wraps up from before the first marker to the last', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 0 }));
+
+    await user.keyboard('{ArrowDown}');
+    expect(controller.seek).toHaveBeenLastCalledWith(10);
+
+    await user.keyboard('{ArrowUp}');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+  });
+
+  it('walks past a marker the seek landed a frame short of', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderMarkingPlayer();
+    // A frame-snapped landing: ↓ sought 20, the media settled at 19.977.
+    act(() => controller.emitPlayback({ currentTime: 19.977 }));
+
+    await user.keyboard('{ArrowDown}');
+
+    // The walk continues instead of re-jumping to the marker just left.
+    expect(controller.seek).toHaveBeenLastCalledWith(10); // wrap, only B exists
+  });
+
+  it('keeps playing across a jump and never selects', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 15, playing: true }));
+
+    await user.keyboard('{ArrowDown}');
+
+    // The jump seeks only; the mock's seek would have published a pause.
+    expect(controller.togglePlay).not.toHaveBeenCalled();
+    expect(controller.getPlaybackState().playing).toBe(true);
+    // Jumping never selects: no inspector, no pressed flag.
+    expect(screen.queryByRole('region', { name: 'Marker B' })).not.toBeInTheDocument();
+    expect(selectedFlags(container)).toHaveLength(0);
+  });
+
+  it('anchors the jump at the live playhead, not the trailing store value', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderMarkingPlayer(
+      projectRecord({ markers: [marker('m1', 10), marker('m2', 20), marker('m3', 30)] }),
+    );
+    // The store last published 19.9; the media element is actually at 20.15.
+    act(() => controller.emitPlayback({ currentTime: 19.9 }));
+    controller.getCurrentTime = () => 20.15;
+
+    await user.keyboard('{ArrowDown}');
+
+    // Anchored on the live 20.15, the next marker is C@30 — a store-anchored
+    // jump would backtrack onto B@20, which the user already passed.
+    expect(controller.seek).toHaveBeenLastCalledWith(30);
+  });
+
+  it('does nothing when there are no markers, leaving the keys to the browser', async () => {
+    const { controller } = await renderMarkingPlayer(projectRecord({ markers: [] }));
+    act(() => controller.emitPlayback({ currentTime: 5 }));
+
+    // Not prevented — with nothing to jump to, arrow scrolling must survive.
+    expect(fireEvent.keyDown(document.body, { key: 'ArrowDown' })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: 'ArrowUp' })).toBe(true);
+    expect(controller.seek).not.toHaveBeenCalled();
+  });
+});
+
+describe('Player navigation — letter jumps', () => {
+  it('jumps straight to a marker by its letter, case-insensitively, without selecting', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+
+    await user.keyboard('b');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+
+    await user.keyboard('{Shift>}b{/Shift}');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+
+    expect(screen.queryByRole('region', { name: 'Marker B' })).not.toBeInTheDocument();
+    expect(selectedFlags(container)).toHaveLength(0);
+  });
+
+  it('blocks the default on a letter that has a marker and leaves the rest alone', async () => {
+    const { controller } = await renderMarkingPlayer();
+
+    // dispatchEvent returns false when the handler called preventDefault.
+    expect(fireEvent.keyDown(document.body, { key: 'a' })).toBe(false);
+    expect(controller.seek).toHaveBeenLastCalledWith(10);
+
+    // No marker D — untouched, so the browser default is allowed to run.
+    expect(fireEvent.keyDown(document.body, { key: 'd' })).toBe(true);
+    expect(controller.seek).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps M reserved for adding, not jumping', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+
+    await user.keyboard('m');
+
+    expect(flags(container).map((flag) => flag.textContent)).toEqual(['A', 'B', 'C']);
+    expect(controller.seek).not.toHaveBeenCalled();
+  });
+});
+
+describe('Player navigation — seeking', () => {
+  it('seeks ∓5s with plain ←/→ and blocks the page scroll', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 17.5 }));
+
+    await user.keyboard('{ArrowLeft}');
+    expect(controller.seek).toHaveBeenLastCalledWith(12.5);
+
+    await user.keyboard('{ArrowRight}');
+    expect(controller.seek).toHaveBeenLastCalledWith(17.5);
+
+    // dispatchEvent returns false when the handler called preventDefault —
+    // the arrows must never scroll the page instead of seeking.
+    expect(fireEvent.keyDown(document.body, { key: 'ArrowRight' })).toBe(false);
+  });
+
+  it('seeks while playing without pausing', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 30, playing: true }));
+
+    await user.keyboard('{ArrowLeft}');
+
+    expect(controller.togglePlay).not.toHaveBeenCalled();
+    expect(controller.getPlaybackState().playing).toBe(true);
+  });
+
+  it('leaves Alt+arrows to the marker nudge, not the seek', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+    fireEvent.click(flags(container)[0]); // select A at 10s
+    act(() => controller.emitPlayback({ currentTime: 40 }));
+
+    await user.keyboard('{Alt>}{ArrowLeft}{/Alt}');
+
+    // The selected marker moved by 0.1s; the playhead did not seek ∓5s.
+    expect(flags(container)[0].style.left).toBe(`${(9.9 / RECORD_SECONDS) * 100}%`);
+    expect(controller.seek).toHaveBeenCalledTimes(1); // the flag click only
+  });
+});
+
+describe('Player navigation — focus and gating', () => {
+  it('acts once per press, ignoring the OS key-repeat', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+
+    await user.keyboard('{ArrowDown}');
+    expect(controller.seek).toHaveBeenCalledTimes(1);
+
+    // A held key repeats the event; repeats must not storm seeks or adds.
+    fireEvent.keyDown(document.body, { key: 'ArrowDown', repeat: true });
+    fireEvent.keyDown(document.body, { key: 'ArrowRight', repeat: true });
+    fireEvent.keyDown(document.body, { key: 'm', repeat: true });
+    expect(controller.seek).toHaveBeenCalledTimes(1);
+    expect(flags(container)).toHaveLength(2);
+  });
+
+  it('leaves Shift+arrows to the browser', async () => {
+    const { controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+
+    expect(fireEvent.keyDown(document.body, { key: 'ArrowRight', shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: 'ArrowDown', shiftKey: true })).toBe(true);
+    expect(controller.seek).not.toHaveBeenCalled();
+  });
+
+  it('ignores shortcuts before the recording loads', async () => {
+    const user = userEvent.setup();
+    const controller = mockController();
+    controller.load = vi.fn(() => new Promise<LoadResult>(() => {})); // never resolves
+    const storage = await testStorage();
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    render(
+      <Player
+        autosave={autosave}
+        peaks={{ peaks: [[0, 1]], duration: RECORD_SECONDS }}
+        controller={controller}
+        onExit={vi.fn()}
+      />,
+    );
+    await screen.findByRole('button', { name: 'Play' });
+
+    await user.keyboard('{ArrowRight}{ArrowDown}b');
+
+    expect(controller.seek).not.toHaveBeenCalled();
+  });
+
+  it('keeps Space meaning play/pause after a flag click', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+
+    fireEvent.click(flags(container)[1]); // jump to B, select it
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+
+    await user.keyboard(' ');
+
+    // Space toggles playback; it does not re-activate the focused flag.
+    expect(controller.togglePlay).toHaveBeenCalledTimes(1);
+    expect(controller.seek).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Player navigation — suppression in text inputs', () => {
+  it('suppresses arrows and letters while the time field has focus', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+    fireEvent.click(flags(container)[0]); // select A — one seek for the jump
+    expect(controller.seek).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByLabelText('Time'));
+    await user.keyboard('{ArrowLeft}{ArrowRight}{ArrowDown}{ArrowUp}ab');
+
+    // No seeks, no marker from M-style letters — the input owns every key.
+    expect(controller.seek).toHaveBeenCalledTimes(1);
+    expect(flags(container)).toHaveLength(2);
   });
 });

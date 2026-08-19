@@ -6,6 +6,7 @@ export { DomainError, errorMessage } from './errors';
 export type { DomainErrorCode } from './errors';
 export { newId } from './id';
 export { deriveLabels, labelForRank } from './labels';
+export { markerForLetter, nextMarker, previousMarker } from './navigation';
 export {
   ALIAS_MAX_LENGTH,
   addMarker,
