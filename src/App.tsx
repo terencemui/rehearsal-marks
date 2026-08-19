@@ -7,6 +7,7 @@ import { createAutosave, createStorage, saveStatusFor, StorageError } from './st
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
 import { createProjectFromUpload } from './upload';
 import { triggerDownload } from './ui/download';
+import { HelpTab } from './ui/HelpTab';
 import { ImportPicker } from './ui/ImportPicker';
 import { Player } from './ui/Player';
 import { ProjectsScreen } from './ui/ProjectsScreen';
@@ -33,10 +34,10 @@ type Tab = 'projects' | 'library' | 'help';
 
 /**
  * The app shell: the Projects tab is home — the list, upload, rename,
- * delete, and reopen — with Library and Help as placeholders until their
- * tickets land. Opening a project (upload or click) drops into the player;
- * leaving flushes the session's autosave before the list is re-read, so the
- * workspace never shows stale data.
+ * delete, and reopen — with Help as the discoverable reference and Library
+ * as a placeholder until its ticket lands. Opening a project (upload or
+ * click) drops into the player; leaving flushes the session's autosave
+ * before the list is re-read, so the workspace never shows stale data.
  */
 function App({
   controllerFactory = createAudioController,
@@ -436,12 +437,7 @@ function App({
           <p>The community library arrives in a later update.</p>
         </section>
       )}
-      {tab === 'help' && (
-        <section>
-          <h2>Help</h2>
-          <p>The help tab arrives in a later update.</p>
-        </section>
-      )}
+      {tab === 'help' && <HelpTab />}
     </main>
   );
 }

@@ -1,0 +1,40 @@
+/* Help tab: reference tables and section rhythm. Scoped under `.help` so the
+   element selectors never leak into other components. */
+
+.help .help-intro {
+  max-width: 60ch;
+}
+
+.help .help-intro + section h3 {
+  margin-top: 28px;
+}
+
+.help h4 {
+  margin-bottom: 6px;
+}
+
+.help table {
+  border-collapse: collapse;
+  margin: 8px 0 16px;
+}
+
+.help td {
+  border: 1px solid #ddd;
+  padding: 4px 10px;
+  vertical-align: top;
+}
+
+.help kbd {
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  padding: 1px 4px;
+  background: #f6f6f6;
+  font-family: inherit;
+  font-size: 0.9em;
+}
+
+.help code {
+  background: #f6f6f6;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
