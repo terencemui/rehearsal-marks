@@ -8,7 +8,16 @@ export interface MarkerFlagsProps {
   selectedId: string | null;
   /** Clicking a flag jumps to the marker and selects it. */
   onSelect(marker: LabeledMarker): void;
+  /**
+   * The zoomed content's width in px. The overlay spans the content, so each
+   * flag's `left: time / duration` percentage lands at `time × pxPerSec`
+   * pixels — zoom repositions every flag without recomputing any of them.
+   */
+  width: number | undefined;
 }
+
+/** Half a flag chip, approximately — the clamping fudge for edge markers. */
+const FLAG_HALF_CHIP_PX = 16;
 
 /**
  * The marker overlay: one flag per marker, positioned by time as a
@@ -16,36 +25,47 @@ export interface MarkerFlagsProps {
  * stops — keyboard users reach markers through the letter keys (T07), and
  * keeping them out of the tab order leaves it to the transport controls.
  */
-export function MarkerFlags({ markers, duration, selectedId, onSelect }: MarkerFlagsProps) {
+export function MarkerFlags({ markers, duration, selectedId, onSelect, width }: MarkerFlagsProps) {
   if (duration <= 0) return null;
   return (
-    <div className="player-markers">
-      {markers.map((marker) => (
-        <button
-          key={marker.id}
-          type="button"
-          tabIndex={-1}
-          className="player-flag"
-          aria-pressed={marker.id === selectedId}
-          style={{ left: `${(marker.time / duration) * 100}%` }}
-          onClick={(event) => {
-            onSelect(marker);
-            // The flag is a pointer target, not a focus stop: leaving focus on
-            // it would make the next Space re-activate the flag (jump back to
-            // it) instead of meaning play/pause.
-            event.currentTarget.blur();
-          }}
-          // A flag owns its double-clicks and long-presses: two clicks on a
-          // flag are two selections, never a new marker on the surface below.
-          onDoubleClick={(event) => event.stopPropagation()}
-          onTouchStart={(event) => event.stopPropagation()}
-          title={
-            marker.aliases.length > 0 ? `${marker.label} — ${marker.aliases.join(', ')}` : marker.label
-          }
-        >
-          {marker.label}
-        </button>
-      ))}
+    <div className="player-markers" style={width !== undefined ? { width: `${width}px` } : undefined}>
+      {markers.map((marker) => {
+        const percent = (marker.time / duration) * 100;
+        // A flag centered on x = 0 would hang half a chip off the content's
+        // left edge, where the scroll can never reach it (scrollLeft has no
+        // negative range). Pull edge flags inward by the overhang instead.
+        const overhang =
+          width !== undefined ? Math.max(0, FLAG_HALF_CHIP_PX - (percent / 100) * width) : 0;
+        return (
+          <button
+            key={marker.id}
+            type="button"
+            tabIndex={-1}
+            className="player-flag"
+            aria-pressed={marker.id === selectedId}
+            style={{
+              left: `${percent}%`,
+              transform: overhang > 0 ? `translateX(calc(-50% + ${overhang}px))` : undefined,
+            }}
+            onClick={(event) => {
+              onSelect(marker);
+              // The flag is a pointer target, not a focus stop: leaving focus on
+              // it would make the next Space re-activate the flag (jump back to
+              // it) instead of meaning play/pause.
+              event.currentTarget.blur();
+            }}
+            // A flag owns its double-clicks and long-presses: two clicks on a
+            // flag are two selections, never a new marker on the surface below.
+            onDoubleClick={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            title={
+              marker.aliases.length > 0 ? `${marker.label} — ${marker.aliases.join(', ')}` : marker.label
+            }
+          >
+            {marker.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

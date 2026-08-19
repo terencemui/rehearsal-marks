@@ -222,15 +222,16 @@ describe('Player playback controls', () => {
     const { controller, container } = await renderLoadedPlayer();
     const playhead = container.querySelector('.player-playhead') as HTMLElement;
     expect(playhead).not.toBeNull();
-    expect(playhead.style.left).toBe('0%');
+    expect(playhead.style.left).toBe('0px');
 
     act(() => controller.emitPlayback({ currentTime: 5, duration: 10 }));
-    expect(playhead.style.left).toBe('50%');
+    // 5 s at the default 8 px/s floor.
+    expect(playhead.style.left).toBe('40px');
 
     // A playhead past the end (seeks are clamped by the controller, but the
-    // view still guards) pins to the right edge instead of overflowing.
+    // view still guards) pins to the recording's end instead of overflowing.
     act(() => controller.emitPlayback({ currentTime: 15 }));
-    expect(playhead.style.left).toBe('100%');
+    expect(playhead.style.left).toBe('80px');
   });
 });
 
@@ -263,9 +264,9 @@ function flags(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll('.player-flag'));
 }
 
-/** Gives the waveform surface a predictable geometry for x→time mapping. */
-function mockWaveformRect(container: HTMLElement, width: number): void {
-  const waveform = container.querySelector('.player-waveform') as HTMLElement;
+/** Gives the shell (the scrollable viewport) a predictable geometry. */
+function mockShellRect(container: HTMLElement, width: number): void {
+  const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
   const bounds = {
     x: 0,
     y: 0,
@@ -277,7 +278,7 @@ function mockWaveformRect(container: HTMLElement, width: number): void {
     height: 96,
     toJSON: () => ({}),
   };
-  vi.spyOn(waveform, 'getBoundingClientRect').mockReturnValue(bounds as DOMRect);
+  vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue(bounds as DOMRect);
 }
 
 describe('Player marking — adding', () => {
@@ -332,15 +333,16 @@ describe('Player marking — adding', () => {
 
   it('adds a marker at the double-clicked position', async () => {
     const { container } = await renderMarkingPlayer();
-    mockWaveformRect(container, 100);
+    mockShellRect(container, 800);
     const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
 
-    fireEvent.doubleClick(shell, { clientX: 25 });
+    fireEvent.doubleClick(shell, { clientX: 200 });
 
     const markerFlags = flags(container);
-    // 25% of the recording (30.864s) lands after both existing markers.
+    // 200 px at the default 8 px/s floor is exactly 25 s — after both
+    // existing markers, so the new one takes C.
     expect(markerFlags.map((flag) => flag.textContent)).toEqual(['A', 'B', 'C']);
-    expect(markerFlags[2].style.left).toBe('25%');
+    expect(markerFlags[2].style.left).toBe(`${(25 / RECORD_SECONDS) * 100}%`);
   });
 
   it('does not add a marker when double-clicking a flag', async () => {
@@ -353,7 +355,7 @@ describe('Player marking — adding', () => {
 
   it('adds a marker on long-press; a tap or a drag adds nothing', async () => {
     const { container, controller } = await renderMarkingPlayer();
-    mockWaveformRect(container, 100);
+    mockShellRect(container, 800);
     const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
     const waveform = container.querySelector('.player-waveform') as HTMLElement;
     // The seek surface the trailing click must never reach (wavesurfer or the
@@ -363,14 +365,15 @@ describe('Player marking — adding', () => {
 
     vi.useFakeTimers();
     try {
-      fireEvent.touchStart(shell, { touches: [{ clientX: 50, clientY: 10 }] });
+      fireEvent.touchStart(shell, { touches: [{ clientX: 400, clientY: 10 }] });
       act(() => {
         vi.advanceTimersByTime(500);
       });
 
       const markerFlags = flags(container);
+      // 400 px at the 8 px/s floor is 50 s — after both existing markers.
       expect(markerFlags).toHaveLength(3);
-      expect(markerFlags[2].style.left).toBe('50%');
+      expect(markerFlags[2].style.left).toBe(`${(50 / RECORD_SECONDS) * 100}%`);
 
       // The long-press's trailing click is consumed in the capture phase
       // before it reaches the seek surface below.
@@ -380,7 +383,7 @@ describe('Player marking — adding', () => {
       expect(controller.seek).not.toHaveBeenCalled();
 
       // A tap (start → end, no hold) adds nothing, and its click seeks.
-      fireEvent.touchStart(shell, { touches: [{ clientX: 40, clientY: 10 }] });
+      fireEvent.touchStart(shell, { touches: [{ clientX: 320, clientY: 10 }] });
       fireEvent.touchEnd(shell);
       act(() => {
         vi.advanceTimersByTime(500);
@@ -390,8 +393,8 @@ describe('Player marking — adding', () => {
       expect(surfaceClick).toHaveBeenCalledTimes(1);
 
       // A drag (movement beyond the slop) is not a long-press.
-      fireEvent.touchStart(shell, { touches: [{ clientX: 60, clientY: 10 }] });
-      fireEvent.touchMove(shell, { touches: [{ clientX: 90, clientY: 10 }] });
+      fireEvent.touchStart(shell, { touches: [{ clientX: 480, clientY: 10 }] });
+      fireEvent.touchMove(shell, { touches: [{ clientX: 720, clientY: 10 }] });
       act(() => {
         vi.advanceTimersByTime(500);
       });
@@ -400,7 +403,7 @@ describe('Player marking — adding', () => {
       // A long-press whose trailing click never arrives (the touch ends off
       // the surface) must not swallow a later genuine click: the suppression
       // expires on its own.
-      fireEvent.touchStart(shell, { touches: [{ clientX: 70, clientY: 10 }] });
+      fireEvent.touchStart(shell, { touches: [{ clientX: 560, clientY: 10 }] });
       act(() => {
         vi.advanceTimersByTime(500);
       });
@@ -429,12 +432,22 @@ describe('Player marking — flags and selection', () => {
 
   it('selects a marker and jumps to it when its flag is clicked', async () => {
     const { container, controller } = await renderMarkingPlayer();
+    mockShellRect(container, 200);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
 
     fireEvent.click(flags(container)[1]); // B at 20s
 
     expect(controller.seek).toHaveBeenCalledWith(20);
     expect(screen.getByRole('region', { name: 'Marker B' })).toBeInTheDocument();
     expect(flags(container)[1]).toHaveAttribute('aria-pressed', 'true');
+    // The jump scrolls the marker into view, centered in the 200 px
+    // viewport: 20 s × 8 px/s = 160 px of content, centered → 60.
+    expect(shell.scrollLeft).toBe(60);
+
+    // Jumping to a marker before the scroll (A at 10 s wants 80 − 100 = −20)
+    // pins to the content start instead of scrolling past it.
+    fireEvent.click(flags(container)[0]);
+    expect(shell.scrollLeft).toBe(0);
   });
 
   it('deselects with Escape', async () => {
@@ -937,5 +950,289 @@ describe('Player navigation — suppression in text inputs', () => {
     // No seeks, no marker from M-style letters — the input owns every key.
     expect(controller.seek).toHaveBeenCalledTimes(1);
     expect(flags(container)).toHaveLength(2);
+  });
+});
+
+/* T08 zoom. jsdom has no layout, so the shell's rect is 0 and the view opens
+at the 8 px/s floor; mockShellRect gives the viewport a real width. */
+
+describe('Player zoom', () => {
+  it('opens at the 8 px/s floor: waveform and flags span 8 px per second', async () => {
+    const { container } = await renderMarkingPlayer();
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+    const overlay = container.querySelector('.player-markers') as HTMLElement;
+
+    // 123.456 s × 8 px/s.
+    expect(waveform.style.width).toBe('987.648px');
+    expect(overlay.style.width).toBe('987.648px');
+    // Flags keep their duration-relative percentages; the overlay's width
+    // puts them at time × 8 px.
+    expect(flags(container)[1].style.left).toBe(`${(20 / RECORD_SECONDS) * 100}%`);
+  });
+
+  it('zooms in with ctrl+scroll around the cursor, keeping the time under it fixed', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 500);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+
+    fireEvent.wheel(shell, { ctrlKey: true, deltaY: -100, clientX: 100 });
+
+    // One mouse notch (−100 px) is two zoom steps: 8 → 12.5 px/s.
+    expect(waveform.style.width).toBe('1543.2px');
+    // The cursor sat over (0 + 100) / 8 = 12.5 s; after zooming it sits over
+    // 12.5 × 12.5 − 100 = 56.25 px of scroll.
+    expect(shell.scrollLeft).toBe(56.25);
+  });
+
+  it('zooms with cmd+scroll too, and leaves plain scroll alone', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 500);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+
+    fireEvent.wheel(shell, { metaKey: true, deltaY: -100, clientX: 100 });
+    expect(waveform.style.width).toBe('1543.2px');
+
+    fireEvent.wheel(shell, { deltaY: -100, clientX: 100 });
+    // Plain scroll belongs to the page — not to the zoom.
+    expect(waveform.style.width).toBe('1543.2px');
+    expect(shell.scrollLeft).toBe(56.25);
+  });
+
+  it('never zooms out below the floor', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 500);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+
+    fireEvent.wheel(shell, { ctrlKey: true, deltaY: 100, clientX: 100 });
+
+    expect(waveform.style.width).toBe('987.648px');
+    expect(shell.scrollLeft).toBe(0);
+  });
+
+  it('keeps double-click → time mapping exact under zoom and scroll', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 500);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+
+    // Two notches in at x=100: 8 → 12.5 px/s, anchored so the cursor's time
+    // (12.5 s) stays put → scroll 56.25.
+    fireEvent.wheel(shell, { ctrlKey: true, deltaY: -50, clientX: 100 });
+    fireEvent.wheel(shell, { ctrlKey: true, deltaY: -50, clientX: 100 });
+    expect(shell.scrollLeft).toBe(56.25);
+
+    fireEvent.doubleClick(shell, { clientX: 200 });
+
+    const markerFlags = flags(container);
+    // (200 + 56.25) / 12.5 = 20.5 s — after both existing markers.
+    expect(markerFlags.map((flag) => flag.textContent)).toEqual(['A', 'B', 'C']);
+    expect(markerFlags[2].style.left).toBe(`${(20.5 / RECORD_SECONDS) * 100}%`);
+  });
+
+  it('pinches to zoom, anchored at the gesture midpoint', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 500);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+
+    // Fingers 200 px apart around the midpoint x=200, spreading to 500 px:
+    // a 2.5× zoom.
+    fireEvent.touchStart(shell, {
+      touches: [
+        { clientX: 100, clientY: 10 },
+        { clientX: 300, clientY: 10 },
+      ],
+    });
+    fireEvent.touchMove(shell, {
+      touches: [
+        { clientX: 0, clientY: 10 },
+        { clientX: 500, clientY: 10 },
+      ],
+    });
+
+    expect(waveform.style.width).toBe(`${RECORD_SECONDS * 20}px`);
+    // The midpoint's time stays put: (0 + 200) / 8 = 25 s → 25 × 20 − 200.
+    expect(shell.scrollLeft).toBe(300);
+  });
+
+  it('a second finger cancels the pending long-press — a pinch is not a press', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 800);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.touchStart(shell, { touches: [{ clientX: 400, clientY: 10 }] });
+      fireEvent.touchStart(shell, {
+        touches: [
+          { clientX: 400, clientY: 10 },
+          { clientX: 500, clientY: 10 },
+        ],
+      });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(flags(container)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a pinch whose fingers start nearly together anchors once they spread', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 500);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+
+    // Fingers land 10 px apart — below the 20 px minimum for a trustworthy
+    // anchor — so this start records nothing.
+    fireEvent.touchStart(shell, {
+      touches: [
+        { clientX: 195, clientY: 10 },
+        { clientX: 205, clientY: 10 },
+      ],
+    });
+    fireEvent.touchMove(shell, {
+      touches: [
+        { clientX: 100, clientY: 10 },
+        { clientX: 300, clientY: 10 },
+      ],
+    });
+    // The spread to 200 px re-anchors here: its first move is a 1× zoom.
+    expect(waveform.style.width).toBe('987.648px');
+    expect(shell.scrollLeft).toBe(0);
+
+    fireEvent.touchMove(shell, {
+      touches: [
+        { clientX: 0, clientY: 10 },
+        { clientX: 500, clientY: 10 },
+      ],
+    });
+    // 500 / 200 = 2.5×, anchored at the re-anchor's midpoint (200): the
+    // 25 s under it stays put → 25 × 20 − 200 = 300.
+    expect(waveform.style.width).toBe(`${RECORD_SECONDS * 20}px`);
+    expect(shell.scrollLeft).toBe(300);
+  });
+
+  it('keeps zooming when a third finger joins the pinch', async () => {
+    const { container } = await renderMarkingPlayer();
+    mockShellRect(container, 500);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+
+    fireEvent.touchStart(shell, {
+      touches: [
+        { clientX: 100, clientY: 10 },
+        { clientX: 300, clientY: 10 },
+      ],
+    });
+    // An extra touch lands and moves — the pinch is left untouched.
+    fireEvent.touchStart(shell, {
+      touches: [
+        { clientX: 100, clientY: 10 },
+        { clientX: 300, clientY: 10 },
+        { clientX: 400, clientY: 10 },
+      ],
+    });
+    fireEvent.touchMove(shell, {
+      touches: [
+        { clientX: 100, clientY: 10 },
+        { clientX: 300, clientY: 10 },
+        { clientX: 400, clientY: 10 },
+      ],
+    });
+    // The gesture continues when the extra finger lifts.
+    fireEvent.touchMove(shell, {
+      touches: [
+        { clientX: 0, clientY: 10 },
+        { clientX: 500, clientY: 10 },
+      ],
+    });
+
+    expect(waveform.style.width).toBe(`${RECORD_SECONDS * 20}px`);
+    expect(shell.scrollLeft).toBe(300);
+  });
+
+  it('scrolling away and adding at the playhead while paused reveals the new flag', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+    mockShellRect(container, 200);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+
+    act(() => controller.emitPlayback({ currentTime: 40 }));
+    await user.keyboard('m');
+
+    // 40 s × 8 px/s = 320 px; centered in the 200 px viewport → 220.
+    expect(shell.scrollLeft).toBe(220);
+    expect(flags(container)).toHaveLength(3);
+  });
+
+  it('opens fit-to-view when the recording fits above the floor', async () => {
+    // A shell 1200 px wide holds the 30 s recording at 40 px/s — above the
+    // 8 px/s floor — so the view opens fitted, not at the floor.
+    const rect = {
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1200,
+      bottom: 96,
+      width: 1200,
+      height: 96,
+      toJSON: () => ({}),
+    };
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(rect as DOMRect);
+    const storage = await testStorage();
+    // The store contract needs a stable snapshot — a fresh object per call
+    // would make useSyncExternalStore re-render forever.
+    const snapshot = { playing: false, currentTime: 0, duration: 30, volume: 1 };
+    const controller = mockController({
+      getPlaybackState: () => snapshot,
+      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 30 })),
+    });
+    const record = projectRecord({
+      audioMeta: { ...projectRecord().audioMeta, duration: 30 },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    const { container } = render(
+      <Player
+        autosave={autosave}
+        peaks={{ peaks: [[0, 1]], duration: 30 }}
+        controller={controller}
+        onExit={vi.fn()}
+      />,
+    );
+    await screen.findByRole('button', { name: 'Play' });
+
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+    expect(waveform.style.width).toBe('1200px'); // fit — 40 px/s × 30 s
+
+    rectSpy.mockRestore();
+    storage.close();
+  });
+
+  it('applies the zoomed width in ruler-only mode too', async () => {
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 50 })),
+    });
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    const { container } = render(
+      <Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />,
+    );
+    await screen.findByText(/timeline still works/);
+    act(() => controller.emitPlayback({ duration: 50 }));
+
+    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+    expect(waveform.style.width).toBe('400px'); // 50 s × 8 px/s
+    storage.close();
   });
 });

@@ -1,7 +1,16 @@
 /* Playback transport and the playhead overlay. */
 
+/* The zoomed view: a horizontally scrollable window over the content. The
+content width (waveform, flags, ruler) is set inline from the zoom state.
+`touch-action: pan-y` keeps native vertical page scroll for one finger while
+leaving the horizontal content scroll and the two-finger pinch to the
+player's own handlers — with pan-x allowed, the browser would claim a
+two-finger pan mid-pinch and the handlers could no longer cancel it. */
 .player-waveform-shell {
   position: relative;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-y;
 }
 
 /* The moving playhead: a pass-through line over the seek surface. */
@@ -29,11 +38,14 @@
 }
 
 /* Marker flags: a pass-through overlay whose flags alone take pointer input,
-so empty space still reaches the seek surface underneath. */
+so empty space still reaches the seek surface underneath. The overlay spans
+the zoomed content (inline width), so `left: time/duration` flags land at
+`time × pxPerSec` pixels at every zoom level. */
 
 .player-markers {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
   pointer-events: none;
 }
 
