@@ -1,11 +1,30 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { MockController } from '../test/controller-fixture';
 import { mockController } from '../test/controller-fixture';
 import { projectRecord } from '../test/project-fixture';
 import { closeTestStorages, testStorage } from '../test/storage-fixture';
 import { Player } from './Player';
 
 afterEach(closeTestStorages);
+
+/** Renders a loaded player whose load result matches the record's duration. */
+async function renderLoadedPlayer(controller: MockController = mockController()) {
+  const storage = await testStorage();
+  // Match the record's own duration so the load triggers no autosave write.
+  controller.load = vi.fn(async () => ({ mode: 'waveform' as const, duration: 123.456 }));
+  const view = render(
+    <Player
+      record={projectRecord()}
+      peaks={{ peaks: [[0, 1]], duration: 123.456 }}
+      controller={controller}
+      storage={storage}
+    />,
+  );
+  await screen.findByRole('button', { name: 'Play' });
+  return { ...view, controller, storage };
+}
 
 describe('Player', () => {
   it('loads the recording through the controller and shows the project name', async () => {
@@ -83,5 +102,73 @@ describe('Player', () => {
 
     expect(await screen.findByText(/timeline still works/)).toBeInTheDocument();
     storage.close();
+  });
+});
+
+describe('Player playback controls', () => {
+  it('toggles playback from the visible control and reflects playing state', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderLoadedPlayer();
+
+    const play = screen.getByRole('button', { name: 'Play' });
+    expect(play).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(play);
+    expect(controller.togglePlay).toHaveBeenCalledTimes(1);
+
+    act(() => controller.emitPlayback({ playing: true }));
+    const pause = screen.getByRole('button', { name: 'Pause' });
+    expect(pause).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(pause);
+    expect(controller.togglePlay).toHaveBeenCalledTimes(2);
+  });
+
+  it('toggles with Space, except while a control has focus', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderLoadedPlayer();
+
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(1);
+
+    // The play button owns Space while focused — its native activation is the
+    // one toggle; the window handler must not double it.
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Play' })).toHaveFocus();
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(2);
+
+    // Focus in the volume slider: Space does nothing at all.
+    await user.tab();
+    expect(screen.getByRole('slider', { name: 'Volume' })).toHaveFocus();
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(2);
+  });
+
+  it('drives the controller volume and shows controller volume changes', async () => {
+    const { controller } = await renderLoadedPlayer();
+    const slider = screen.getByRole('slider', { name: 'Volume' });
+    expect(slider).toHaveValue('1');
+
+    fireEvent.change(slider, { target: { value: '0.4' } });
+    expect(controller.setVolume).toHaveBeenCalledWith(0.4);
+
+    act(() => controller.emitPlayback({ volume: 0.6 }));
+    expect(slider).toHaveValue('0.6');
+  });
+
+  it('moves the playhead indicator with playback time', async () => {
+    const { controller, container } = await renderLoadedPlayer();
+    const playhead = container.querySelector('.player-playhead') as HTMLElement;
+    expect(playhead).not.toBeNull();
+    expect(playhead.style.left).toBe('0%');
+
+    act(() => controller.emitPlayback({ currentTime: 5, duration: 10 }));
+    expect(playhead.style.left).toBe('50%');
+
+    // A playhead past the end (seeks are clamped by the controller, but the
+    // view still guards) pins to the right edge instead of overflowing.
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+    expect(playhead.style.left).toBe('100%');
   });
 });
