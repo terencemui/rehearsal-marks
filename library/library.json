@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "id": "goldberg-aria",
+      "composer": "J. S. Bach",
+      "piece": "Goldberg Variations, BWV 988 — Aria",
+      "performer": "Kimiko Ishizaka",
+      "duration": 299.52,
+      "license": "CC0",
+      "attribution": "Kimiko Ishizaka, Open Goldberg Variations — via archive.org",
+      "audioUrl": "https://archive.org/download/OpenGoldbergVariations/Kimiko%20Ishizaka%20-%20J.S.%20Bach-%20-Open-%20Goldberg%20Variations,%20BWV%20988%20(Piano)%20-%2001%20Aria.mp3",
+      "sha256": "a36593c51a4afb80f6494abf975cb7b51e35f9fa6903f456edf53a31106b3749",
+      "labelsetUrl": "./labelsets/goldberg-aria.json"
+    }
+  ]
+}

@@ -49,6 +49,15 @@ export interface PlayerProps {
   peaks: PeakData | null;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
+  /**
+   * When set, the player streams this URL instead of the record's audio
+   * blob: the library's first load, where playback must start while the
+   * download still runs. The record's blob is still persisted behind the
+   * scenes, but the stream itself keeps playing uninterruptedly.
+   */
+  streamUrl?: string | null;
+  /** Replaces the ruler note (the library stream explains itself differently). */
+  rulerNote?: string;
   /** Back to the Projects screen; the shell flushes before unmounting. */
   onExit: () => void;
 }
@@ -90,7 +99,14 @@ interface UndoState {
  * and two-finger pinch adjust the level around the cursor; jumps scroll the
  * target into view.
  */
-export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
+export function Player({
+  autosave,
+  peaks,
+  controller,
+  streamUrl = null,
+  rulerNote,
+  onExit,
+}: PlayerProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<RenderMode | null>(null);
@@ -402,12 +418,23 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
     return () => window.removeEventListener('keydown', listener);
   }, []);
 
+  // The record's blob, read through a ref so the load effect's dependencies
+  // don't include it: while a url stream is active, the blob landing
+  // mid-stream must not re-run the load and restart playback.
+  const audioBlobRef = useRef(record.audio);
+  audioBlobRef.current = record.audio;
+
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) return;
     let cancelled = false;
     controller
-      .load({ blob: record.audio, container, peaks })
+      .load({
+        blob: streamUrl !== null ? null : audioBlobRef.current,
+        url: streamUrl,
+        container,
+        peaks,
+      })
       .then((result) => {
         if (cancelled) return;
         setMode(result.mode);
@@ -434,7 +461,9 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
     return () => {
       cancelled = true;
     };
-  }, [autosave, controller, peaks, record.audio, update]);
+    // `streamUrl` is the load's only changing target: the blob is a ref
+    // (uploads never change it mid-session) so a stream stays uninterrupted.
+  }, [autosave, controller, peaks, streamUrl, update]);
 
   useEffect(() => {
     const unsubscribe = autosave.subscribe(setStatus);
@@ -769,7 +798,7 @@ export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
         <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
       )}
       {mode === 'ruler' && (
-        <p className="ruler-note">Waveform unavailable — the timeline still works.</p>
+        <p className="ruler-note">{rulerNote ?? 'Waveform unavailable — the timeline still works.'}</p>
       )}
     </main>
   );

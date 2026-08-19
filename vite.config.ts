@@ -4,6 +4,10 @@ import { defineConfig } from 'vitest/config';
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // The library catalog is the repo's `library/` directory: library.json at
+  // the site root, label sets under /labelsets/. Audio is never in the repo —
+  // it streams from the catalog's absolute audioUrl (R2 in production).
+  publicDir: 'library',
   test: {
     // Globals let @testing-library/react auto-cleanup the DOM between tests.
     globals: true,

@@ -25,7 +25,10 @@ export interface LoadResult {
 }
 
 export interface LoadOptions {
-  blob: Blob;
+  /** The cached recording bytes; `null` when streaming from `url`. */
+  blob: Blob | null;
+  /** The remote recording URL; `null` when playing a local blob. */
+  url: string | null;
   /** The element the waveform (or ruler) renders into. */
   container: HTMLElement;
   /** Decoded peaks; `null` means the decode failed — render a ruler-only timeline. */
@@ -54,7 +57,9 @@ export interface AudioController {
   /**
    * Streams the recording into `container` and renders the waveform from the
    * pre-decoded peaks, or a ruler-only timeline when peaks are unavailable.
-   * Never decodes: the single decode pass is the caller's `extractPeaks`.
+   * Exactly one of `blob` and `url` is set: a blob plays locally (waveform
+   * when peaks exist), a url streams from the network. Never decodes: the
+   * single decode pass is the caller's `extractPeaks`.
    */
   load(options: LoadOptions): Promise<LoadResult>;
   /** Toggles between playing and paused. A no-op before `load` resolves. */
@@ -201,15 +206,21 @@ export function createAudioController(): AudioController {
     });
   }
 
-  function loadRuler(blob: Blob, container: HTMLElement): Promise<LoadResult> {
+  function loadRuler(blob: Blob | null, url: string | null, container: HTMLElement): Promise<LoadResult> {
     // Ruler-only mode: no wavesurfer, no decode. An HTMLAudioElement streams
-    // playback and the container gets a DOM timeline with click-to-seek.
+    // playback — from the URL directly when one is given (the library's
+    // first load: playback starts before the download finishes), or from a
+    // local blob — and the container gets a DOM timeline with click-to-seek.
     container.replaceChildren();
     const element = new Audio();
     element.preload = 'metadata';
     element.volume = state.volume;
-    objectUrl = URL.createObjectURL(blob);
-    element.src = objectUrl;
+    if (url !== null) {
+      element.src = url;
+    } else {
+      objectUrl = URL.createObjectURL(blob as Blob);
+      element.src = objectUrl;
+    }
     audio = element;
 
     element.addEventListener('play', () => emit({ playing: true }));
@@ -260,9 +271,13 @@ export function createAudioController(): AudioController {
   return {
     extractPeaks,
 
-    async load({ blob, container, peaks }) {
+    async load({ blob, url, container, peaks }) {
       teardown();
-      if (peaks !== null) {
+      // The waveform needs decoded peaks, and peaks exist only after the one
+      // decode pass over the full blob — so a URL stream (the library's
+      // first load) is always a ruler until its blob lands and a later
+      // session opens it from cache.
+      if (blob !== null && peaks !== null) {
         try {
           return await loadWaveform(blob, container, peaks);
         } catch {
@@ -270,7 +285,7 @@ export function createAudioController(): AudioController {
           teardown();
         }
       }
-      return await loadRuler(blob, container);
+      return await loadRuler(blob, url, container);
     },
 
     togglePlay() {

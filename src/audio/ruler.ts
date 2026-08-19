@@ -17,11 +17,15 @@ export interface RulerTick {
 
 /**
  * Evenly spaced ticks for a recording's duration, using the coarsest
- * candidate interval that yields at most 10 labels. A missing duration
- * renders a single zero tick.
+ * candidate interval that yields at most 10 labels. A missing or unknown
+ * duration — 0, negative, or Infinity from a stream whose length the media
+ * element cannot report — renders a single zero tick instead of a loop
+ * that can never terminate.
  */
 export function rulerTicks(duration: number): RulerTick[] {
-  if (duration <= 0) return [{ time: 0, label: formatRulerTime(0) }];
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return [{ time: 0, label: formatRulerTime(0) }];
+  }
   const interval = TICK_INTERVALS.find((candidate) => duration / candidate <= 10) ?? 3600;
   const ticks: RulerTick[] = [];
   for (let step = 0; step * interval <= duration; step++) {

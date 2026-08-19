@@ -126,7 +126,12 @@ describe('AudioController playback', () => {
   describe('ruler mode (peaks unavailable)', () => {
     async function loadRuler(container: HTMLElement) {
       const controller = createAudioController();
-      const pending = controller.load({ blob: new Blob(['audio']), container, peaks: null });
+      const pending = controller.load({
+        blob: new Blob(['audio']),
+        url: null,
+        container,
+        peaks: null,
+      });
       const element = audioElements.at(-1)!;
       element.duration = 42;
       element.dispatchEvent(new Event('loadedmetadata'));
@@ -225,6 +230,45 @@ describe('AudioController playback', () => {
       expect(element.removeAttribute).toHaveBeenCalledWith('src');
       expect(objectUrlMocks.revoke).toHaveBeenCalledWith('blob:fake');
     });
+
+    it('a url load streams the element from that url without an object URL', async () => {
+      const container = document.createElement('div');
+      const controller = createAudioController();
+      const pending = controller.load({
+        blob: null,
+        url: 'https://example.org/piece.mp3',
+        container,
+        peaks: null,
+      });
+      const element = audioElements.at(-1)!;
+      element.duration = 30;
+      element.dispatchEvent(new Event('loadedmetadata'));
+      const result = await pending;
+
+      expect(result).toEqual({ mode: 'ruler', duration: 30 });
+      expect(element.src).toBe('https://example.org/piece.mp3');
+      expect(objectUrlMocks.create).not.toHaveBeenCalled();
+      // Playback streams from the network — the "load instantly" path.
+      controller.togglePlay();
+      expect(element.play).toHaveBeenCalledTimes(1);
+      controller.destroy();
+      expect(objectUrlMocks.revoke).not.toHaveBeenCalled();
+    });
+
+    it('a url load never reaches wavesurfer, even with peaks present', async () => {
+      const container = document.createElement('div');
+      const controller = createAudioController();
+      const pending = controller.load({
+        blob: null,
+        url: 'https://example.org/piece.mp3',
+        container,
+        peaks: { peaks: [[0, 1]], duration: 30 },
+      });
+      audioElements.at(-1)!.dispatchEvent(new Event('loadedmetadata'));
+      await pending;
+
+      expect(waveSurferCaptures).toHaveLength(0);
+    });
   });
 
   describe('waveform mode', () => {
@@ -233,7 +277,12 @@ describe('AudioController playback', () => {
     async function loadWaveform() {
       const controller = createAudioController();
       const container = document.createElement('div');
-      const result = await controller.load({ blob: new Blob(['audio']), container, peaks });
+      const result = await controller.load({
+        blob: new Blob(['audio']),
+        url: null,
+        container,
+        peaks,
+      });
       const capture = waveSurferCaptures.at(-1)!;
       return { controller, result, fake: capture.instance, options: capture.options };
     }

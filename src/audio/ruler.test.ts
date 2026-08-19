@@ -23,6 +23,13 @@ describe('rulerTicks', () => {
     expect(rulerTicks(0)).toEqual([{ time: 0, label: '0:00' }]);
     expect(rulerTicks(-1)).toEqual([{ time: 0, label: '0:00' }]);
   });
+
+  it('renders a single zero tick for an unknown duration instead of looping forever', () => {
+    // A stream whose length the media element cannot report is Infinity —
+    // every tick interval is <= Infinity, so an unguarded loop never ends.
+    expect(rulerTicks(Infinity)).toEqual([{ time: 0, label: '0:00' }]);
+    expect(rulerTicks(NaN)).toEqual([{ time: 0, label: '0:00' }]);
+  });
 });
 
 describe('formatRulerTime', () => {
