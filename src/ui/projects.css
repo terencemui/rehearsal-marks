@@ -1,0 +1,81 @@
+/* The Projects workspace: list rows, inline rename, the two-step delete. */
+
+.projects-status {
+  font-size: 14px;
+  color: #555;
+  margin: 0 0 8px;
+}
+
+.projects-notice {
+  color: #9f1239;
+  margin: 0 0 8px;
+}
+
+.projects-total {
+  font-size: 14px;
+  color: #555;
+  margin: 0 0 8px;
+}
+
+.projects-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.projects-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.projects-open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.projects-name {
+  font-weight: 600;
+}
+
+.projects-meta {
+  font-size: 13px;
+  color: #555;
+}
+
+.projects-rename-input {
+  min-width: 12em;
+}
+
+.projects-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.projects-confirm-delete {
+  color: #9f1239;
+  border-color: #9f1239;
+}
+
+.projects-empty {
+  border: 1px dashed #ddd;
+  border-radius: 6px;
+  padding: 24px;
+  text-align: center;
+}

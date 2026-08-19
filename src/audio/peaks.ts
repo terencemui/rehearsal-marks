@@ -27,6 +27,24 @@ export interface PeakData {
 }
 
 /**
+ * One decode attempt with the shared degradation rule: only a `DecodeError`
+ * means "no waveform" (`null` — the ruler-only mode). Every other failure
+ * propagates. Both project-opening paths — upload and reopen — go through
+ * here so the tolerance can never drift between them.
+ */
+export async function decodePeaksOrNull(
+  extract: (blob: Blob) => Promise<PeakData>,
+  blob: Blob,
+): Promise<PeakData | null> {
+  try {
+    return await extract(blob);
+  } catch (error) {
+    if (!(error instanceof DecodeError)) throw error;
+    return null;
+  }
+}
+
+/**
  * Buckets decoded channel data into per-column min/max pairs. Pure: takes the
  * channel arrays, not an AudioBuffer, so it can be tested without Web Audio.
  *

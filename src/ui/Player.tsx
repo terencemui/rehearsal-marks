@@ -13,31 +13,26 @@ import {
   setAliases as setMarkerAliases,
 } from '../domain';
 import type { LabeledMarker, Marker } from '../domain';
-import { createAutosave } from '../storage';
-import type { ProjectRecord, SaveStatus, Storage } from '../storage';
+import type { Autosave, ProjectRecord, SaveStatus } from '../storage';
 import { MarkerFlags } from './MarkerFlags';
 import { MarkerInspector } from './MarkerInspector';
+import { STATUS_TEXT } from './status';
 import { UndoToast } from './UndoToast';
 import './player.css';
 
 export interface PlayerProps {
-  /** The project to play — the upload pipeline's freshly created record. */
-  record: ProjectRecord;
+  /**
+   * The session's autosave — owned by the shell, which flushes it before
+   * returning to the Projects screen, so the list never reads stale data.
+   */
+  autosave: Autosave;
   /** Decoded peaks, or `null` when decoding failed (ruler-only mode). */
   peaks: PeakData | null;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
-  storage: Storage;
+  /** Back to the Projects screen; the shell flushes before unmounting. */
+  onExit: () => void;
 }
-
-const STATUS_TEXT: Record<SaveStatus, string> = {
-  idle: 'Saved',
-  dirty: 'Saving…',
-  saving: 'Saving…',
-  saved: 'Saved',
-  'storage-full': 'Storage full — free up space to keep saving.',
-  error: 'Save failed.',
-};
 
 /** The undo toast's window — the spec's five seconds, no dialog. */
 const UNDO_WINDOW_MS = 5000;
@@ -63,16 +58,15 @@ interface UndoState {
  * keyboard-only practice flow: ↑/↓ and A–Z jump between markers, ←/→ seek
  * ∓5s — all suppressed while typing. Jumping never selects; selection exists
  * only for nudge and delete. Everything audible goes through the `controller`;
- * the screen owns marker state through autosave, which also persists every
- * mutation.
+ * marker state persists through the shell-owned `autosave` (T09), which also
+ * feeds the status line.
  */
-export function Player({ record, peaks, controller, storage }: PlayerProps) {
+export function Player({ autosave, peaks, controller, onExit }: PlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<RenderMode | null>(null);
-  const [status, setStatus] = useState<SaveStatus>('idle');
-  const [autosave] = useState(() =>
-    createAutosave(record, { save: (next) => storage.projects.save(next) }),
-  );
+  const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
+  // The record's identity — name and audio — never changes in the player.
+  const record = autosave.get();
   // The record as React state. Every mutation goes through `update`, which
   // applies it to the autosave and mirrors the result back here, so flags,
   // labels, and the inspector render from the same record that persists.
@@ -286,8 +280,14 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
         // Ruler mode has no decode duration; the record's 0 is a placeholder.
         // The media element's metadata is the recording's true duration —
         // persisting it keeps the project list (T09) and exports honest, so
-        // the one write outside the upload path earns its place.
-        if (result.duration > 0 && result.duration !== autosave.get().audioMeta.duration) {
+        // the one write outside the upload path earns its place. The
+        // epsilon keeps media-element measurement noise from dirtying the
+        // record — a no-op rewrite would re-stamp updatedAt and reorder the
+        // list for a change no one made.
+        if (
+          result.duration > 0 &&
+          Math.abs(result.duration - autosave.get().audioMeta.duration) > 0.001
+        ) {
           update((current) => ({
             ...current,
             audioMeta: { ...current.audioMeta, duration: result.duration },
@@ -379,6 +379,9 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
   return (
     <main>
       <header>
+        <button type="button" onClick={onExit}>
+          Projects
+        </button>
         <h1>{record.name}</h1>
         <p role="status" data-save-status={status}>
           {STATUS_TEXT[status]}
