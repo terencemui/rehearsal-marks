@@ -98,9 +98,11 @@ export async function importProjectZip(
     name: uniqueProjectName(existingNames, baseName),
     createdAt,
     updatedAt: createdAt,
+    source: 'upload',
     audio,
     audioMeta: data.audioMeta,
     markers: data.markers,
+    playerMode: 'label',
   };
   await save(project);
   return { ok: true, project };

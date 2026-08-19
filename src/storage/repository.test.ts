@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseProjectFile, serializeProjectFile } from '../domain';
 import type { Marker, ProjectFileData } from '../domain';
-import { projectRecord } from '../test/project-fixture';
+import { projectRecord, uploadAudio, youtubeProjectRecord } from '../test/project-fixture';
 import { StorageError } from './errors';
 import { createStorage } from './repository';
 
@@ -28,10 +28,11 @@ function labelset(markers: Marker[] = []): ProjectFileData {
 }
 
 /**
- * Expected stored size for the fixture record, computed by hand: the 4-byte
- * audio blob plus the UTF-8 byte length of the serialized name, audioMeta,
- * and markers (281 bytes). Hardcoded deliberately — it pins the estimate's
- * definition, so a change to what counts as "stored" fails this test.
+ * Expected stored size for the summary-test records below, computed by hand:
+ * the 4-byte audio blob plus the UTF-8 byte length of the serialized name
+ * (the 5-character "Older"/"Newer"), audioMeta, and markers — 281 bytes.
+ * Hardcoded deliberately — it pins the estimate's definition, so a change to
+ * what counts as "stored" fails this test.
  */
 const FIXTURE_STORED_SIZE = 285;
 
@@ -59,8 +60,27 @@ describe('project repository', () => {
     expect(loaded!.updatedAt).toBe(record.updatedAt);
     expect(loaded!.markers).toEqual(record.markers);
     expect(loaded!.audioMeta).toEqual(record.audioMeta);
-    expect(await blobBytes(loaded!.audio)).toEqual(await blobBytes(record.audio));
-    expect(loaded!.audio.type).toBe('audio/mpeg');
+    expect(loaded!.source).toBe('upload');
+    expect(loaded!.playerMode).toBe('label');
+    expect(await blobBytes(uploadAudio(loaded!))).toEqual(await blobBytes(uploadAudio(record)));
+    expect(uploadAudio(loaded!).type).toBe('audio/mpeg');
+    storage.close();
+  });
+
+  it('round-trips a YouTube project: null audio, the source discriminator, and the player mode', async () => {
+    const storage = await testStorage();
+    const record = youtubeProjectRecord({ name: 'Chopin Ballade No. 1' });
+
+    await storage.projects.save(record);
+    const loaded = await storage.projects.get(record.id);
+
+    expect(loaded).not.toBeUndefined();
+    expect(loaded!.name).toBe('Chopin Ballade No. 1');
+    expect(loaded!.source).toBe('youtube');
+    expect(loaded!.audio).toBeNull();
+    expect(loaded!.playerMode).toBe('playback');
+    expect(loaded!.markers).toEqual(record.markers);
+    expect(loaded!.audioMeta).toEqual(record.audioMeta);
     storage.close();
   });
 
@@ -91,6 +111,21 @@ describe('project repository', () => {
       sha256: 'abc123',
     });
     expect(summaries[1].sizeBytes).toBe(FIXTURE_STORED_SIZE);
+    storage.close();
+  });
+
+  it('summarizes a YouTube project at its data-only size — null audio adds no bytes', async () => {
+    const storage = await testStorage();
+    await storage.projects.save(projectRecord({ id: 'upload', name: 'Chopin Ballade' }));
+    await storage.projects.save(youtubeProjectRecord({ id: 'youtube', name: 'Chopin Ballade' }));
+
+    const summaries = await storage.projects.list();
+    const upload = summaries.find((s) => s.id === 'upload')!;
+    const youtube = summaries.find((s) => s.id === 'youtube')!;
+
+    // Same name, audioMeta, and markers — the only stored difference is the
+    // recording itself, so the null-audio estimate is exactly 4 bytes less.
+    expect(youtube.sizeBytes).toBe(upload.sizeBytes - 4);
     storage.close();
   });
 

@@ -3,6 +3,7 @@ import { DecodeError } from '../audio';
 import { createStorage } from '../storage';
 import type { PeakData } from '../audio';
 import type { ProjectRecord } from '../storage';
+import { uploadAudio } from '../test/project-fixture';
 import { createProjectFromUpload, projectNameFromFile, uploadRejection } from './upload';
 import type { UploadDependencies } from './upload';
 
@@ -88,6 +89,8 @@ describe('createProjectFromUpload', () => {
     const { project, peaks } = outcome;
     expect(project.name).toBe('brahms-op118');
     expect(project.markers).toEqual([]);
+    expect(project.source).toBe('upload');
+    expect(project.playerMode).toBe('label');
     expect(project.audioMeta).toMatchObject({
       duration: 123.45,
       mimeType: 'audio/mpeg',
@@ -104,11 +107,14 @@ describe('createProjectFromUpload', () => {
     expect(peaks).toEqual(fakePeaks);
 
     // IndexedDB stores files as blobs; the round-trip returns a Blob with the
-    // same bytes and type.
+    // same bytes and type — and the record stays upload-shaped end to end.
     const stored = await storage.projects.get(project.id);
-    expect(stored!.audio).toBeInstanceOf(Blob);
-    expect(stored!.audio.size).toBe(4);
-    expect(stored!.audio.type).toBe('audio/mpeg');
+    expect(stored!.source).toBe('upload');
+    expect(stored!.playerMode).toBe('label');
+    const storedAudio = uploadAudio(stored!);
+    expect(storedAudio).toBeInstanceOf(Blob);
+    expect(storedAudio.size).toBe(4);
+    expect(storedAudio.type).toBe('audio/mpeg');
     expect({ ...stored!, audio: undefined }).toEqual({ ...project, audio: undefined });
     storage.close();
   });

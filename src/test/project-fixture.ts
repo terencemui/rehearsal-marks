@@ -8,6 +8,7 @@ export function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRe
     name: 'Brahms Op. 118 No. 2',
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
+    source: 'upload',
     audio: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/mpeg' }),
     audioMeta: {
       sha256: 'abc123',
@@ -20,6 +21,30 @@ export function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRe
       attribution: '',
     },
     markers: [marker('m1', 10), marker('m2', 20)],
+    playerMode: 'label',
     ...overrides,
   };
+}
+
+/**
+ * A stored YouTube project: the same data as `projectRecord`, but the source
+ * discriminator is `youtube`, audio is null, and the mode matches the
+ * source's default (YouTube projects open in Playback mode).
+ */
+export function youtubeProjectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
+  return projectRecord({
+    source: 'youtube',
+    audio: null,
+    playerMode: 'playback',
+    ...overrides,
+  });
+}
+
+/**
+ * The blob of an upload-shaped record, narrowed: uploads always carry audio.
+ * Tests needing the null shape read `record.audio` directly.
+ */
+export function uploadAudio(record: ProjectRecord): Blob {
+  if (record.audio === null) throw new Error('Expected an upload record with audio.');
+  return record.audio;
 }

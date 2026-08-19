@@ -88,6 +88,7 @@ export function seedProject(
     name: entry.piece,
     createdAt: now,
     updatedAt: now,
+    source: 'upload',
     audio,
     audioMeta: {
       ...labelset.audioMeta,
@@ -95,6 +96,8 @@ export function seedProject(
       source: entry.audioUrl,
     },
     markers: labelset.markers,
+    // Library projects open in Playback mode: the label set is already there.
+    playerMode: 'playback',
   };
 }
 

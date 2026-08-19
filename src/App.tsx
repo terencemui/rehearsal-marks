@@ -97,6 +97,19 @@ function fetchFailure(): LibraryError {
 }
 
 /**
+ * Decodes a record's peaks, or null when there is nothing to decode: a
+ * YouTube project stores no audio, and a decode failure also lands here —
+ * both render the ruler-only player.
+ */
+async function decodePeaksFor(
+  record: ProjectRecord,
+  controller: AudioController,
+): Promise<PeakData | null> {
+  if (record.audio === null) return null;
+  return decodePeaksOrNull((blob) => controller.extractPeaks(blob), record.audio);
+}
+
+/**
  * The app shell: the Projects tab is home — the list, upload, rename,
  * delete, export, and import. The Library tab (T11) lists the community
  * catalog and loads entries into editable projects; Help (T13) is the
@@ -288,7 +301,7 @@ function App({
       let peaks = peaksCacheRef.current.get(id);
       if (peaks === undefined) {
         try {
-          peaks = await decodePeaksOrNull((blob) => controller.extractPeaks(blob), record.audio);
+          peaks = await decodePeaksFor(record, controller);
           peaksCacheRef.current.set(id, peaks);
         } catch (error) {
           controller.destroy();
@@ -424,7 +437,7 @@ function App({
         let peaks = peaksCacheRef.current.get(entry.id);
         if (peaks === undefined) {
           try {
-            peaks = await decodePeaksOrNull((blob) => controller.extractPeaks(blob), record.audio);
+            peaks = await decodePeaksFor(record, controller);
           } catch (error) {
             controller.destroy();
             throw error;

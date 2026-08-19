@@ -1,8 +1,19 @@
 import type { AudioMeta, Marker, ProjectFileData } from '../domain';
 
+/** A project's recording origin — uploaded file or YouTube video. */
+export type ProjectSource = 'upload' | 'youtube';
+
+/** The player posture persisted per project: Playback (read-only) or Label (editing). */
+export type PlayerMode = 'playback' | 'label';
+
 /**
  * A self-contained user project as stored: the export schema's data plus its
  * audio Blob. IndexedDB is the source of truth; `project.json` is derived.
+ *
+ * `source` discriminates the two shapes: uploads carry their recording as an
+ * audio Blob, YouTube projects stream it instead and store none — `audio` is
+ * null exactly for those. `playerMode` is the last-used Playback | Label
+ * posture, persisted so reopening lands where the user left off.
  */
 export interface ProjectRecord {
   id: string;
@@ -11,11 +22,22 @@ export interface ProjectRecord {
   createdAt: number;
   /** Epoch ms. */
   updatedAt: number;
-  /** The recording, copied into IndexedDB at import. */
-  audio: Blob;
+  /** Where the recording comes from; discriminates the audio shape. */
+  source: ProjectSource;
+  /** The recording, copied into IndexedDB at import; null for YouTube projects. */
+  audio: Blob | null;
   audioMeta: AudioMeta;
   markers: Marker[];
+  /** The last-used player mode; each source's default on first open. */
+  playerMode: PlayerMode;
 }
+
+/**
+ * Records saved before these fields existed read back without them. Every
+ * pre-existing project is an upload, so readers treat a missing discriminator
+ * as `source: 'upload'` — and a missing mode as never opened, which is the
+ * "source-dependent default on first open" the player applies anyway.
+ */
 
 /** One row of the Projects screen: what story #4 asks the list to show. */
 export interface ProjectSummary {
@@ -64,6 +86,7 @@ const encoder = new TextEncoder();
  * A project's honest stored size: the audio blob's bytes plus the serialized
  * record data. An estimate, not an exact IndexedDB footprint — exact enough
  * for the storage-full message to rank projects by what freeing each saves.
+ * A YouTube project stores no recording, so its null audio counts as zero.
  */
 export function estimateStoredSize(record: ProjectRecord): number {
   const serialized = JSON.stringify({
@@ -71,5 +94,5 @@ export function estimateStoredSize(record: ProjectRecord): number {
     audioMeta: record.audioMeta,
     markers: record.markers,
   });
-  return record.audio.size + encoder.encode(serialized).byteLength;
+  return (record.audio?.size ?? 0) + encoder.encode(serialized).byteLength;
 }
