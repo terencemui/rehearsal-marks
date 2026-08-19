@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { AudioController, PeakData, RenderMode } from '../audio';
 import { createAutosave } from '../storage';
 import type { ProjectRecord, SaveStatus, Storage } from '../storage';
+import './player.css';
 
 export interface PlayerProps {
   /** The project to play — the upload pipeline's freshly created record. */
@@ -34,6 +35,31 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
   const [autosave] = useState(() =>
     createAutosave(record, { save: (next) => storage.projects.save(next) }),
   );
+  // The playback store lives behind the seam; React subscribes to it directly.
+  const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.code !== 'Space') return;
+      const target = event.target;
+      // Shortcuts are suppressed while focus is in a text input, and the play
+      // button owns Space through its native activation — handling both would
+      // toggle twice.
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'BUTTON' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      controller.togglePlay();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [controller]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -74,6 +100,13 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
     };
   }, [autosave, controller]);
 
+  // The playhead as a percentage of the known duration; pins to the edges so
+  // a trailing position can never overflow the view.
+  const playheadPercent =
+    playback.duration > 0
+      ? Math.min(100, (playback.currentTime / playback.duration) * 100)
+      : 0;
+
   return (
     <main>
       <header>
@@ -82,7 +115,36 @@ export function Player({ record, peaks, controller, storage }: PlayerProps) {
           {STATUS_TEXT[status]}
         </p>
       </header>
-      <div ref={containerRef} className="player-waveform" />
+      <div className="player-waveform-shell">
+        <div ref={containerRef} className="player-waveform" />
+        {/* pointer-events: none — clicks pass through to the seek surface. */}
+        <div
+          className="player-playhead"
+          style={{ left: `${playheadPercent}%` }}
+          aria-hidden="true"
+        />
+      </div>
+      <div className="player-transport">
+        <button
+          type="button"
+          aria-pressed={playback.playing}
+          disabled={mode === null}
+          onClick={() => controller.togglePlay()}
+        >
+          {playback.playing ? 'Pause' : 'Play'}
+        </button>
+        <label className="player-volume">
+          <span>Volume</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={playback.volume}
+            onChange={(event) => controller.setVolume(Number(event.target.value))}
+          />
+        </label>
+      </div>
       {mode === 'ruler' && (
         <p className="ruler-note">Waveform unavailable — the timeline still works.</p>
       )}

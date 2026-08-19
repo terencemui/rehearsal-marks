@@ -8,4 +8,10 @@ export type { PeakData } from './peaks';
 export { formatRulerTime, rulerTicks } from './ruler';
 export type { RulerTick } from './ruler';
 export { createAudioController } from './controller';
-export type { AudioController, LoadOptions, LoadResult, RenderMode } from './controller';
+export type {
+  AudioController,
+  LoadOptions,
+  LoadResult,
+  PlaybackState,
+  RenderMode,
+} from './controller';

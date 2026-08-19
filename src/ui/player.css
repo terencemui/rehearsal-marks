@@ -1,0 +1,29 @@
+/* Playback transport and the playhead overlay. */
+
+.player-waveform-shell {
+  position: relative;
+}
+
+/* The moving playhead: a pass-through line over the seek surface. */
+.player-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #0f766e;
+  pointer-events: none;
+}
+
+.player-transport {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.player-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
