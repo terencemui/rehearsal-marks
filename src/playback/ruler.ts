@@ -1,7 +1,7 @@
 /**
- * The ruler-only timeline's math, kept pure so the controller stays a thin
- * adapter. When a recording cannot be decoded, this is the view that remains:
- * a time axis with clickable positions.
+ * The ruler-only timeline's math, shared by every playback backend. Kept pure
+ * so each backend adapter stays a thin one: tick spacing and label format are
+ * settled here, and the renderer below only has to draw the result.
  */
 
 /** Candidate label spacings, seconds — the first that fits is used. */
