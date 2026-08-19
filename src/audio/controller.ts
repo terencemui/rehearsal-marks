@@ -61,6 +61,13 @@ export interface AudioController {
   togglePlay(): void;
   /** Moves the playhead to `time` seconds, clamped to the recording. */
   seek(time: number): void;
+  /**
+   * The live playhead, seconds — fresher than the store, which only updates
+   * on media events (timeupdate fires a few times per second). Keyboard
+   * navigation anchors here so a jump computes from the audible position,
+   * not a value up to one timeupdate interval behind it.
+   */
+  getCurrentTime(): number;
   /** Sets playback volume, clamped to 0–1. */
   setVolume(volume: number): void;
   /** The current playback state (stable reference — the store contract). */
@@ -276,6 +283,17 @@ export function createAudioController(): AudioController {
       target?.seek(clamped);
       // Publish immediately — media events may trail the seek by a frame.
       emit({ currentTime: clamped });
+    },
+
+    getCurrentTime() {
+      if (wavesurfer !== null) {
+        const time = wavesurfer.getCurrentTime();
+        if (typeof time === 'number' && Number.isFinite(time)) return time;
+      }
+      if (audio !== null && Number.isFinite(audio.currentTime)) {
+        return audio.currentTime;
+      }
+      return state.currentTime;
     },
 
     setVolume(volume: number) {
