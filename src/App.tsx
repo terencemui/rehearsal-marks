@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createAudioController, decodePeaksOrNull } from './audio';
 import type { AudioController, PeakData } from './audio';
+import { exportLabelSetJson, exportProjectZip, importLabelSet, importProjectZip, sanitizeDownloadName } from './portability';
 import { validateProjectName } from './projects/summary';
 import { createAutosave, createStorage, saveStatusFor, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
 import { createProjectFromUpload } from './upload';
+import { triggerDownload } from './ui/download';
+import { ImportPicker } from './ui/ImportPicker';
 import { Player } from './ui/Player';
 import { ProjectsScreen } from './ui/ProjectsScreen';
 import { UploadPicker } from './ui/UploadPicker';
@@ -15,6 +18,8 @@ export interface AppProps {
   controllerFactory?: () => AudioController;
   /** Test seam: an already-opened storage; the app opens its own when absent. */
   storage?: Storage;
+  /** Test seam: captures downloads instead of handing them to the browser. */
+  download?: (blob: Blob, filename: string) => void;
 }
 
 /** One open project session: the autosave, its peaks, and its controller. */
@@ -36,6 +41,7 @@ type Tab = 'projects' | 'library' | 'help';
 function App({
   controllerFactory = createAudioController,
   storage: injectedStorage,
+  download = triggerDownload,
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -46,6 +52,8 @@ function App({
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [importingZip, setImportingZip] = useState(false);
+  const [importingLabelsId, setImportingLabelsId] = useState<string | null>(null);
 
   /**
    * Serializes session creation and every workspace mutation (upload, open,
@@ -251,6 +259,126 @@ function App({
     }
   }
 
+  /** Imports a picked zip as a brand-new project — import can only create. */
+  async function handleImportZip(file: File): Promise<void> {
+    if (storage === null || workingRef.current) return;
+    workingRef.current = true;
+    setImportingZip(true);
+    setNotice(null);
+    try {
+      // Names come from a fresh list read, not the render-closure state: the
+      // workspace can be interactive before the first list resolves, and a
+      // failed list read leaves the state stale — naming against either would
+      // let an import duplicate an existing project's name.
+      const names = (await storage.projects.list()).map((p) => p.name);
+      const outcome = await importProjectZip(file, {
+        existingNames: names,
+        save: (record) => storage.projects.save(record),
+      });
+      if (!outcome.ok) {
+        setNotice(outcome.guidance);
+        return;
+      }
+      await refreshProjects(storage);
+      // The import's write succeeded — clear any stale failure text left by
+      // an earlier rename's save, exactly as renameProject's success does.
+      setStatus('saved');
+    } catch (error) {
+      setNotice(
+        error instanceof StorageError && error.code === 'storage-full'
+          ? 'Browser storage is full — free up space, then import again.'
+          : 'Something went wrong importing the project. Please try again.',
+      );
+    } finally {
+      workingRef.current = false;
+      setImportingZip(false);
+    }
+  }
+
+  /** Downloads the full project as one zip — a read-only action, no working lock. */
+  async function handleExport(id: string): Promise<void> {
+    if (storage === null) return;
+    setNotice(null);
+    try {
+      const record = await storage.projects.get(id);
+      if (record === undefined) {
+        // A stale row (another tab deleted it) — quietly re-sync the list.
+        await refreshProjects(storage);
+        return;
+      }
+      download(await exportProjectZip(record), `${sanitizeDownloadName(record.name)}.zip`);
+    } catch {
+      setNotice('Something went wrong exporting the project. Try again.');
+    }
+  }
+
+  /** Downloads the label-set-only JSON — the community contribution format. */
+  async function handleExportLabels(id: string): Promise<void> {
+    if (storage === null) return;
+    setNotice(null);
+    try {
+      const record = await storage.projects.get(id);
+      if (record === undefined) {
+        await refreshProjects(storage);
+        return;
+      }
+      download(
+        new Blob([exportLabelSetJson(record)], { type: 'application/json' }),
+        `${sanitizeDownloadName(record.name)}.labels.json`,
+      );
+    } catch {
+      setNotice('Something went wrong exporting the labels. Try again.');
+    }
+  }
+
+  /** Applies a picked label set to one project, gated on recording identity. */
+  async function handleImportLabels(id: string, file: File): Promise<void> {
+    if (storage === null || workingRef.current) return;
+    workingRef.current = true;
+    setImportingLabelsId(id);
+    setNotice(null);
+    try {
+      let record: ProjectRecord | undefined;
+      try {
+        record = await storage.projects.get(id);
+      } catch {
+        setNotice('Something went wrong reading that project. Please reload.');
+        return;
+      }
+      if (record === undefined) {
+        await refreshProjects(storage);
+        return;
+      }
+      const outcome = importLabelSet(await file.text(), record.audioMeta.sha256);
+      if (!outcome.ok) {
+        setNotice(outcome.guidance);
+        return;
+      }
+      setStatus('saving');
+      try {
+        await storage.projects.save({ ...record, markers: outcome.markers, updatedAt: Date.now() });
+        setStatus('saved');
+      } catch (error) {
+        setStatus(saveStatusFor(error));
+      }
+      await refreshProjects(storage);
+    } catch {
+      // Everything user-caused is an outcome and every storage write has its
+      // own branch; what lands here is the file read itself — still the user's
+      // failure to see, never a silent unhandled rejection.
+      setNotice('Something went wrong importing the label set. Please try again.');
+    } finally {
+      workingRef.current = false;
+      setImportingLabelsId(null);
+    }
+  }
+
+  // Every workspace pipeline holds the working lock while it runs; each picker
+  // must be disabled across all of them, or a pick made mid-flight is silently
+  // dropped by the lock guard.
+  const workspaceBusy =
+    uploading || openingId !== null || importingZip || importingLabelsId !== null;
+
   if (session !== null) {
     return (
       // Keyed by project: a fresh recording must start a fresh player — the
@@ -283,19 +411,21 @@ function App({
       </div>
       {tab === 'projects' && storage !== null && (
         <>
-          <UploadPicker
-            onFile={handleFile}
-            error={uploadError}
-            busy={uploading || openingId !== null}
-          />
+          <UploadPicker onFile={handleFile} error={uploadError} busy={workspaceBusy} />
+          <ImportPicker onFile={handleImportZip} busy={workspaceBusy} />
           <ProjectsScreen
             projects={projects}
             status={status}
             openingId={openingId}
             notice={notice}
+            busy={workspaceBusy}
             onOpen={(id) => void openProject(id)}
             onRename={(id, name) => void renameProject(id, name)}
             onDelete={(id) => void deleteProject(id)}
+            onExport={(id) => void handleExport(id)}
+            onExportLabels={(id) => void handleExportLabels(id)}
+            onImportLabels={(id, file) => void handleImportLabels(id, file)}
+            importingLabelsId={importingLabelsId}
             onBrowseLibrary={() => setTab('library')}
           />
         </>

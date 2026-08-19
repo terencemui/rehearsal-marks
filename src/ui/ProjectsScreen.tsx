@@ -17,33 +17,53 @@ export interface ProjectsScreenProps {
   status: SaveStatus;
   /** The row being opened, if any — rows are inert while one loads. */
   openingId?: string | null;
+  /** True while any workspace pipeline (upload, zip import, label import) runs — row imports are inert then. */
+  busy?: boolean;
   /** A transient failure the user must see (e.g. a project that won't open). */
   notice?: string | null;
   onOpen: (id: string) => void;
   /** Commits a validated, trimmed name; the caller persists and refreshes. */
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  /** Downloads the full project zip; the caller owns the record and the blob. */
+  onExport: (id: string) => void;
+  /** Downloads the label-set-only JSON for community contribution. */
+  onExportLabels: (id: string) => void;
+  /** Applies a picked label-set file to the project, pending identity check. */
+  onImportLabels: (id: string, file: File) => void;
+  /** The row whose label-set import is running, if any. */
+  importingLabelsId?: string | null;
   onBrowseLibrary: () => void;
 }
 
 /**
  * The Projects workspace: the list every project lives in, with inline
- * rename, a two-step delete, the save-state line, storage usage, and the
- * first-run empty state. All persistence happens in the caller — this screen
- * only owns the edit interactions (which row is renaming or confirming).
+ * rename, a two-step delete, the save-state line, storage usage, export and
+ * import, and the first-run empty state. All persistence happens in the
+ * caller — this screen only owns the edit interactions (which row is
+ * renaming, confirming, or picking a file).
  */
 export function ProjectsScreen({
   projects,
   status,
   openingId = null,
+  busy = false,
   notice = null,
   onOpen,
   onRename,
   onDelete,
+  onExport,
+  onExportLabels,
+  onImportLabels,
+  importingLabelsId = null,
   onBrowseLibrary,
 }: ProjectsScreenProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmingLabelsId, setConfirmingLabelsId] = useState<string | null>(null);
+  /** Which project the next picked label-set file belongs to. */
+  const [labelImportForId, setLabelImportForId] = useState<string | null>(null);
+  const labelInputRef = useRef<HTMLInputElement>(null);
   /**
    * Terminal state for the edit in flight. Real browsers fire blur when a
    * focused input unmounts, so Enter's commit and Escape's cancel must both
@@ -54,6 +74,7 @@ export function ProjectsScreen({
   function beginRename(id: string): void {
     renameEditRef.current = { committed: false, cancelled: false };
     setConfirmingId(null);
+    setConfirmingLabelsId(null);
     setEditingId(id);
   }
 
@@ -76,6 +97,20 @@ export function ProjectsScreen({
 
   return (
     <section aria-label="Projects">
+      <input
+        ref={labelInputRef}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          // Reset so picking the same file again re-fires change.
+          event.target.value = '';
+          const id = labelImportForId;
+          setLabelImportForId(null);
+          if (file && id !== null) onImportLabels(id, file);
+        }}
+      />
       <p role="status" data-save-status={status} className="projects-status">
         {STATUS_TEXT[status]}
       </p>
@@ -161,9 +196,58 @@ export function ProjectsScreen({
                     onClick={() => {
                       setEditingId(null);
                       setConfirmingId(project.id);
+                      setConfirmingLabelsId(null);
                     }}
                   >
                     Delete
+                  </button>
+                )}
+                <button type="button" onClick={() => onExport(project.id)}>
+                  Export
+                </button>
+                <button type="button" onClick={() => onExportLabels(project.id)}>
+                  Export labels
+                </button>
+                {confirmingLabelsId === project.id ? (
+                  <span className="projects-confirm">
+                    <span>
+                      Replace this project’s {project.markerCount} marker
+                      {project.markerCount === 1 ? '' : 's'} with the label set?
+                    </span>
+                    <button type="button" onClick={() => setConfirmingLabelsId(null)}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="projects-confirm-delete"
+                      onClick={() => {
+                        setConfirmingLabelsId(null);
+                        setLabelImportForId(project.id);
+                        labelInputRef.current?.click();
+                      }}
+                    >
+                      Replace
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={importingLabelsId !== null || busy}
+                    onClick={() => {
+                      setEditingId(null);
+                      setConfirmingId(null);
+                      setConfirmingLabelsId(null);
+                      if (project.markerCount > 0) {
+                        // Applying a label set replaces the project's markers —
+                        // the confirmation is the moment the user owns that.
+                        setConfirmingLabelsId(project.id);
+                      } else {
+                        setLabelImportForId(project.id);
+                        labelInputRef.current?.click();
+                      }
+                    }}
+                  >
+                    Import labels
                   </button>
                 )}
               </li>

@@ -1,4 +1,4 @@
-import { useId, useRef } from 'react';
+import { FilePicker } from './FilePicker';
 
 export interface UploadPickerProps {
   /** Called with the picked file; the caller runs the upload pipeline. */
@@ -16,33 +16,15 @@ export interface UploadPickerProps {
  * caught by the pipeline too.
  */
 export function UploadPicker({ onFile, error, busy = false }: UploadPickerProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = useId();
-
   return (
     <section aria-label="Create project">
-      <input
-        ref={inputRef}
-        id={inputId}
-        type="file"
+      <FilePicker
         accept=".mp3,.m4a,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a"
-        hidden
-        disabled={busy}
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          // Reset so picking the same file again re-fires change.
-          event.target.value = '';
-          if (file) onFile(file);
-        }}
+        label="Create project"
+        onFile={onFile}
+        busy={busy}
+        error={error}
       />
-      <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>
-        {busy ? 'Importing…' : 'Create project'}
-      </button>
-      {error !== null && (
-        <p role="alert" className="upload-error">
-          {error}
-        </p>
-      )}
     </section>
   );
 }
