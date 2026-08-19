@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [react()],
   test: {
+    // Globals let @testing-library/react auto-cleanup the DOM between tests.
+    globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
   },

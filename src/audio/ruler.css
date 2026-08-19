@@ -1,0 +1,26 @@
+/* Ruler-only timeline — the degraded view when the waveform cannot decode. */
+
+.rm-ruler {
+  position: relative;
+  height: 96px;
+  border-bottom: 2px solid #0f766e;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rm-ruler-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 10px;
+  background: #64748b;
+}
+
+.rm-ruler-tick-label {
+  position: absolute;
+  bottom: 14px;
+  left: 4px;
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+}
