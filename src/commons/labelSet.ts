@@ -19,6 +19,7 @@ import {
   isVideoId,
   parseMarkers,
   parseYouTubeLink,
+  youtubeAudioMeta,
 } from '../domain';
 import type { Marker, ProjectFileData } from '../domain';
 
@@ -98,20 +99,22 @@ export function parseLabelSetRow(value: unknown): LabelSetRow {
  * is a sha256, which the Commons does not yet hold.
  */
 export function labelSetValuesFromProjectFile(data: ProjectFileData): LabelSetValues {
+  // The file's own discriminator decides; only a YouTube file publishes.
+  if (data.project.source !== 'youtube') {
+    throw new CommonsError(
+      'This label set is for an uploaded recording, and the Commons holds YouTube label sets only.',
+      'not-youtube-label-set',
+    );
+  }
+
   let link;
   try {
     link = parseYouTubeLink(data.audioMeta.source);
   } catch (error) {
     if (!(error instanceof DomainError)) throw error;
-    // An empty source is the upload shape: sha256 identity, not a link at
-    // all. Anything else gets the domain's own guidance, so a playlist
-    // source names its actual problem.
-    throw data.audioMeta.source === ''
-      ? new CommonsError(
-          'This label set is for an uploaded recording, and the Commons holds YouTube label sets only.',
-          'not-youtube-label-set',
-        )
-      : new CommonsError(error.message, 'not-youtube-label-set');
+    // The domain's own guidance, so a playlist source names its actual
+    // problem instead of being told it is not YouTube.
+    throw new CommonsError(error.message, 'not-youtube-label-set');
   }
 
   if (data.project.name.trim() === '') {
@@ -155,9 +158,13 @@ export function projectFileFromLabelSetRow(row: LabelSetRow): ProjectFileData {
       name: row.title,
       createdAt: epochMs(row.created_at),
       updatedAt: epochMs(row.updated_at),
+      source: 'youtube',
     },
     markers: row.markers,
-    audioMeta: {
+    // The same youtubeAudioMeta the export path passes through, so the row
+    // direction and the export direction can never drift apart on which
+    // fields describe stored bytes and which carry identity.
+    audioMeta: youtubeAudioMeta({
       sha256: '',
       duration: row.duration,
       mimeType: '',
@@ -166,7 +173,7 @@ export function projectFileFromLabelSetRow(row: LabelSetRow): ProjectFileData {
       source: canonicalYouTubeUrl(row.video_id),
       license: '',
       attribution: '',
-    },
+    }),
   };
 }
 

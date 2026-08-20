@@ -1,11 +1,12 @@
-import { serializeProjectFile } from '../domain';
+import { serializeProjectFile, youtubeAudioMeta } from '../domain';
 import type { ProjectFileData } from '../domain';
 import type { ProjectRecord } from '../storage';
 import { buildProjectZip } from './zip';
 
 /**
- * The outbound side of portability: full-project zips and label-set-only
- * JSON, both derived from the same stored record and the same serialization.
+ * The outbound side of portability: full-project zips for uploads, bare
+ * project JSON for YouTube (no audio to bundle), and label-set-only JSON —
+ * all derived from the same stored record and the same serialization.
  */
 
 /** The record's data fields, as the project-file format wants them. */
@@ -16,9 +17,13 @@ function fileData(record: ProjectRecord): ProjectFileData {
       name: record.name,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      source: record.source,
     },
     markers: record.markers,
-    audioMeta: record.audioMeta,
+    // A YouTube file carries the recording identity that applies — the
+    // canonical URL, the known duration, and the title — and leaves empty
+    // everything that describes stored bytes, whatever the record carries.
+    audioMeta: record.source === 'youtube' ? youtubeAudioMeta(record.audioMeta) : record.audioMeta,
   };
 }
 
@@ -37,9 +42,23 @@ export async function exportProjectZip(record: ProjectRecord): Promise<Blob> {
  * The label-set-only export — the community contribution format. Bare
  * `project.json` carrying recording identity, so a reviewer can audit the
  * set and the app can verify it against the right recording on import.
+ * For a YouTube record this same file doubles as the full project export.
  */
 export function exportLabelSetJson(record: ProjectRecord): string {
   return serializeProjectFile(fileData(record));
+}
+
+/**
+ * The YouTube full-project export: the same bare project JSON as the label
+ * set — there is no audio to bundle, so no zip, and the file doubles as the
+ * community contribution format. The guard keeps a missed source check loud:
+ * an uploaded record's audio would otherwise be silently dropped.
+ */
+export function exportProjectJson(record: ProjectRecord): string {
+  if (record.source !== 'youtube') {
+    throw new Error('An uploaded project has audio to bundle — its export is the zip, not bare JSON.');
+  }
+  return exportLabelSetJson(record);
 }
 
 /** Windows routes these exact basenames (case-insensitive, before the first dot) to devices, not files. */

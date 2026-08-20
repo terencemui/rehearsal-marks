@@ -22,6 +22,7 @@ function youtubeFileData(): ProjectFileData {
       name: 'Brahms Symphony No. 4, mov. I',
       createdAt: CREATED_MS,
       updatedAt: UPDATED_MS,
+      source: 'youtube',
     },
     markers: [marker('m1', 10, ['Recap']), marker('m2', 20)],
     audioMeta: {
@@ -161,7 +162,7 @@ describe('labelSetValuesFromProjectFile', () => {
 
   it('rejects an uploaded recording with its own guidance', () => {
     const upload = youtubeFileData();
-    upload.audioMeta.source = '';
+    upload.project.source = 'upload';
 
     expect(() => labelSetValuesFromProjectFile(upload)).toThrowError(
       /for an uploaded recording, and the Commons holds YouTube label sets only/,

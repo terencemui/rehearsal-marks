@@ -1,9 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { parseProjectFile } from '../domain';
-import { projectRecord } from '../test/project-fixture';
+import type { AudioMeta } from '../domain';
+import { projectRecord, youtubeProjectRecord } from '../test/project-fixture';
 import type { ProjectRecord } from '../storage';
-import { exportLabelSetJson, exportProjectZip, sanitizeDownloadName } from './export';
+import { exportLabelSetJson, exportProjectJson, exportProjectZip, sanitizeDownloadName } from './export';
 import { readZipEntries } from './zip';
+
+const CANONICAL_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
+/** A YouTube project exactly as the creation pipeline stores one. */
+function youtubeRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
+  return youtubeProjectRecord({
+    audioMeta: {
+      sha256: '',
+      duration: 542.25,
+      mimeType: '',
+      filename: 'Brahms Intermezzo',
+      sizeBytes: 0,
+      source: CANONICAL_URL,
+      license: '',
+      attribution: '',
+    },
+    ...overrides,
+  });
+}
 
 describe('exportProjectZip', () => {
   it('zips project.json and the audio, and the data parses back identically', async () => {
@@ -20,6 +40,7 @@ describe('exportProjectZip', () => {
       name: record.name,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      source: 'upload',
     });
     expect(parsed.markers).toEqual(record.markers);
     expect(parsed.audioMeta).toEqual(record.audioMeta);
@@ -47,6 +68,7 @@ describe('exportLabelSetJson', () => {
     // sha256, duration, source, license, attribution — the label-set-only
     // export is the community contribution format, so identity is mandatory.
     expect(parsed.audioMeta).toEqual(record.audioMeta);
+    // The raw file omits the discriminator for uploads — absent means upload.
     expect(parsed.project).toEqual({
       id: record.id,
       name: record.name,
@@ -54,6 +76,64 @@ describe('exportLabelSetJson', () => {
       updatedAt: record.updatedAt,
     });
     expect(parsed.markers).toHaveLength(2);
+  });
+});
+
+describe('exportProjectJson', () => {
+  it('serializes a YouTube project as bare JSON with its source, canonical URL, duration, and markers', () => {
+    const record = youtubeRecord();
+
+    const parsed = JSON.parse(exportProjectJson(record)) as Record<string, unknown>;
+
+    expect(parsed.project).toEqual({
+      id: record.id,
+      name: record.name,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      source: 'youtube',
+    });
+    expect(parsed.audioMeta).toEqual(record.audioMeta);
+    expect(parsed.markers).toHaveLength(2);
+  });
+
+  it('empties the identity fields a YouTube project does not apply, whatever the record carries', () => {
+    const record = youtubeRecord({
+      audioMeta: {
+        ...youtubeRecord().audioMeta,
+        sha256: 's'.repeat(64),
+        mimeType: 'audio/mpeg',
+        sizeBytes: 9_999,
+        license: 'CC0',
+        attribution: 'Someone',
+      },
+    });
+
+    const parsed = JSON.parse(exportProjectJson(record)) as { audioMeta: AudioMeta };
+
+    // There is no audio to hash or describe — the file carries only what
+    // applies: the canonical URL, the known duration, and the title.
+    expect(parsed.audioMeta).toEqual({
+      sha256: '',
+      duration: 542.25,
+      mimeType: '',
+      filename: 'Brahms Intermezzo',
+      sizeBytes: 0,
+      source: CANONICAL_URL,
+      license: '',
+      attribution: '',
+    });
+  });
+
+  it('is the same file as the label-set export — it doubles as the community contribution format', () => {
+    const record = youtubeRecord();
+
+    expect(exportProjectJson(record)).toBe(exportLabelSetJson(record));
+  });
+
+  it('throws for an uploaded record — that export is a zip, and bare JSON would silently drop the audio', () => {
+    expect(() => exportProjectJson(projectRecord())).toThrow(
+      'An uploaded project has audio to bundle — its export is the zip, not bare JSON.',
+    );
   });
 });
 
