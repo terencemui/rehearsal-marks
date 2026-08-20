@@ -125,19 +125,21 @@ export async function importProjectZip(
  * YouTube becomes a brand-new YouTube project pointing at its canonical URL:
  * a fresh id and timestamps — import can create, never overwrite — and no
  * sha256 gate, since there is no audio to verify; the file's media claims
- * are ignored rather than validated. An upload-shaped file has no audio
+ * are dropped rather than validated. An upload-shaped file has no audio
  * alongside it and cannot become a project; those files are label sets,
  * applied through importLabelSet.
  */
 export async function importProjectJson(
-  jsonText: string,
+  file: Blob,
   { existingNames, save, now = Date.now }: ProjectImportDependencies,
 ): Promise<ProjectImportOutcome> {
   // parseProjectFile enforces the version policy and every domain invariant,
-  // including that a YouTube-marked file carries its canonical URL.
+  // including that a YouTube-marked file carries its canonical URL — any
+  // accepted link form is normalized to the canonical form there, so the
+  // stored recording identity is exactly one form.
   let data: ProjectFileData;
   try {
-    data = parseProjectFile(jsonText);
+    data = parseProjectFile(await file.text());
   } catch (error) {
     return { ok: false, guidance: errorMessage(error) };
   }
@@ -146,7 +148,8 @@ export async function importProjectJson(
     return {
       ok: false,
       guidance:
-        'This file has no audio to import as a project — apply it as a label set to the recording it was made for instead.',
+        'This JSON is a label set for an uploaded recording, not a project file. Use ' +
+        '“Import labels” on that project’s row instead.',
     };
   }
 
@@ -201,8 +204,8 @@ export function importLabelSet(jsonText: string, recordingSha256: string): Label
     return {
       ok: false,
       guidance:
-        'This label set was made for a YouTube video — label sets apply only to uploaded ' +
-        'recordings, so it can’t be applied to a project.',
+        'This file is a YouTube project, not a label set for this recording. Import it with ' +
+        '“Import project” instead — it becomes a fresh project pointing at its video.',
     };
   }
   if (recordingSha256 === '') {

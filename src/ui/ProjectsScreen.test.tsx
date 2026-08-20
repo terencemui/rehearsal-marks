@@ -13,7 +13,8 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     markerCount: 2,
     sizeBytes: 285,
     updatedAt: 1_700_000_000_000,
-    source: '',
+    source: 'upload',
+    audioUrl: '',
     sha256: 'abc123',
     ...overrides,
   };
@@ -46,6 +47,30 @@ describe('ProjectsScreen list', () => {
     expect(within(row).getByText(/2:03\.456 · 2 markers · 285 B · 2023-11-14/)).toBeInTheDocument();
     expect(screen.getByText(/Total used: 285 B/)).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
+  });
+
+  it('marks a YouTube project with a badge; an upload gets none', () => {
+    const { rerender } = renderScreen({
+      projects: [summary({ source: 'youtube', sizeBytes: 156 })],
+    });
+    expect(screen.getByText('YouTube')).toBeInTheDocument();
+    // The honest size: only the serialized data, since no audio is stored.
+    expect(screen.getByText(/· 156 B ·/)).toBeInTheDocument();
+
+    rerender(
+      <ProjectsScreen
+        projects={[summary()]}
+        status="idle"
+        onOpen={vi.fn()}
+        onRename={vi.fn()}
+        onDelete={vi.fn()}
+        onExport={vi.fn()}
+        onExportLabels={vi.fn()}
+        onImportLabels={vi.fn()}
+        onBrowseLibrary={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('YouTube')).not.toBeInTheDocument();
   });
 
   it('uses singular "marker" for one marker', () => {

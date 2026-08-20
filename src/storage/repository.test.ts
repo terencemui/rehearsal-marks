@@ -107,7 +107,8 @@ describe('project repository', () => {
       markerCount: 2,
       sizeBytes: FIXTURE_STORED_SIZE,
       updatedAt: 2_000,
-      source: '',
+      source: 'upload',
+      audioUrl: '',
       sha256: 'abc123',
     });
     expect(summaries[1].sizeBytes).toBe(FIXTURE_STORED_SIZE);

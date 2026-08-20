@@ -162,3 +162,28 @@ the zoomed content (inline width), so `left: time/duration` flags land at
   margin: 0;
   font-size: 14px;
 }
+
+/* The YouTube failure card: the honest state when the video cannot play.
+Browsable-but-muted — the URL stays reachable ("Open on YouTube"), the marks
+stay visible on the stored-duration timeline, and Retry re-runs the load. */
+.player-youtube-error {
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #7f1d1d;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.player-youtube-error p {
+  margin: 0;
+}
+
+.player-youtube-error a {
+  color: #7f1d1d;
+  word-break: break-all;
+}

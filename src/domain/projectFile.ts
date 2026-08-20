@@ -7,8 +7,8 @@ import { parseYouTubeLink } from './youtube';
 /** The only schema version this app reads and writes. */
 export const SCHEMA_VERSION = 1;
 
-/** Where a project file's recording comes from; absent in a file means upload. */
-export type ProjectFileSource = 'upload' | 'youtube';
+/** Where a project's recording comes from; absent in a file means upload. */
+export type ProjectSource = 'upload' | 'youtube';
 
 /** The `project` section of a project file. */
 export interface ProjectInfo {
@@ -23,7 +23,7 @@ export interface ProjectInfo {
    * from before the field existed read exactly as they always did — and
    * normalized by parsing, so consumers never see a missing discriminator.
    */
-  source: ProjectFileSource;
+  source: ProjectSource;
 }
 
 /**
@@ -235,7 +235,7 @@ function readProject(value: unknown): ProjectInfo {
 }
 
 /** The optional on-disk discriminator, defaulted to upload when absent. */
-function readSource(value: unknown): ProjectFileSource {
+function readSource(value: unknown): ProjectSource {
   if (value === undefined) return 'upload';
   if (value === 'upload' || value === 'youtube') return value;
   throw invalidFile('"project.source" must be "upload" or "youtube" when present.');

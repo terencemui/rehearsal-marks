@@ -40,6 +40,15 @@ describe('HelpTab', () => {
     expect(storage).toHaveTextContent(/export/i);
   });
 
+  it('keeps the privacy promise honest about YouTube streaming', () => {
+    render(<HelpTab />);
+
+    const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
+    // Playback streams from Google; the marks still never leave the browser.
+    expect(storage).toHaveTextContent(/streams from Google/i);
+    expect(storage).toHaveTextContent(/Google never sees them/i);
+  });
+
   it('warns about eviction and how to mitigate it', () => {
     render(<HelpTab />);
 
@@ -60,6 +69,7 @@ describe('HelpTab', () => {
     expect(steps.map((step) => step.textContent).join('\n')).toMatch(/pull request/i);
     expect(steps.map((step) => step.textContent).join('\n')).toMatch(/one/i);
   });
+
 });
 
 /** The `<li>` elements of the first ordered list inside a container. */

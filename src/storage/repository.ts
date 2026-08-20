@@ -74,7 +74,10 @@ function summarizeProject(record: ProjectRecord): ProjectSummary {
     markerCount: record.markers.length,
     sizeBytes: estimateStoredSize(record),
     updatedAt: record.updatedAt,
-    source: record.audioMeta.source,
+    // A record saved before the discriminator existed reads back without it;
+    // every such record is an upload, so the summary's type stays honest.
+    source: record.source ?? 'upload',
+    audioUrl: record.audioMeta.source,
     sha256: record.audioMeta.sha256,
   };
 }

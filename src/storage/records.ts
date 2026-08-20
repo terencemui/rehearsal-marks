@@ -1,7 +1,6 @@
-import type { AudioMeta, Marker, ProjectFileData } from '../domain';
+import type { AudioMeta, Marker, ProjectFileData, ProjectSource } from '../domain';
 
-/** A project's recording origin — uploaded file or YouTube video. */
-export type ProjectSource = 'upload' | 'youtube';
+export type { ProjectSource };
 
 /** The player posture persisted per project: Playback (read-only) or Label (editing). */
 export type PlayerMode = 'playback' | 'label';
@@ -75,8 +74,10 @@ export interface ProjectSummary {
   sizeBytes: number;
   /** Epoch ms. */
   updatedAt: number;
+  /** Where the recording comes from — drives the row's YouTube badge. */
+  source: ProjectSource;
   /** The recording's origin — a library audio URL, or empty for uploads. */
-  source: string;
+  audioUrl: string;
   /**
    * The recording's sha256 — the stable identity the "Loaded" join matches
    * on, so a catalog redeploy that moves the audio URL still finds the

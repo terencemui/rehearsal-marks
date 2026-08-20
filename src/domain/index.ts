@@ -19,5 +19,5 @@ export { formatTime, parseTime } from './time';
 export { canonicalYouTubeUrl, isVideoId, parseYouTubeLink } from './youtube';
 export type { YouTubeLink } from './youtube';
 export { SCHEMA_VERSION, parseMarkers, parseProjectFile, serializeProjectFile, youtubeAudioMeta } from './projectFile';
-export type { AudioMeta, ProjectFileData, ProjectFileSource, ProjectInfo } from './projectFile';
+export type { AudioMeta, ProjectFileData, ProjectInfo, ProjectSource } from './projectFile';
 export type { LabeledMarker, Marker } from './marker';

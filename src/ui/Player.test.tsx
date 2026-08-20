@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LoadResult } from '../audio';
@@ -1520,7 +1520,7 @@ describe('Player — YouTube projects', () => {
     storage.close();
   });
 
-  it('does not claim playback when the video cannot play', async () => {
+  it('shows the browsable-but-muted error card when the video cannot play', async () => {
     const storage = await testStorage();
     // The audio layer's failure channel: the embed reported it cannot play
     // (private, removed, region-blocked, embed-disabled, or no API script).
@@ -1532,18 +1532,120 @@ describe('Player — YouTube projects', () => {
       })),
     });
     const record = youtubeProjectRecord({
+      playerMode: 'label',
       audioMeta: { ...projectRecord().audioMeta, duration: 0, source: CANONICAL },
     });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
     render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
 
-    const note = await screen.findByText(/couldn’t be played/i);
+    // The card names the problem, the video, and the way out — the URL and an
+    // "Open on YouTube" link, so a deleted video is explained, not silent.
+    const card = await screen.findByRole('alert');
+    expect(card).toHaveTextContent(/couldn’t be played/i);
+    const link = within(card).getByRole('link', { name: CANONICAL });
+    expect(link).toHaveAttribute('href', CANONICAL);
     // The precision note would be a lie here — nothing is playing at all.
     expect(screen.queryByText(/Playing from YouTube/)).not.toBeInTheDocument();
-    expect(note).toHaveTextContent(/marks are still here/i);
     // And the transport must not promise what no click can deliver.
     expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
+    // The marking tools are muted too — a mark from a dead clock is noise.
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeDisabled();
+    storage.close();
+  });
+
+  it('retries the load from the error card and clears it on success', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    const load = vi
+      .fn<() => Promise<LoadResult>>()
+      .mockResolvedValueOnce({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(150) })
+      .mockResolvedValueOnce({ mode: 'ruler', duration: 604.2 });
+    const controller = mockController({ load });
+    const record = youtubeProjectRecord({
+      audioMeta: { ...projectRecord().audioMeta, duration: 604.2, source: CANONICAL },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
+    await screen.findByRole('alert');
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    // The retry re-runs the load; a temporary outage recovers without
+    // recreating the project.
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled();
+    storage.close();
+  });
+
+  it('cannot add marks while the video cannot play — not by button, not by M', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({
+        mode: 'ruler' as const,
+        duration: 604.2,
+        error: new YouTubePlaybackError(150),
+      })),
+    });
+    const record = youtubeProjectRecord({
+      playerMode: 'label',
+      audioMeta: { ...projectRecord().audioMeta, duration: 604.2, source: CANONICAL },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
+    await screen.findByRole('alert');
+
+    await user.keyboard('m');
+
+    // M fell through to the letter jump (no marker named M) — the record's
+    // two fixture marks are untouched, nothing was added.
+    expect(autosave.get().markers).toHaveLength(2);
+    storage.close();
+  });
+
+  it('tells an empty Label-mode YouTube project that no community labels loaded', async () => {
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+    });
+    const record = youtubeProjectRecord({
+      playerMode: 'label',
+      markers: [],
+      audioMeta: { ...projectRecord().audioMeta, duration: 604.2, source: CANONICAL },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
+
+    // An empty Label mode is never a mystery: the missing labels are named —
+    // in the same note that carries the precision caveat, never a second
+    // stacked paragraph.
+    const note = await screen.findByText(/no community labels loaded/i);
+    expect(note).toHaveTextContent(/quarter second/i);
+    storage.close();
+  });
+
+  it('keeps the no-labels note to the empty Label-mode case', async () => {
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+    });
+    // Marks in hand: Playback mode, nothing to explain.
+    const record = youtubeProjectRecord({
+      playerMode: 'playback',
+      audioMeta: { ...projectRecord().audioMeta, duration: 604.2, source: CANONICAL },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
+
+    await screen.findByText(/Playing from YouTube/);
+    expect(screen.queryByText(/no community labels/i)).not.toBeInTheDocument();
     storage.close();
   });
 

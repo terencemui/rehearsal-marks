@@ -62,7 +62,11 @@ function youtubeProjectFile(overrides: Record<string, unknown> = {}): string {
 /** Imports a bare JSON file with the given workspace names and a captured save. */
 async function importJson(text: string, existingNames: string[] = []) {
   const save = vi.fn(async () => {});
-  const outcome = await importProjectJson(text, { existingNames, save, now: () => 42_000 });
+  const outcome = await importProjectJson(new Blob([text], { type: 'application/json' }), {
+    existingNames,
+    save,
+    now: () => 42_000,
+  });
   return { outcome, save };
 }
 
@@ -317,7 +321,8 @@ describe('importProjectJson', () => {
     expect(outcome).toEqual({
       ok: false,
       guidance:
-        'This file has no audio to import as a project — apply it as a label set to the recording it was made for instead.',
+        'This JSON is a label set for an uploaded recording, not a project file. Use ' +
+        '“Import labels” on that project’s row instead.',
     });
     expect(save).not.toHaveBeenCalled();
   });
@@ -325,6 +330,24 @@ describe('importProjectJson', () => {
   it('treats a file with no discriminator as upload-shaped', async () => {
     const file = JSON.parse(youtubeProjectFile()) as { project: Record<string, unknown> };
     delete file.project.source;
+
+    const { outcome, save } = await importJson(JSON.stringify(file));
+
+    expect(outcome.ok).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('imports a YouTube file with no marks in Label mode (the otherwise case)', async () => {
+    const { outcome } = await importJson(youtubeProjectFile({ markers: [] }));
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.playerMode).toBe('label');
+  });
+
+  it('rejects a file whose URL is not a YouTube link, even when marked youtube', async () => {
+    const file = JSON.parse(youtubeProjectFile()) as { audioMeta: Record<string, unknown> };
+    file.audioMeta.source = 'https://example.com/not-youtube';
 
     const { outcome, save } = await importJson(JSON.stringify(file));
 
@@ -342,7 +365,7 @@ describe('importProjectJson', () => {
 
   it('propagates a failed save to the caller', async () => {
     await expect(
-      importProjectJson(youtubeProjectFile(), {
+      importProjectJson(new Blob([youtubeProjectFile()], { type: 'application/json' }), {
         existingNames: [],
         save: async () => {
           throw new Error('quota exceeded');
@@ -368,8 +391,8 @@ describe('importLabelSet', () => {
     expect(outcome).toEqual({
       ok: false,
       guidance:
-        'This label set was made for a YouTube video — label sets apply only to uploaded ' +
-        'recordings, so it can’t be applied to a project.',
+        'This file is a YouTube project, not a label set for this recording. Import it with ' +
+        '“Import project” instead — it becomes a fresh project pointing at its video.',
     });
   });
 

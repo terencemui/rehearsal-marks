@@ -13,6 +13,7 @@ import { mockController } from './test/controller-fixture';
 import { uploadLoad, youtubeLoad } from './test/load-fixture';
 import { projectRecord, uploadAudio, youtubeProjectRecord } from './test/project-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
+import type { CommunityLabelSet } from './youtube/community';
 import App from './App';
 
 /** Renders the app on a fresh fake-indexeddb database with a mocked seam. */
@@ -21,6 +22,7 @@ async function renderApp(
   storage?: Storage,
   download?: (blob: Blob, filename: string) => void,
   fetchTitle: (canonicalUrl: string) => Promise<string | null> = async () => VIDEO_TITLE,
+  loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null> = async () => null,
 ) {
   const opened = storage ?? (await testStorage());
   const view = render(
@@ -28,8 +30,10 @@ async function renderApp(
       controllerFactory={() => controller}
       storage={opened}
       download={download}
-      // Stubbed by default so no test reaches YouTube's oEmbed endpoint.
+      // Stubbed by default so no test reaches YouTube's oEmbed endpoint or
+      // the community index.
       fetchTitle={fetchTitle}
+      loadCommunityLabels={loadCommunityLabels}
     />,
   );
   return { ...view, storage: opened, controller };
@@ -257,6 +261,44 @@ describe('App create from a YouTube link', () => {
     expect((await storage.projects.get(summary.id))!.playerMode).toBe('label');
   });
 
+  it('copies a loaded community label set in and opens in Playback mode', async () => {
+    // The labeled-performance story: a video someone already marked loads its
+    // label set at creation, so the project is immediately practiceable — the
+    // marks render, the posture is Playback, and no editing tools show.
+    const user = userEvent.setup();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+    });
+    const community: CommunityLabelSet = {
+      markers: [{ id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 }],
+      duration: 604.2,
+    };
+    const { storage } = await renderApp(
+      controller,
+      undefined,
+      undefined,
+      async () => VIDEO_TITLE,
+      async () => community,
+    );
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+    // The copied marks render as flags — the first label in time order.
+    expect(await screen.findByRole('button', { name: 'A' })).toBeInTheDocument();
+
+    const [summary] = await storage.projects.list();
+    const stored = (await storage.projects.get(summary.id))!;
+    expect(stored.markers).toEqual(community.markers);
+    expect(stored.playerMode).toBe('playback');
+    expect(stored.audioMeta.duration).toBe(604.2);
+  });
+
   it('lands in the same player session an upload does', async () => {
     const user = userEvent.setup();
     const controller = mockController({
@@ -287,7 +329,7 @@ describe('App create from a YouTube link', () => {
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     const [stored] = await storage.projects.list();
-    expect(stored.source).toBe(YOUTUBE_CANONICAL);
+    expect(stored.audioUrl).toBe(YOUTUBE_CANONICAL);
     expect(stored.sizeBytes).toBeLessThan(1000); // no audio bytes stored
   });
 
@@ -722,7 +764,7 @@ describe('App Library tab', () => {
     });
     const seeded = await storage.projects.list();
     expect(seeded).toHaveLength(1);
-    expect(seeded[0].source).toBe(LIBRARY_AUDIO_URL);
+    expect(seeded[0].audioUrl).toBe(LIBRARY_AUDIO_URL);
     const record = await storage.projects.get(seeded[0].id);
     expect(record!.markers.map((m) => m.id)).toEqual(['m1', 'm2']);
 
@@ -1102,19 +1144,21 @@ describe('App export and import', () => {
     expect((await storage.projects.get('project-1'))!.markers).toEqual(brahms.markers);
   });
 
-  it('explains when the imported file is not a project zip at all', async () => {
+  it('explains when the imported file is not a project file at all', async () => {
     const user = userEvent.setup();
     const { container } = await renderApp();
 
+    // Not a zip (no PK magic) and not JSON — the content, not the name,
+    // decides the pipeline, and the JSON parser explains itself.
     await user.upload(
       fileInputs(container)[1],
       new File(['not a zip'], 'fake.zip', { type: 'application/zip' }),
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('isn’t a valid project zip');
+    expect(await screen.findByRole('alert')).toHaveTextContent('not valid JSON');
   });
 
-  it('says why a YouTube project has no zip, and points at the export that works', async () => {
+  it('exports a YouTube project as a bare project JSON carrying the video identity', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(
@@ -1129,17 +1173,55 @@ describe('App export and import', () => {
 
     await user.click(within(row).getByRole('button', { name: 'Export' }));
 
-    // Not a generic "something went wrong": there is no audio to bundle by
-    // design, and the label-set export is the one that carries these marks.
-    expect(await screen.findByText(/no audio file to bundle/i)).toBeInTheDocument();
-    expect(download).not.toHaveBeenCalled();
-
-    // And that export does work for a YouTube project.
-    await user.click(within(row).getByRole('button', { name: 'Export labels' }));
+    // No audio to bundle, so the full export is a bare project JSON — the
+    // same file doubles as the community contribution format.
     await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
-    expect(downloads[0].filename).toBe('Brahms on YouTube.labels.json');
-    expect(parseProjectFile(await downloads[0].blob.text()).audioMeta.source).toBe(
-      YOUTUBE_CANONICAL,
+    expect(downloads[0].filename).toBe('Brahms on YouTube.json');
+    const parsed = parseProjectFile(await downloads[0].blob.text());
+    expect(parsed.audioMeta.source).toBe(YOUTUBE_CANONICAL);
+    expect(parsed.project.source).toBe('youtube');
+  });
+
+  it('imports an exported YouTube project JSON as a fresh project', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    const { container } = await renderApp(mockController(), storage, vi.fn());
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      project: {
+        id: 'shared-1',
+        name: 'A shared performance',
+        createdAt: 0,
+        updatedAt: 0,
+        source: 'youtube',
+      },
+      markers: [{ id: 'm1', time: 10, label: 'A', aliases: [], createdAt: 1 }],
+      audioMeta: {
+        sha256: '',
+        duration: 604.2,
+        mimeType: '',
+        filename: 'A shared performance',
+        sizeBytes: 0,
+        source: 'https://youtu.be/dQw4w9WgXcQ',
+        license: '',
+        attribution: '',
+      },
+    });
+
+    await user.upload(
+      fileInputs(container)[1],
+      new File([json], 'shared.json', { type: 'application/json' }),
     );
+
+    // Import always creates: the shared project round-trips as a fresh,
+    // editable copy pointing at the same video, in the canonical form.
+    expect(await screen.findByText('A shared performance')).toBeInTheDocument();
+    const summary = (await storage.projects.list()).find((p) => p.name === 'A shared performance')!;
+    expect(summary.source).toBe('youtube');
+    const stored = (await storage.projects.get(summary.id))!;
+    expect(stored.id).not.toBe('shared-1');
+    expect(stored.audioMeta.source).toBe(YOUTUBE_CANONICAL);
+    expect(stored.markers).toHaveLength(1);
+    expect(stored.playerMode).toBe('playback');
   });
 });

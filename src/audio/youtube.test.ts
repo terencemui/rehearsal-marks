@@ -111,10 +111,10 @@ async function flush(): Promise<void> {
 }
 
 /** Loads a YouTube source through the public seam; returns the created fake. */
-async function loadYouTube(container: HTMLElement, url: string = CANONICAL_URL) {
+async function loadYouTube(container: HTMLElement, url: string = CANONICAL_URL, duration = 0) {
   const controller = createAudioController();
   created.push(controller);
-  const pending = controller.load({ source: 'youtube', url, container });
+  const pending = controller.load({ source: 'youtube', url, container, duration });
   await flush();
   const player = players.at(-1)!;
   return { controller, pending, player };
@@ -266,7 +266,7 @@ describe('AudioController YouTube playback', () => {
     created.push(controller);
     controller.setVolume(0.4); // carried over from the user's last session
 
-    const pending = controller.load({ source: 'youtube', url: CANONICAL_URL, container });
+    const pending = controller.load({ source: 'youtube', url: CANONICAL_URL, container, duration: 0 });
     await flush();
     const player = players.at(-1)!;
     // The embed starts at the API's default; nothing has played to apply it to.
@@ -329,6 +329,24 @@ describe('AudioController YouTube playback', () => {
     expect(result.error?.code).toBe(101);
     // The ruler still renders (a single zero tick) — the timeline survives.
     expect(container.querySelector('.rm-ruler')).not.toBeNull();
+  });
+
+  it('renders the ruler from the stored duration when the embed errors — marks stay visible', async () => {
+    const container = document.createElement('div');
+    // The record's duration: seeded by the community label set or persisted
+    // from an earlier load. The dead embed reports nothing, so this is the
+    // only honest timeline left.
+    const { controller, pending, player } = await loadYouTube(container, CANONICAL_URL, 604.2);
+
+    player.dispatch('onError', 101);
+    const result = await pending;
+
+    expect(result).toMatchObject({ mode: 'ruler', duration: 604.2 });
+    expect(result.error?.code).toBe(101);
+    expect(controller.getPlaybackState().duration).toBe(604.2);
+    // A real timeline, not the zero tick: multiple labeled ticks render.
+    const ticks = container.querySelectorAll('.rm-ruler-tick');
+    expect(ticks.length).toBeGreaterThan(1);
   });
 
   it('waits for the error when ready reports no playable duration', async () => {
@@ -438,6 +456,64 @@ describe('AudioController YouTube playback', () => {
     expect(result.error).toBeInstanceOf(YouTubePlaybackError);
     expect(result.error?.code).toBe(0);
     expect(container.querySelector('.rm-ruler')).not.toBeNull();
+  });
+
+  it('a retry after the API timeout re-injects a fresh script instead of waiting on the dead one', async () => {
+    vi.useFakeTimers();
+    // No preloaded YT global: the backend waits on the script that never loads.
+    vi.unstubAllGlobals();
+    const container = document.createElement('div');
+
+    // First attempt: the API never arrives; the deadline fires.
+    const first = createAudioController();
+    created.push(first);
+    const firstLoad = first.load({
+      source: 'youtube',
+      url: CANONICAL_URL,
+      container,
+      duration: 604.2,
+    });
+    const injected = document.head.querySelector(
+      'script[src="https://www.youtube.com/iframe_api"]',
+    );
+    expect(injected).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const firstResult = await firstLoad;
+    expect(firstResult.error?.code).toBe(0);
+    // The timeout publishes the stored duration too — the store and the
+    // rendered timeline agree on the recording's length.
+    expect(firstResult.duration).toBe(604.2);
+    expect(first.getPlaybackState().duration).toBe(604.2);
+    // The dead script tag is gone — the corpse was the reason the API never
+    // arrived, and Retry must not wait on it for another full deadline.
+    expect(
+      document.head.querySelector('script[src="https://www.youtube.com/iframe_api"]'),
+    ).toBeNull();
+
+    // Retry: a fresh script is injected for the next attempt.
+    const second = createAudioController();
+    created.push(second);
+    const secondLoad = second.load({
+      source: 'youtube',
+      url: CANONICAL_URL,
+      container,
+      duration: 604.2,
+    });
+    await flush();
+    const reinjected = document.head.querySelector(
+      'script[src="https://www.youtube.com/iframe_api"]',
+    );
+    expect(reinjected).not.toBeNull();
+    expect(reinjected).not.toBe(injected);
+
+    vi.stubGlobal('YT', { Player: FakeYouTubePlayer });
+    window.onYouTubeIframeAPIReady?.();
+    await flush();
+    const player = players.at(-1)!;
+    player.duration = 604.2;
+    player.dispatch('onReady');
+
+    expect(await secondLoad).toEqual({ mode: 'ruler', duration: 604.2 });
   });
 
   it('stops the API deadline once the API arrives, however slow the player is', async () => {

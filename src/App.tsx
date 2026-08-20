@@ -6,12 +6,13 @@ import { parseCatalog, resolveUrl } from './library/catalog';
 import type { CatalogEntry } from './library/catalog';
 import { LibraryError } from './library/errors';
 import { downloadAndCache, fetchLabelset, seededProjectId, seedProject } from './library/load';
-import { exportLabelSetJson, exportProjectZip, importLabelSet, importProjectZip, sanitizeDownloadName } from './portability';
+import { exportLabelSetJson, exportProjectJson, exportProjectZip, importLabelSet, importProjectJson, importProjectZip, sanitizeDownloadName } from './portability';
 import { validateProjectName } from './projects/summary';
 import { createAutosave, createStorage, saveStatusFor, sha256, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
 import { createProjectFromUpload } from './upload';
 import { createProjectFromYouTubeLink, fetchYouTubeTitle } from './youtube';
+import type { CommunityLabelSet } from './youtube/community';
 import { CreateProject } from './ui/CreateProject';
 import { LibraryScreen } from './ui/LibraryScreen';
 import { triggerDownload } from './ui/download';
@@ -30,6 +31,8 @@ export interface AppProps {
   download?: (blob: Blob, filename: string) => void;
   /** Test seam: the video-title lookup, so component tests never touch the network. */
   fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
+  /** Test seam: the community label-set lookup — same reason as fetchTitle. */
+  loadCommunityLabels?: (videoId: string) => Promise<CommunityLabelSet | null>;
 }
 
 /** One open project session: the autosave, its peaks, and its controller. */
@@ -125,6 +128,11 @@ function App({
   storage: injectedStorage,
   download = triggerDownload,
   fetchTitle = fetchYouTubeTitle,
+  // The community transport is T21's, per ADR-0001: a Supabase query for
+  // anonymous reads. Until it lands, every video starts unlabeled — the
+  // create pipeline's seam stays, and the pure identity gate
+  // (validateYouTubeLabelSet) is what T21's loader will run behind it.
+  loadCommunityLabels = async () => null,
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -312,6 +320,7 @@ function App({
     try {
       const outcome = await createProjectFromYouTubeLink(url, {
         fetchTitle,
+        loadCommunityLabels,
         save: (record) => storage.projects.save(record),
       });
       if (!outcome.ok) {
@@ -613,8 +622,8 @@ function App({
     }
   }
 
-  /** Imports a picked zip as a brand-new project — import can only create. */
-  async function handleImportZip(file: File): Promise<void> {
+  /** Imports a picked zip or project JSON as a brand-new project — import can only create. */
+  async function handleImportFile(file: File): Promise<void> {
     if (storage === null || workingRef.current) return;
     workingRef.current = true;
     setImportingZip(true);
@@ -625,10 +634,23 @@ function App({
       // failed list read leaves the state stale — naming against either would
       // let an import duplicate an existing project's name.
       const names = (await storage.projects.list()).map((p) => p.name);
-      const outcome = await importProjectZip(file, {
-        existingNames: names,
-        save: (record) => storage.projects.save(record),
-      });
+      // The two import formats: an upload's full project is a zip; a YouTube
+      // project's is a bare project JSON — the same file its export produces.
+      // Dispatch on the content, never the name: a download service that
+      // renamed a JSON to .txt, or a zip saved under a .json name, must land
+      // in the pipeline that can actually read it.
+      const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      const isZip =
+        head.length === 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+      const outcome = isZip
+        ? await importProjectZip(file, {
+            existingNames: names,
+            save: (record) => storage.projects.save(record),
+          })
+        : await importProjectJson(file, {
+            existingNames: names,
+            save: (record) => storage.projects.save(record),
+          });
       if (!outcome.ok) {
         setNotice(outcome.guidance);
         return;
@@ -649,7 +671,7 @@ function App({
     }
   }
 
-  /** Downloads the full project as one zip — a read-only action, no working lock. */
+  /** Downloads the full project — one zip for uploads, bare project JSON for YouTube. */
   async function handleExport(id: string): Promise<void> {
     if (storage === null) return;
     setNotice(null);
@@ -661,11 +683,12 @@ function App({
         return;
       }
       if (record.audio === null) {
-        // A zip bundles the recording, and a YouTube project has none to
-        // bundle — that is the design, not a fault, so say so and point at
-        // the export that does work rather than reporting a generic failure.
-        setNotice(
-          'A YouTube project has no audio file to bundle into a zip. Use “Export labels” to save its marks.',
+        // A YouTube project has no audio to bundle, and needs none: a bare
+        // project JSON carrying the video identity and the marks is the full
+        // export — and the community contribution format.
+        download(
+          new Blob([exportProjectJson(record)], { type: 'application/json' }),
+          `${sanitizeDownloadName(record.name)}.json`,
         );
         return;
       }
@@ -790,7 +813,7 @@ function App({
             uploading={uploading}
             creatingFromLink={creatingFromLink}
           />
-          <ImportPicker onFile={handleImportZip} busy={workspaceBusy} working={importingZip} />
+          <ImportPicker onFile={handleImportFile} busy={workspaceBusy} working={importingZip} />
           <ProjectsScreen
             projects={projects}
             status={status}

@@ -147,7 +147,14 @@ export function ProjectsScreen({
                   disabled={openingId !== null || busy}
                   onClick={() => onOpen(project.id)}
                 >
-                  <span className="projects-name">{project.name}</span>
+                  <span className="projects-name">
+                    {project.name}
+                    {project.source === 'youtube' && (
+                      <span className="projects-badge" title="Plays from YouTube — no audio stored in this browser">
+                        YouTube
+                      </span>
+                    )}
+                  </span>
                   <span className="projects-meta">
                     {formatDuration(project.duration)} · {project.markerCount} marker
                     {project.markerCount === 1 ? '' : 's'} · {formatBytes(project.sizeBytes)} ·{' '}
