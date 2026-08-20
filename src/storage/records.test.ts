@@ -24,14 +24,27 @@ describe('estimateStoredSize', () => {
 
 describe('defaultPlayerMode', () => {
   it('opens uploads in Label mode — a new upload arrives ready to mark', () => {
-    expect(defaultPlayerMode('upload')).toBe('label');
+    expect(defaultPlayerMode('upload', 0)).toBe('label');
   });
 
-  it('opens YouTube projects in Playback mode', () => {
-    expect(defaultPlayerMode('youtube')).toBe('playback');
+  it('opens a YouTube project that arrived with marks in Playback mode', () => {
+    // A video whose community label set loaded is practiceable immediately.
+    expect(defaultPlayerMode('youtube', 2)).toBe('playback');
+  });
+
+  it('opens a YouTube project with no marks in Label mode', () => {
+    // A bare pasted link has an empty timeline; opening it read-only would
+    // hide the only thing there is to do with it.
+    expect(defaultPlayerMode('youtube', 0)).toBe('label');
+  });
+
+  it('never sends an upload to Playback, however many marks it carries', () => {
+    // Uploads are created to be marked; marks arriving with one (an imported
+    // project) do not change the posture its creation path stamps.
+    expect(defaultPlayerMode('upload', 12)).toBe('label');
   });
 
   it('treats a missing source as an upload: legacy records are always uploads', () => {
-    expect(defaultPlayerMode(undefined)).toBe('label');
+    expect(defaultPlayerMode(undefined, 0)).toBe('label');
   });
 });

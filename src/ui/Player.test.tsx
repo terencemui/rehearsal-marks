@@ -304,6 +304,19 @@ describe('Player modes', () => {
     expect(flags(container)).toHaveLength(2);
   });
 
+  it('opens a YouTube record with no persisted mode and no marks in Label mode', async () => {
+    // The case the source check alone got wrong: an empty YouTube project has
+    // nothing to practise against, so read-only would hide the marking tools
+    // that are the only thing to do with it.
+    const { container } = await renderMarkingPlayer(
+      youtubeProjectRecord({ playerMode: undefined as unknown as PlayerMode, markers: [] }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
+    expect(flags(container)).toHaveLength(0);
+  });
+
   it('switches postures from the segmented control without touching playback', async () => {
     const user = userEvent.setup();
     const { controller } = await renderMarkingPlayer();

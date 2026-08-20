@@ -94,6 +94,20 @@ describe('createProjectFromYouTubeLink', () => {
     expect(outcome.ok && outcome.project.name).toBe(TITLE);
   });
 
+  it('opens in Label mode, because a bare link arrives with no marks', async () => {
+    // The posture is stamped at creation and the player reads it, so nothing
+    // else gets to decide: a project with an empty timeline must land with
+    // the marking tools in reach, not read-only.
+    const { deps } = await dependencies();
+
+    const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.markers).toEqual([]);
+    expect(outcome.project.playerMode).toBe('label');
+  });
+
   it('stamps both timestamps from the injected clock', async () => {
     const { deps } = await dependencies();
 
