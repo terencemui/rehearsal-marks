@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 coverage
+
+# Nested agent worktrees — checkouts of this repo, never content of it
+.claude/worktrees/
