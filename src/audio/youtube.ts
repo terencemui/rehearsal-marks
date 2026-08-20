@@ -7,6 +7,7 @@
  * `window.YT`, the same containment the wavesurfer-backed path has.
  */
 
+import { parseYouTubeLink } from '../domain';
 import { renderRuler } from '../playback/renderRuler';
 import type { LoadResult } from './controller';
 import { YouTubePlaybackError } from './errors';
@@ -18,6 +19,14 @@ const PLAYER_STATE_BUFFERING = 3;
 
 /** How often the playhead is read from the embed — the API clock's granularity. */
 const POLL_INTERVAL_MS = 250;
+
+/**
+ * How many polls a ready player gets to report its duration. The embed's
+ * metadata lands shortly after ready, not at it — this budget (40 × 250ms =
+ * ten seconds, the same as the script deadline) lets it arrive while a
+ * duration that never does still fails the load honestly.
+ */
+const METADATA_POLL_LIMIT = 40;
 
 /** How long the API script may take before the load fails honestly. */
 const API_SCRIPT_TIMEOUT_MS = 10_000;
@@ -34,8 +43,29 @@ interface YouTubePlayer {
   pauseVideo(): void;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   setVolume(volume: number): void;
-  cueVideoByUrl(args: { mediaContentUrl: string }): void;
   destroy(): void;
+}
+
+/**
+ * The event shape the modern widgetapi delivers: every embed event arrives
+ * wrapped in `{target, data}` — the raw value the classic builds passed is
+ * the `data` field now. Older builds still pass the value bare, so the
+ * backend reads either.
+ */
+interface YouTubeEvent<T> {
+  data: T;
+}
+
+/**
+ * The payload of an embed event, unwrapped: `{data: 1}` becomes `1`, and a
+ * bare value passes through — which shape arrives is the widgetapi build's
+ * call, not the app's, and both have been observed.
+ */
+function eventData(payload: unknown): unknown {
+  if (payload !== null && typeof payload === 'object' && 'data' in payload) {
+    return (payload as YouTubeEvent<unknown>).data;
+  }
+  return payload;
 }
 
 /** The `window.YT` namespace the API script installs. */
@@ -43,11 +73,13 @@ interface YouTubeApi {
   Player: new (
     host: HTMLElement,
     options: {
+      /** The video id — the embed is built with it, never cued after. */
+      videoId: string;
       playerVars?: { origin?: string };
       events: {
         onReady?: () => void;
-        onStateChange?: (state: number) => void;
-        onError?: (code: number) => void;
+        onStateChange?: (event: YouTubeEvent<number>) => void;
+        onError?: (event: YouTubeEvent<number>) => void;
       };
     },
   ) => YouTubePlayer;
@@ -122,15 +154,22 @@ export function loadYouTubeSource({
   let disposed = false;
   let player: YouTubePlayer | null = null;
   let pollId: number | null = null;
+  /** The metadata wait's poll, armed when ready reports no duration yet. */
+  let durationPollId: number | null = null;
   let settle: (result: LoadResult) => void;
   const ready = new Promise<LoadResult>((resolve) => {
     settle = resolve;
   });
+  let apiTimeout: number | null = null;
 
   function finish(result: LoadResult): void {
     if (settled) return;
     settled = true;
-    window.clearTimeout(apiTimeout);
+    if (apiTimeout !== null) window.clearTimeout(apiTimeout);
+    if (durationPollId !== null) {
+      window.clearInterval(durationPollId);
+      durationPollId = null;
+    }
     settle(result);
   }
 
@@ -144,7 +183,7 @@ export function loadYouTubeSource({
 
   // A load that never settles is a silent failure — the API script not
   // arriving (offline, a blocked origin) surfaces as its own error result.
-  const apiTimeout = window.setTimeout(() => {
+  apiTimeout = window.setTimeout(() => {
     if (settled) return;
     renderTimeline(0);
     finish({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(0) });
@@ -158,6 +197,21 @@ export function loadYouTubeSource({
       // it up; the requested (clamped) time is honest until then.
       return time;
     });
+
+  // The video id drives the embed. The API negotiates the player's method
+  // surface with the embed, and only once a real video is behind it — a
+  // player built empty has no cue or play methods to call, so every load
+  // would die on the first one. The canonical URL is the domain's identity;
+  // the backend derives the id it embeds. A URL the domain would reject
+  // settles here, before any script or embed exists.
+  let videoId: string;
+  try {
+    videoId = parseYouTubeLink(url).videoId;
+  } catch {
+    renderTimeline(0);
+    finish({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(2) });
+    return { ready, toggle, seek, setVolume, getCurrentTime, destroy };
+  }
 
   function seek(time: number): void {
     if (player === null) return;
@@ -198,37 +252,69 @@ export function loadYouTubeSource({
     }, POLL_INTERVAL_MS);
   }
 
+  /** The load's successful settlement, once the duration is known. */
+  function settleReady(known: number): void {
+    startPolling();
+    renderTimeline(known);
+    onState({ duration: known, currentTime: 0, playing: false });
+    // The store may hold a volume from a previous session; the fresh embed
+    // starts at 100 and must be brought to it, like the other backends do.
+    setVolume(volume);
+    finish({ mode: 'ruler', duration: known });
+  }
+
   function onReady(): void {
     if (disposed || settled || player === null) return;
     const known = player.getDuration();
     if (typeof known === 'number' && Number.isFinite(known) && known > 0) {
-      startPolling();
-      renderTimeline(known);
-      onState({ duration: known, currentTime: 0, playing: false });
-      // The store may hold a volume from a previous session; the fresh embed
-      // starts at 100 and must be brought to it, like the other backends do.
-      setVolume(volume);
-      finish({ mode: 'ruler', duration: known });
+      settleReady(known);
+      return;
     }
-    // A zero duration at ready means the video has no playable metadata —
-    // onError, the API's own report, settles the load instead.
+    // The embed's metadata lands shortly after ready, not at it — a cued
+    // video reports its duration a beat later. Poll for it, while onError
+    // keeps its authority to fail the load first; a duration that never
+    // arrives fails honestly instead of hanging the transport.
+    let attempts = 0;
+    durationPollId = window.setInterval(() => {
+      if (player === null || settled) return;
+      const duration = player.getDuration();
+      if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) {
+        settleReady(duration);
+        return;
+      }
+      attempts += 1;
+      if (attempts >= METADATA_POLL_LIMIT) {
+        finish({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(0) });
+      }
+    }, POLL_INTERVAL_MS);
   }
 
-  function onStateChange(state: number): void {
+  function onStateChange(payload: number | YouTubeEvent<number>): void {
     if (disposed) return;
-    onState({ playing: state === PLAYER_STATE_PLAYING });
+    onState({ playing: eventData(payload) === PLAYER_STATE_PLAYING });
   }
 
-  function onError(code: number): void {
+  function onError(payload: number | YouTubeEvent<number>): void {
     if (disposed || settled) return;
+    const code = eventData(payload);
     renderTimeline(0);
     onState({ duration: 0, currentTime: 0, playing: false });
-    finish({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(code) });
+    finish({
+      mode: 'ruler',
+      duration: 0,
+      // A payload the unwrap cannot read is still a failure — its code is
+      // just unknown, like the API script that never arrived.
+      error: new YouTubePlaybackError(typeof code === 'number' ? code : 0),
+    });
   }
 
   function destroy(): void {
     disposed = true;
-    window.clearTimeout(apiTimeout);
+    if (apiTimeout !== null) window.clearTimeout(apiTimeout);
+    if (durationPollId !== null) {
+      window.clearInterval(durationPollId);
+      durationPollId = null;
+    }
     if (pollId !== null) {
       window.clearInterval(pollId);
       pollId = null;
@@ -245,15 +331,16 @@ export function loadYouTubeSource({
     if (disposed || settled) return;
     // The API arrived — the timeout's only job. From here the API's own
     // events (onReady, onError) settle the load, however long they take.
-    window.clearTimeout(apiTimeout);
+    if (apiTimeout !== null) window.clearTimeout(apiTimeout);
     player = new api.Player(playerHost, {
+      videoId,
       playerVars: { origin: window.location.origin },
       events: { onReady, onStateChange, onError },
     });
-    // Cued, not loaded: playback waits for the user's gesture, as browsers
-    // and the API require. cueVideoByUrl takes the URL whole — this backend
-    // never parses it; the canonical form is the domain's business.
-    player.cueVideoByUrl({ mediaContentUrl: url });
+    // Constructed with the video id, not cued after: the API negotiates the
+    // player's method surface with the embed, and a player built empty has
+    // no cue or play methods to call. Construction cues it — playback still
+    // waits for the user's gesture, as browsers and the API require.
   });
 
   return {
