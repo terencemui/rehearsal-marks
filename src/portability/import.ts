@@ -1,14 +1,15 @@
-import { errorMessage, newId, parseProjectFile } from '../domain';
+import { errorMessage, newId, parseProjectFile, youtubeAudioMeta } from '../domain';
 import type { Marker, ProjectFileData } from '../domain';
-import { sha256 } from '../storage';
+import { defaultPlayerMode, sha256 } from '../storage';
 import type { ProjectRecord } from '../storage';
 import { PROJECT_JSON_PATH, readZipEntries } from './zip';
 
 /**
- * The inbound side of portability: zip imports that always create a fresh
- * project, and label-set imports gated on recording identity. Every failure
- * the user can cause comes back as guidance text, never a thrown error; only
- * storage failures propagate (the caller owns the save vocabulary).
+ * The inbound side of portability: zip imports for uploads and bare JSON
+ * imports for YouTube — both always create a fresh project — plus label-set
+ * imports gated on recording identity. Every failure the user can cause
+ * comes back as guidance text, never a thrown error; only storage failures
+ * propagate (the caller owns the save vocabulary).
  */
 
 export interface ProjectImportDependencies {
@@ -56,6 +57,17 @@ export async function importProjectZip(
     data = parseProjectFile(new TextDecoder().decode(jsonBytes));
   } catch (error) {
     return { ok: false, guidance: errorMessage(error) };
+  }
+
+  // The zip path is the upload path. A YouTube-marked project file inside a
+  // zip can only be hand-made — this app's YouTube export is bare JSON, and
+  // a YouTube project has no audio for the zip's sha256 gate to verify.
+  if (data.project.source === 'youtube') {
+    return {
+      ok: false,
+      guidance:
+        'This zip contains a YouTube project file. YouTube projects carry no audio — they export as a single JSON file, not a zip.',
+    };
   }
 
   // The data file and the audio share one namespace inside the zip; an audio
@@ -108,6 +120,63 @@ export async function importProjectZip(
   return { ok: true, project };
 }
 
+/**
+ * Turns a bare project-JSON file into a persisted project. A file marked
+ * YouTube becomes a brand-new YouTube project pointing at its canonical URL:
+ * a fresh id and timestamps — import can create, never overwrite — and no
+ * sha256 gate, since there is no audio to verify; the file's media claims
+ * are ignored rather than validated. An upload-shaped file has no audio
+ * alongside it and cannot become a project; those files are label sets,
+ * applied through importLabelSet.
+ */
+export async function importProjectJson(
+  jsonText: string,
+  { existingNames, save, now = Date.now }: ProjectImportDependencies,
+): Promise<ProjectImportOutcome> {
+  // parseProjectFile enforces the version policy and every domain invariant,
+  // including that a YouTube-marked file carries its canonical URL.
+  let data: ProjectFileData;
+  try {
+    data = parseProjectFile(jsonText);
+  } catch (error) {
+    return { ok: false, guidance: errorMessage(error) };
+  }
+
+  if (data.project.source !== 'youtube') {
+    return {
+      ok: false,
+      guidance:
+        'This file has no audio to import as a project — apply it as a label set to the recording it was made for instead.',
+    };
+  }
+
+  const createdAt = now();
+  const baseName = data.project.name.trim() === '' ? 'Imported project' : data.project.name;
+  const project: ProjectRecord = {
+    id: newId(), // a fresh identity — the file's id is never reused
+    name: uniqueProjectName(existingNames, baseName),
+    createdAt,
+    updatedAt: createdAt,
+    source: 'youtube',
+    // The app never holds YouTube audio: no blob, no bytes, no hash — the
+    // canonical URL in audioMeta.source carries the recording identity.
+    // Parsing already normalized any accepted link form to the canonical
+    // URL, so the stored identity is exactly one form.
+    audio: null,
+    // What the file claims about stored bytes is dropped, not validated:
+    // there are no bytes to hash or describe. What applies carries through —
+    // the canonical URL, the known duration, and the title. The same shared
+    // rule the exporter uses, so the two directions cannot drift apart.
+    audioMeta: youtubeAudioMeta(data.audioMeta),
+    markers: data.markers,
+    // The source's own rule decides the posture: a file that arrives with
+    // marks opens in Playback, ready to practise.
+    playerMode: defaultPlayerMode('youtube', data.markers.length),
+  };
+  await save(project);
+  return { ok: true, project };
+}
+
 export type LabelSetImportOutcome =
   | { ok: true; markers: Marker[] }
   | { ok: false; guidance: string };
@@ -115,7 +184,11 @@ export type LabelSetImportOutcome =
 /**
  * Validates a label set against a recording's identity: the sha256 is the
  * hard gate — timestamps only line up on the recording they were made for.
- * The caller applies the returned markers; nothing is applied on mismatch.
+ * Label-set application is uploads-only: a YouTube-marked file has no hash
+ * to gate on, and a YouTube project has no hash to gate against — for both,
+ * the sha256 gate is trivially satisfied and marks from a different
+ * performance would land silently, so both are refused up front. The caller
+ * applies the returned markers; nothing is applied on any refusal.
  */
 export function importLabelSet(jsonText: string, recordingSha256: string): LabelSetImportOutcome {
   let data: ProjectFileData;
@@ -123,6 +196,22 @@ export function importLabelSet(jsonText: string, recordingSha256: string): Label
     data = parseProjectFile(jsonText);
   } catch (error) {
     return { ok: false, guidance: errorMessage(error) };
+  }
+  if (data.project.source === 'youtube') {
+    return {
+      ok: false,
+      guidance:
+        'This label set was made for a YouTube video — label sets apply only to uploaded ' +
+        'recordings, so it can’t be applied to a project.',
+    };
+  }
+  if (recordingSha256 === '') {
+    return {
+      ok: false,
+      guidance:
+        'Label sets apply only to uploaded recordings — a YouTube project has no recording ' +
+        'hash to match one against, so it can’t be applied here.',
+    };
   }
   if (data.audioMeta.sha256 !== recordingSha256) {
     return {

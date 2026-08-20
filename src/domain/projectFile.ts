@@ -2,9 +2,13 @@ import { DomainError } from './errors';
 import { deriveLabels } from './labels';
 import type { Marker } from './marker';
 import { setAliases } from './markers';
+import { parseYouTubeLink } from './youtube';
 
 /** The only schema version this app reads and writes. */
 export const SCHEMA_VERSION = 1;
+
+/** Where a project file's recording comes from; absent in a file means upload. */
+export type ProjectFileSource = 'upload' | 'youtube';
 
 /** The `project` section of a project file. */
 export interface ProjectInfo {
@@ -14,6 +18,12 @@ export interface ProjectInfo {
   createdAt: number;
   /** Epoch ms. */
   updatedAt: number;
+  /**
+   * The recording's origin. Optional on disk — absent means upload, so files
+   * from before the field existed read exactly as they always did — and
+   * normalized by parsing, so consumers never see a missing discriminator.
+   */
+  source: ProjectFileSource;
 }
 
 /**
@@ -40,15 +50,43 @@ export interface ProjectFileData {
 }
 
 /**
+ * The audioMeta a YouTube project file carries: the identity that applies —
+ * canonical URL, known duration, title — and nothing that describes stored
+ * bytes. Export and import both pass through this one function, so the two
+ * directions can never drift apart on which fields are empty.
+ */
+export function youtubeAudioMeta(meta: AudioMeta): AudioMeta {
+  return {
+    ...meta,
+    sha256: '',
+    mimeType: '',
+    sizeBytes: 0,
+    license: '',
+    attribution: '',
+  };
+}
+
+/**
  * Serializes a project to the versioned `project.json` format — the zip
  * export's data file and the community label-set format. Markers are written
  * in time order with their derived `label` for human review only: labels are
  * re-derived by time rank on import, never trusted from the file.
  */
 export function serializeProjectFile(data: ProjectFileData): string {
+  // Uploads omit the discriminator — absent means upload, so upload files
+  // stay byte-for-byte the files this app always wrote, and older app
+  // versions reading a YouTube file ignore the unknown field (their honest
+  // failure is on the missing audio, not on this).
+  const project = {
+    id: data.project.id,
+    name: data.project.name,
+    createdAt: data.project.createdAt,
+    updatedAt: data.project.updatedAt,
+    ...(data.project.source === 'youtube' ? { source: data.project.source } : {}),
+  };
   const file = {
     schemaVersion: SCHEMA_VERSION,
-    project: data.project,
+    project,
     markers: deriveLabels(data.markers).map((m) => ({
       id: m.id,
       time: m.time,
@@ -95,10 +133,23 @@ export function parseProjectFile(text: string): ProjectFileData {
     );
   }
 
+  const project = readProject(root.project);
+  let audioMeta = readAudioMeta(root.audioMeta);
+  // A YouTube file's recording identity is its canonical URL. A string that
+  // names no video would import a project that can never point at one, so
+  // refuse it here — and normalize every accepted link form to the canonical
+  // URL, so any file that parses carries one recording identity.
+  if (project.source === 'youtube') {
+    try {
+      audioMeta = { ...audioMeta, source: parseYouTubeLink(audioMeta.source).canonicalUrl };
+    } catch {
+      throw invalidFile('"audioMeta.source" must be a valid YouTube video link for a YouTube project.');
+    }
+  }
   return {
-    project: readProject(root.project),
+    project,
     markers: readMarkers(root.markers),
-    audioMeta: readAudioMeta(root.audioMeta),
+    audioMeta,
   };
 }
 
@@ -152,7 +203,15 @@ function readProject(value: unknown): ProjectInfo {
     name: assertString(raw.name, '"project.name"'),
     createdAt: assertFiniteNumber(raw.createdAt, '"project.createdAt"'),
     updatedAt: assertFiniteNumber(raw.updatedAt, '"project.updatedAt"'),
+    source: readSource(raw.source),
   };
+}
+
+/** The optional on-disk discriminator, defaulted to upload when absent. */
+function readSource(value: unknown): ProjectFileSource {
+  if (value === undefined) return 'upload';
+  if (value === 'upload' || value === 'youtube') return value;
+  throw invalidFile('"project.source" must be "upload" or "youtube" when present.');
 }
 
 function readMarkers(value: unknown): Marker[] {
