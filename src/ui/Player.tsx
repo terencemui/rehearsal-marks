@@ -30,6 +30,7 @@ import {
   ZOOM_STEP,
   clampScrollLeft,
   contentWidth,
+  fitPxPerSec,
   minPxPerSec,
   scrollLeftForTime,
   timeAtClientX as timeAtOffset,
@@ -71,6 +72,30 @@ const LONG_PRESS_SLOP_PX = 10;
 /** A pinch with fingers closer than this has no trustworthy anchor yet. */
 const PINCH_MIN_START_PX = 20;
 
+/**
+ * What a YouTube project's ruler says instead of the waveform note. The embed
+ * reports its playhead on a coarse clock and lands seeks at segment
+ * granularity, so a mark taken *from the player* inherits that slack — while a
+ * typed time or a nudge edits the marker's own time and stays exact. Saying so
+ * is the difference between a tool that feels imprecise and one that is honest
+ * about which of its numbers are approximate.
+ */
+const YOUTUBE_RULER_NOTE =
+  'Playing from YouTube — no waveform, and the embed’s clock is coarse: marks taken from the ' +
+  'playhead and click-to-seek land within about a quarter second. Typed times and nudges stay exact.';
+
+/**
+ * What a YouTube project says when the load reported a failure — the video is
+ * private, removed, region-blocked, embed-disabled, or the API never arrived.
+ * Claiming coarse-but-working playback here would be a lie, so the precision
+ * note gives way to the truth. The full browsable-but-muted treatment (an
+ * error card with the URL, an "Open on YouTube" link, and retry) is T20's; the
+ * floor T17 owes is not describing playback that is not happening.
+ */
+const YOUTUBE_FAILED_NOTE =
+  'This YouTube video couldn’t be played — it may be private, removed, or blocked from ' +
+  'embedding. Your marks are still here, and the project still exports.';
+
 /** A deletion held for undo: the marker, its label, and any restore failure. */
 interface UndoState {
   marker: Marker;
@@ -110,9 +135,23 @@ export function Player({
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<RenderMode | null>(null);
+  /**
+   * Whether the load reported that the source cannot play. The audio layer
+   * publishes this on `LoadResult.error`; a player that ignored it would show
+   * a live-looking transport over a dead embed.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
-  // The record's identity — name and audio — never changes in the player.
+  // The record's identity — name, source, and audio — never changes in the player.
   const record = autosave.get();
+  /**
+   * A YouTube project: the video is the main item and the ruler sits under it,
+   * so the timeline is always fitted to the viewport — never zoomed, which
+   * would stretch the embed off-screen. Its canonical URL is the recording
+   * identity the audio layer plays from.
+   */
+  const isYouTube = record.source === 'youtube';
+  const youtubeUrl = record.audioMeta.source;
   // The record as React state. Every mutation goes through `update`, which
   // applies it to the autosave and mirrors the result back here, so flags,
   // labels, and the inspector render from the same record that persists.
@@ -171,8 +210,9 @@ export function Player({
     if (pxPerSec !== null) return;
     const shell = shellRef.current;
     if (shell === null || duration <= 0) return;
-    setPxPerSec(minPxPerSec(shell.getBoundingClientRect().width, duration));
-  }, [duration, pxPerSec]);
+    const width = shell.getBoundingClientRect().width;
+    setPxPerSec(isYouTube ? fitPxPerSec(width, duration) : minPxPerSec(width, duration));
+  }, [duration, isYouTube, pxPerSec]);
 
   // Applies the zoom's scroll once the content width for the committed level
   // is in the DOM. Also re-fits when the window widens past the current
@@ -192,13 +232,18 @@ export function Player({
     const observer = new ResizeObserver(() => {
       setPxPerSec((level) => {
         if (level === null || duration <= 0) return level;
-        const min = minPxPerSec(shell.getBoundingClientRect().width, duration);
+        const width = shell.getBoundingClientRect().width;
+        // A YouTube timeline is always exactly the viewport, so a resize
+        // re-fits in both directions; a zoomable one only ever rises to the
+        // new minimum, leaving the user's chosen level alone.
+        if (isYouTube) return fitPxPerSec(width, duration);
+        const min = minPxPerSec(width, duration);
         return level < min ? min : level;
       });
     });
     observer.observe(shell);
     return () => observer.disconnect();
-  }, [duration]);
+  }, [duration, isYouTube]);
 
   /** Applies a mutation: the autosave gets it, React mirrors it back. */
   const update = useCallback(
@@ -429,16 +474,24 @@ export function Player({
     if (container === null) return;
     let cancelled = false;
     controller
-      .load({
-        source: 'upload',
-        blob: streamUrl !== null ? null : audioBlobRef.current,
-        url: streamUrl,
-        container,
-        peaks,
-      })
+      .load(
+        // The load options are source-discriminated exactly like the record:
+        // a YouTube project has only its canonical URL to play from — no
+        // blob, no peaks — and the audio layer owns everything after that.
+        isYouTube
+          ? { source: 'youtube', url: youtubeUrl, container }
+          : {
+              source: 'upload',
+              blob: streamUrl !== null ? null : audioBlobRef.current,
+              url: streamUrl,
+              container,
+              peaks,
+            },
+      )
       .then((result) => {
         if (cancelled) return;
         setMode(result.mode);
+        setLoadFailed(result.error !== undefined);
         // Ruler mode has no decode duration; the record's 0 is a placeholder.
         // The media element's metadata is the recording's true duration —
         // persisting it keeps the project list (T09) and exports honest, so
@@ -464,7 +517,8 @@ export function Player({
     };
     // `streamUrl` is the load's only changing target: the blob is a ref
     // (uploads never change it mid-session) so a stream stays uninterrupted.
-  }, [autosave, controller, peaks, streamUrl, update]);
+    // The source and its URL are fixed for the life of a session.
+  }, [autosave, controller, isYouTube, peaks, streamUrl, update, youtubeUrl]);
 
   useEffect(() => {
     const unsubscribe = autosave.subscribe(setStatus);
@@ -487,6 +541,13 @@ export function Player({
       : 0;
   // The content's width — the waveform, flags, and ruler all span it.
   const viewWidth = pxPerSec !== null && duration > 0 ? contentWidth(pxPerSec, duration) : undefined;
+
+  /** The note under a ruler-only timeline, when the caller supplied none. */
+  function defaultRulerNote(): string {
+    if (loadFailed && isYouTube) return YOUTUBE_FAILED_NOTE;
+    if (isYouTube) return YOUTUBE_RULER_NOTE;
+    return 'Waveform unavailable — the timeline still works.';
+  }
 
   function onDoubleClick(event: React.MouseEvent): void {
     // Flags stop their own double-clicks from reaching here (a flag
@@ -551,6 +612,10 @@ export function Player({
   useEffect(() => {
     const shell = shellRef.current;
     if (shell === null) return;
+    // A YouTube timeline has no zoom to gesture at — it is always exactly the
+    // viewport — so the listeners are never registered and the browser keeps
+    // its own pinch and scroll over the embed.
+    if (isYouTube) return;
 
     /**
      * Commits a zoom: the level through React, the scroll through the DOM —
@@ -713,7 +778,7 @@ export function Player({
       shell.removeEventListener('touchend', onPinchEnd);
       shell.removeEventListener('touchcancel', onPinchEnd);
     };
-  }, [cancelLongPress]);
+  }, [cancelLongPress, isYouTube]);
 
   return (
     <main>
@@ -759,7 +824,9 @@ export function Player({
         <button
           type="button"
           aria-pressed={playback.playing}
-          disabled={mode === null}
+          // A source that reported it cannot play has an inert transport;
+          // leaving Play enabled would promise something no click delivers.
+          disabled={mode === null || loadFailed}
           onClick={() => controller.togglePlay()}
         >
           {playback.playing ? 'Pause' : 'Play'}
@@ -798,9 +865,7 @@ export function Player({
       {undo !== null && (
         <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
       )}
-      {mode === 'ruler' && (
-        <p className="ruler-note">{rulerNote ?? 'Waveform unavailable — the timeline still works.'}</p>
-      )}
+      {mode === 'ruler' && <p className="ruler-note">{rulerNote ?? defaultRulerNote()}</p>}
     </main>
   );
 }

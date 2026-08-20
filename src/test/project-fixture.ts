@@ -28,8 +28,13 @@ export function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRe
 
 /**
  * A stored YouTube project: the same data as `projectRecord`, but the source
- * discriminator is `youtube`, audio is null, and the mode matches the
- * source's default (YouTube projects open in Playback mode).
+ * discriminator is `youtube` and audio is null.
+ *
+ * `playerMode` here is a fixture value, not a claim about the source's
+ * default. The create pipeline stamps `label` (a bare link arrives with no
+ * marks), and the Playback default belongs to the community-label-set case
+ * that does not exist yet — tests that care about the default must assert
+ * against the pipeline, never against this.
  */
 export function youtubeProjectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
   return projectRecord({

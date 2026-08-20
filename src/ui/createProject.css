@@ -1,0 +1,28 @@
+/* The one create surface: the file picker and the YouTube link field. */
+
+.create-project-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.create-project-link input {
+  flex: 1 1 22rem;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.create-project-link input[aria-invalid='true'] {
+  border-color: #b91c1c;
+}
+
+/* The guidance line owns the full row, under the field it belongs to. */
+.create-project-link .upload-error {
+  flex-basis: 100%;
+  margin: 0;
+}

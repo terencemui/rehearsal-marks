@@ -2,12 +2,13 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LoadResult } from '../audio';
+import { YouTubePlaybackError } from '../audio/errors';
 import { createAutosave } from '../storage';
 import type { MockController } from '../test/controller-fixture';
 import { mockController } from '../test/controller-fixture';
-import { uploadLoad } from '../test/load-fixture';
+import { uploadLoad, youtubeLoad } from '../test/load-fixture';
 import { marker } from '../test/marker-fixture';
-import { projectRecord } from '../test/project-fixture';
+import { projectRecord, youtubeProjectRecord } from '../test/project-fixture';
 import { closeTestStorages, testStorage } from '../test/storage-fixture';
 import { Player } from './Player';
 
@@ -1235,6 +1236,199 @@ describe('Player zoom', () => {
 
     const waveform = container.querySelector('.player-waveform') as HTMLElement;
     expect(waveform.style.width).toBe('400px'); // 50 s × 8 px/s
+    storage.close();
+  });
+});
+
+describe('Player — YouTube projects', () => {
+  const CANONICAL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
+  /** A loaded YouTube session: no peaks, no blob, ruler-only by construction. */
+  async function renderYouTubePlayer(duration = 200) {
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration })),
+    });
+    const record = youtubeProjectRecord({
+      name: 'Brahms — Intermezzo',
+      audioMeta: {
+        ...projectRecord().audioMeta,
+        sha256: '',
+        sizeBytes: 0,
+        duration,
+        source: CANONICAL,
+      },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const view = render(
+      <Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />,
+    );
+    // Settle the load before handing the view back: the ruler note only
+    // renders once the load has reported its mode.
+    await screen.findByText(/Playing from YouTube/);
+    return { ...view, controller, storage, autosave };
+  }
+
+  it('plays the canonical URL through the YouTube arm of the seam', async () => {
+    const { controller, storage } = await renderYouTubePlayer();
+
+    const options = youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]);
+    // No blob and no peaks exist on this path — the URL is the whole input.
+    expect(options.url).toBe(CANONICAL);
+    expect(options.container).toHaveClass('player-waveform');
+    storage.close();
+  });
+
+  it('states playback precision honestly instead of the waveform note', async () => {
+    const { storage } = await renderYouTubePlayer();
+
+    const note = await screen.findByText(/Playing from YouTube/);
+    // The coarse clock and its consequence for clock-taken marks…
+    expect(note).toHaveTextContent(/coarse/i);
+    expect(note).toHaveTextContent(/quarter second/i);
+    // …and the part that stays exact, so the caveat is scoped, not blanket.
+    expect(note).toHaveTextContent(/Typed times and nudges stay exact/i);
+    expect(note).not.toHaveTextContent(/timeline still works/);
+    storage.close();
+  });
+
+  it('does not claim playback when the video cannot play', async () => {
+    const storage = await testStorage();
+    // The audio layer's failure channel: the embed reported it cannot play
+    // (private, removed, region-blocked, embed-disabled, or no API script).
+    const controller = mockController({
+      load: vi.fn(async () => ({
+        mode: 'ruler' as const,
+        duration: 0,
+        error: new YouTubePlaybackError(150),
+      })),
+    });
+    const record = youtubeProjectRecord({
+      audioMeta: { ...projectRecord().audioMeta, duration: 0, source: CANONICAL },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
+
+    const note = await screen.findByText(/couldn’t be played/i);
+    // The precision note would be a lie here — nothing is playing at all.
+    expect(screen.queryByText(/Playing from YouTube/)).not.toBeInTheDocument();
+    expect(note).toHaveTextContent(/marks are still here/i);
+    // And the transport must not promise what no click can deliver.
+    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
+    storage.close();
+  });
+
+  it('lets an explicit ruler note override the YouTube one', async () => {
+    // The library's streaming session sets its own note; source must not win
+    // over an explicitly supplied one.
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 200 })),
+    });
+    const record = youtubeProjectRecord({
+      audioMeta: { ...projectRecord().audioMeta, duration: 200, source: CANONICAL },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    render(
+      <Player
+        autosave={autosave}
+        peaks={null}
+        controller={controller}
+        rulerNote="Something else entirely"
+        onExit={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Something else entirely')).toBeInTheDocument();
+    storage.close();
+  });
+
+  it('fits the timeline to the viewport rather than zooming the embed off-screen', async () => {
+    // A 200 s video at the 8 px/s zoom floor would be 1600 px of content in an
+    // 800 px window — and the video is inside that content, so it would be
+    // stretched to twice the window and half of it scrolled out of sight.
+    const rect = {
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 96,
+      width: 800,
+      height: 96,
+      toJSON: () => ({}),
+    };
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(rect as DOMRect);
+    const { container, storage } = await renderYouTubePlayer(200);
+
+    const surface = container.querySelector('.player-waveform') as HTMLElement;
+    expect(surface.style.width).toBe('800px'); // fit — never the 1600 px floor
+
+    rectSpy.mockRestore();
+    storage.close();
+  });
+
+  it('leaves ctrl+scroll to the browser — there is no zoom to gesture at', async () => {
+    const { container, storage } = await renderYouTubePlayer(200);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const before = (container.querySelector('.player-waveform') as HTMLElement).style.width;
+
+    const wheel = new WheelEvent('wheel', {
+      deltaY: -300,
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      shell.dispatchEvent(wheel);
+    });
+
+    expect((container.querySelector('.player-waveform') as HTMLElement).style.width).toBe(before);
+    // Not preventDefault'd either: the page keeps its own zoom over the embed.
+    expect(wheel.defaultPrevented).toBe(false);
+    storage.close();
+  });
+
+  it('drives play/pause, seek, and volume through the same transport', async () => {
+    const user = userEvent.setup();
+    const { controller, storage } = await renderYouTubePlayer(200);
+    const play = await screen.findByRole('button', { name: 'Play' });
+
+    await user.click(play);
+    expect(controller.togglePlay).toHaveBeenCalledTimes(1);
+
+    act(() => controller.emitPlayback({ playing: true }));
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+
+    // Keyboard navigation is unchanged by the source: → seeks +5 s.
+    await user.keyboard('{ArrowRight}');
+    expect(controller.seek).toHaveBeenCalledWith(5);
+
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '0.4' } });
+    expect(controller.setVolume).toHaveBeenCalledWith(0.4);
+    storage.close();
+  });
+
+  it('persists the duration the embed reports, so the list and ruler stay honest', async () => {
+    // A YouTube project is created with duration 0 — only the embed knows the
+    // real length, and it arrives with the load result.
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372.5 })),
+    });
+    const record = youtubeProjectRecord({
+      audioMeta: { ...projectRecord().audioMeta, duration: 0, sizeBytes: 0, source: CANONICAL },
+    });
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+
+    render(<Player autosave={autosave} peaks={null} controller={controller} onExit={vi.fn()} />);
+    await screen.findByText(/Playing from YouTube/);
+
+    await waitFor(() => expect(autosave.get().audioMeta.duration).toBe(372.5));
     storage.close();
   });
 });
