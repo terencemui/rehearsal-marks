@@ -5,9 +5,13 @@ export interface MarkerFlagsProps {
   markers: LabeledMarker[];
   /** The known recording duration, seconds — flag positions divide by it. */
   duration: number;
+  /** The selected marker — null in Playback mode, where selection is hidden. */
   selectedId: string | null;
-  /** Clicking a flag jumps to the marker and selects it. */
-  onSelect(marker: LabeledMarker): void;
+  /**
+   * A flag was clicked. The parent jumps to the marker in both postures and
+   * additionally selects it in Label mode.
+   */
+  onFlagClick(marker: LabeledMarker): void;
   /**
    * The zoomed content's width in px. The overlay spans the content, so each
    * flag's `left: time / duration` percentage lands at `time × pxPerSec`
@@ -25,7 +29,7 @@ const FLAG_HALF_CHIP_PX = 16;
  * stops — keyboard users reach markers through the letter keys (T07), and
  * keeping them out of the tab order leaves it to the transport controls.
  */
-export function MarkerFlags({ markers, duration, selectedId, onSelect, width }: MarkerFlagsProps) {
+export function MarkerFlags({ markers, duration, selectedId, onFlagClick, width }: MarkerFlagsProps) {
   if (duration <= 0) return null;
   return (
     <div className="player-markers" style={width !== undefined ? { width: `${width}px` } : undefined}>
@@ -48,7 +52,7 @@ export function MarkerFlags({ markers, duration, selectedId, onSelect, width }: 
               transform: overhang > 0 ? `translateX(calc(-50% + ${overhang}px))` : undefined,
             }}
             onClick={(event) => {
-              onSelect(marker);
+              onFlagClick(marker);
               // The flag is a pointer target, not a focus stop: leaving focus on
               // it would make the next Space re-activate the flag (jump back to
               // it) instead of meaning play/pause.

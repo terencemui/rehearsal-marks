@@ -758,7 +758,10 @@ describe('App Library tab', () => {
     await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' });
 
     // An edit during the stream: the write awaits the download, which fails —
-    // the status line must report the failure, never "Saved".
+    // the status line must report the failure, never "Saved". The streamed
+    // library project opens in Playback mode (library-seeded projects do) —
+    // editing needs Label mode first.
+    await user.click(screen.getByRole('button', { name: 'Label' }));
     await user.keyboard('m');
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('Save failed.');

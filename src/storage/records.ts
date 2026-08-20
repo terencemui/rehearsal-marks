@@ -34,10 +34,22 @@ export interface ProjectRecord {
 
 /**
  * Records saved before these fields existed read back without them. Every
- * pre-existing project is an upload, so readers treat a missing discriminator
- * as `source: 'upload'` — and a missing mode as never opened, which is the
- * "source-dependent default on first open" the player applies anyway.
+ * pre-existing project is an upload, so consumers treat a missing
+ * discriminator as `source: 'upload'` — and a missing mode as never opened:
+ * the player applies the source-dependent default (`defaultPlayerMode`) on
+ * first open, exactly as the creation paths stamp it.
  */
+
+/**
+ * A project's first-open posture. Uploads (including legacy records, whose
+ * missing source always means upload) open in Label mode, ready to mark;
+ * YouTube and library-seeded projects open in Playback mode. Creation paths
+ * stamp this into new records; the player applies it when the persisted mode
+ * is missing.
+ */
+export function defaultPlayerMode(source: ProjectSource | undefined): PlayerMode {
+  return source === 'youtube' ? 'playback' : 'label';
+}
 
 /** One row of the Projects screen: what story #4 asks the list to show. */
 export interface ProjectSummary {

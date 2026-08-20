@@ -4,42 +4,43 @@ The player is fully keyboard-operable. Every shortcut below is suppressed
 while focus is in a text field (the marker time or aliases inputs), so typing
 never seeks, jumps, or deletes.
 
-## Playback
+The player has two postures, switched from the **Playback | Label** segmented
+control in the transport bar. **Playback mode** is the practice posture:
+navigation tools with read-only markers. **Label mode** keeps every
+navigation tool and adds the editing tools. Uploads open in Label mode;
+YouTube and library-seeded projects open in Playback mode. The last-used
+mode is remembered per project.
+
+## Both modes
 
 | Key | Action |
 |---|---|
 | `Space` | Play / pause |
 | `←` / `→` | Seek ∓5 seconds |
+| `↑` / `↓` | Jump to the previous / next marker, wrapping at the ends |
+| `A`–`Z` | Jump straight to that marker |
+| Click a marker flag | Jump to it |
+| The volume slider | Adjust playback level |
 
-## Marking
+Markers are labeled A, B, C… by time order. Jumping never selects a marker —
+selection exists only for editing — and never interrupts playback. Labels
+continue past `Z` (`AA`, `AB`, …); the arrow keys reach every marker,
+including those a single letter key cannot.
+
+`M` means different things per posture: in Label mode it adds a marker (the
+marker labeled `M` is reached with the arrow keys there); in Playback mode it
+jumps to the marker labeled `M` like every other letter.
+
+## Label mode
+
+Label mode adds the editing tools to everything above:
 
 | Key | Action |
 |---|---|
 | `M` (or the Add marker button) | Add a marker at the playhead, without pausing |
 | Double-click the waveform | Add a marker at that position |
 | Long-press (touch) | Add a marker at that position |
-
-## Navigation
-
-Markers are labeled A, B, C… by time order. Jumping never selects a marker —
-selection exists only for nudge and delete — and never interrupts playback.
-
-| Key | Action |
-|---|---|
-| `↑` / `↓` | Jump to the previous / next marker, wrapping at the ends |
-| `A`–`Z` | Jump straight to that marker (`M` is reserved for adding — the marker labeled `M` is reached with the arrow keys) |
-| Click a marker flag | Jump to it (and select it for editing) |
-
-Labels continue past `Z` (`AA`, `AB`, …); the arrow keys reach every marker,
-including those a single letter key cannot.
-
-## Editing the selected marker
-
-Click a flag to select a marker; the inspector opens with its time, nudges,
-and aliases.
-
-| Key | Action |
-|---|---|
+| Click a marker flag | Jump to it **and select it** for editing |
 | `Alt`+`←` / `Alt`+`→` | Nudge the selected marker ∓0.1 seconds |
 | `Delete` / `Backspace` | Delete the selected marker (undo toast for 5 seconds) |
 | `Esc` | Deselect |

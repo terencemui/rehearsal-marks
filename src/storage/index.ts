@@ -7,7 +7,7 @@ export { createAutosave, saveStatusFor } from './autosave';
 export type { Autosave, AutosaveOptions, SaveStatus } from './autosave';
 export { StorageError } from './errors';
 export type { StorageErrorCode } from './errors';
-export { estimateStoredSize } from './records';
+export { defaultPlayerMode, estimateStoredSize } from './records';
 export type {
   LibraryEntryRecord,
   LibraryEntrySummary,
