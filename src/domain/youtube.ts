@@ -22,6 +22,11 @@ export interface YouTubeLink {
  */
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
+/** Whether a string has the shape of a video ID — 11 URL-safe characters. Case-sensitive, so a shape check only. */
+export function isVideoId(value: string): boolean {
+  return VIDEO_ID.test(value);
+}
+
 /** Host prefixes YouTube itself serves; anything else must match exactly. */
 const HOST_PREFIXES = ['www.', 'm.', 'music.'];
 
@@ -69,7 +74,7 @@ export function parseYouTubeLink(input: string): YouTubeLink {
 
 /** A candidate ID, validated and turned into the link's two facts. */
 function resolve(videoId: string | null | undefined): YouTubeLink {
-  if (videoId === null || videoId === undefined || !VIDEO_ID.test(videoId)) {
+  if (videoId === null || videoId === undefined || !isVideoId(videoId)) {
     throw malformedLink();
   }
   return { videoId, canonicalUrl: canonicalYouTubeUrl(videoId) };
