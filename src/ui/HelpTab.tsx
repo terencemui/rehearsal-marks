@@ -26,7 +26,15 @@ export function HelpTab() {
           is in a text field (the marker time or aliases inputs), so typing never seeks, jumps,
           or deletes.
         </p>
-        <h4>Playback</h4>
+        <p>
+          The player has two postures, switched from the <strong>Playback | Label</strong>{' '}
+          segmented control in the transport bar. <strong>Playback mode</strong> is the practice
+          posture: navigation tools with read-only markers. <strong>Label mode</strong> keeps
+          every navigation tool and adds the editing tools. Uploads open in Label mode; YouTube
+          and library-seeded projects open in Playback mode. The last-used mode is remembered
+          per project.
+        </p>
+        <h4>Both modes</h4>
         <table>
           <tbody>
             <tr>
@@ -41,9 +49,40 @@ export function HelpTab() {
               </td>
               <td>Seek ∓5 seconds</td>
             </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd>
+              </td>
+              <td>Jump to the previous / next marker, wrapping at the ends</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>A</kbd>–<kbd>Z</kbd>
+              </td>
+              <td>Jump straight to that marker</td>
+            </tr>
+            <tr>
+              <td>Click a marker flag</td>
+              <td>Jump to it</td>
+            </tr>
+            <tr>
+              <td>The volume slider</td>
+              <td>Adjust playback level</td>
+            </tr>
           </tbody>
         </table>
-        <h4>Marking</h4>
+        <p>
+          Markers are labeled A, B, C… by time order. Jumping never selects a marker — selection
+          exists only for editing — and never interrupts playback. Labels continue past{' '}
+          <kbd>Z</kbd> (<kbd>AA</kbd>, <kbd>AB</kbd>, …); the arrow keys reach every marker,
+          including those a single letter key cannot.
+        </p>
+        <p>
+          <kbd>M</kbd> means different things per posture: in Label mode it adds a marker (the
+          marker labeled M is reached with the arrow keys there); in Playback mode it jumps to
+          the marker labeled M like every other letter.
+        </p>
+        <h4>Label mode</h4>
         <table>
           <tbody>
             <tr>
@@ -60,43 +99,10 @@ export function HelpTab() {
               <td>Long-press (touch)</td>
               <td>Add a marker at that position</td>
             </tr>
-          </tbody>
-        </table>
-        <h4>Navigation</h4>
-        <p>
-          Markers are labeled A, B, C… by time order. Jumping never selects a marker — selection
-          exists only for nudge and delete — and never interrupts playback.
-        </p>
-        <table>
-          <tbody>
-            <tr>
-              <td>
-                <kbd>↑</kbd> / <kbd>↓</kbd>
-              </td>
-              <td>Jump to the previous / next marker, wrapping at the ends</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>A</kbd>–<kbd>Z</kbd>
-              </td>
-              <td>
-                Jump straight to that marker (<kbd>M</kbd> is reserved for adding — the marker
-                labeled M is reached with the arrow keys)
-              </td>
-            </tr>
             <tr>
               <td>Click a marker flag</td>
-              <td>Jump to it (and select it for editing)</td>
+              <td>Jump to it and select it for editing</td>
             </tr>
-          </tbody>
-        </table>
-        <p>
-          Labels continue past <kbd>Z</kbd> (<kbd>AA</kbd>, <kbd>AB</kbd>, …); the arrow keys
-          reach every marker, including those a single letter key cannot.
-        </p>
-        <h4>Editing the selected marker</h4>
-        <table>
-          <tbody>
             <tr>
               <td>
                 <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd>
@@ -117,6 +123,11 @@ export function HelpTab() {
             </tr>
           </tbody>
         </table>
+        <p>
+          The same nudges exist as ±0.1s and ±1s buttons in the inspector, next to the time field
+          (accepts <code>5:10.5</code>, <code>310.5</code>, <code>5 10</code>) and the aliases
+          field (non-empty, ≤16 characters, unique per project).
+        </p>
       </section>
 
       <section aria-labelledby="help-formats">

@@ -21,7 +21,8 @@ import {
   setAliases as setMarkerAliases,
 } from '../domain';
 import type { LabeledMarker, Marker } from '../domain';
-import type { Autosave, ProjectRecord, SaveStatus } from '../storage';
+import { defaultPlayerMode } from '../storage';
+import type { Autosave, PlayerMode, ProjectRecord, SaveStatus } from '../storage';
 import { MarkerFlags } from './MarkerFlags';
 import { MarkerInspector } from './MarkerInspector';
 import { STATUS_TEXT } from './status';
@@ -98,6 +99,16 @@ interface UndoState {
  * stretch with it — so the audio seam never learns about zoom. Ctrl/cmd+scroll
  * and two-finger pinch adjust the level around the cursor; jumps scroll the
  * target into view.
+ *
+ * T18 modes: every project has a Playback | Label posture, seeded from the
+ * record's persisted `playerMode` (each source's default on first open) and
+ * written back on every switch. Playback mode is navigation-only — the
+ * read-only posture of a practice session — so every editing tool (M,
+ * double-click and long-press adds, the Add marker button, nudges, typed
+ * times, aliases, delete with undo, Esc deselect, flag-click selection) is
+ * gated behind Label mode; the keyboard scheme, flag jumps, and the volume
+ * slider work in both. A selection made in Label mode survives a posture
+ * switch but stays hidden — and Delete cannot reach it — while practicing.
  */
 export function Player({
   autosave,
@@ -118,6 +129,15 @@ export function Player({
   // labels, and the inspector render from the same record that persists.
   const [current, setCurrent] = useState<ProjectRecord>(record);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // T18. The player's posture, seeded from the record's last-used mode and
+  // persisted on every switch. A record saved before the field existed has
+  // none — its first open applies the source-dependent default, exactly as
+  // creation stamps it. `editing` is the one gate every editing tool reads;
+  // navigation never does.
+  const [playerMode, setPlayerMode] = useState<PlayerMode>(
+    record.playerMode ?? defaultPlayerMode(record.source),
+  );
+  const editing = playerMode === 'label';
   const [undo, setUndo] = useState<UndoState | null>(null);
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const longPress = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(
@@ -213,6 +233,17 @@ export function Player({
     update((r) => ({ ...r, markers: fn(r.markers) }));
   }
 
+  /**
+   * Switches posture and persists it — the record's last-used mode is the
+   * next session's initial posture. A no-op switch writes nothing: like the
+   * duration epsilon, a rewrite that changed nothing would dirty the record.
+   */
+  function changeMode(next: PlayerMode): void {
+    if (next === playerMode) return;
+    setPlayerMode(next);
+    update((r) => ({ ...r, playerMode: next }));
+  }
+
   /** Clamps a candidate marker time into the recording, when one is known. */
   function clampToDuration(time: number): number {
     const bounded = Math.max(0, time);
@@ -264,12 +295,16 @@ export function Player({
     return clampToDuration(timeAtOffset(clientX, bounds.left, shell.scrollLeft, view.pxPerSec));
   }
 
-  /** Clicking a flag: jump to the marker and select it for nudge/delete. */
-  function select(marker: LabeledMarker): void {
-    setSelectedId(marker.id);
+  /**
+   * A flag click: always jump to the marker — navigation exists in both
+   * postures — but select it for nudge/delete only in Label mode. Playback
+   * mode's clicks never touch the (hidden) selection.
+   */
+  function handleFlagClick(marker: LabeledMarker): void {
     controller.seek(marker.time);
     // Jumps always bring the target into view.
     revealTime(marker.time);
+    if (editing) setSelectedId(marker.id);
   }
 
   function deleteSelected(): void {
@@ -347,10 +382,13 @@ export function Player({
     const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
     if (plain && (event.key === 'm' || event.key === 'M')) {
       // The primary marking path: a marker at the playhead, mid-playback,
-      // without pausing.
-      event.preventDefault();
-      addAtPlayhead();
-      return;
+      // without pausing. Label mode only — in Playback mode there is nothing
+      // to reserve M for, so it falls through to the letter jump below.
+      if (editing) {
+        event.preventDefault();
+        addAtPlayhead();
+        return;
+      }
     }
     // Arrows are plain chords only: Shift+arrows stay the browser's (scroll,
     // selection), Alt+arrows are the marker nudge below.
@@ -380,8 +418,9 @@ export function Player({
     }
     if (plain && /^[a-z]$/i.test(event.key)) {
       // A–Z jumps straight to that marker — "take it from C" is one keypress.
-      // M never reaches here: the block above reserves it for adding. Letters
-      // without a marker pass through untouched.
+      // M reaches here only in Playback mode: Label mode's block above
+      // reserves it for adding. Letters without a marker pass through
+      // untouched.
       const target = markerForLetter(labeled, event.key);
       if (target !== null) {
         event.preventDefault();
@@ -391,21 +430,24 @@ export function Player({
       return;
     }
     if (plain && (event.key === 'Delete' || event.key === 'Backspace')) {
-      if (selectedId === null) return; // leave an unselected Backspace alone
+      // Playback mode never deletes — the marks are read-only there. An
+      // unselected Backspace is left alone in either posture.
+      if (!editing || selectedId === null) return;
       event.preventDefault();
       deleteSelected();
       return;
     }
     if (plain && event.key === 'Escape') {
-      setSelectedId(null);
+      if (editing) setSelectedId(null);
       return;
     }
     if (event.altKey && !event.ctrlKey && !event.metaKey) {
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        // Alt+← is the browser's Back — the player owns these arrows, so the
-        // browser default is always blocked; the nudge just needs a selection.
+        // Alt+← is the browser's Back — the player owns these arrows in both
+        // postures, so the browser default is always blocked; the nudge is
+        // Label mode's and needs a selection.
         event.preventDefault();
-        if (selectedId !== null) {
+        if (editing && selectedId !== null) {
           nudge(event.key === 'ArrowLeft' ? -0.1 : 0.1);
         }
       }
@@ -491,6 +533,9 @@ export function Player({
   function onDoubleClick(event: React.MouseEvent): void {
     // Flags stop their own double-clicks from reaching here (a flag
     // double-click is just two flag clicks) — this runs only on the surface.
+    // Playback mode adds nothing: the double-click's clicks still seek
+    // through the surface, which is exactly its navigation-only meaning.
+    if (!editing) return;
     const time = timeAtClientX(event.clientX);
     if (time !== null) addAt(time);
   }
@@ -498,8 +543,13 @@ export function Player({
   function onTouchStart(event: React.TouchEvent): void {
     if (event.touches.length !== 1) return;
     // Flags stop their own touches from reaching here; the surface is clear.
-    // Any stale suppression from an earlier gesture ends here.
+    // Any stale suppression from an earlier gesture ends here — even in
+    // Playback mode, where the long-press below never arms, a lingering
+    // guard must not eat a practice session's next seek click.
     suppressNextClick.current = false;
+    // Playback mode adds nothing; a long-press there is just a pause before
+    // the seek the trailing click performs.
+    if (!editing) return;
     const { clientX: x, clientY: y } = event.touches[0];
     const timer = setTimeout(() => {
       const time = timeAtClientX(x);
@@ -744,8 +794,8 @@ export function Player({
         <MarkerFlags
           markers={labeled}
           duration={duration}
-          selectedId={selectedId}
-          onSelect={select}
+          selectedId={editing ? selectedId : null}
+          onFlagClick={handleFlagClick}
           width={viewWidth}
         />
         {/* pointer-events: none — clicks pass through to the seek surface. */}
@@ -764,14 +814,24 @@ export function Player({
         >
           {playback.playing ? 'Pause' : 'Play'}
         </button>
-        <button
-          type="button"
-          disabled={mode === null}
-          title="Shortcut: M"
-          onClick={() => addAtPlayhead()}
-        >
-          Add marker
-        </button>
+        <div className="player-modes" role="group" aria-label="Player mode">
+          <button type="button" aria-pressed={!editing} onClick={() => changeMode('playback')}>
+            Playback
+          </button>
+          <button type="button" aria-pressed={editing} onClick={() => changeMode('label')}>
+            Label
+          </button>
+        </div>
+        {editing && (
+          <button
+            type="button"
+            disabled={mode === null}
+            title="Shortcut: M"
+            onClick={() => addAtPlayhead()}
+          >
+            Add marker
+          </button>
+        )}
         <label className="player-volume">
           <span>Volume</span>
           <input
@@ -784,7 +844,7 @@ export function Player({
           />
         </label>
       </div>
-      {selected !== null && (
+      {editing && selected !== null && (
         <MarkerInspector
           marker={selected}
           duration={duration}
@@ -795,6 +855,10 @@ export function Player({
           onDeselect={() => setSelectedId(null)}
         />
       )}
+      {/* The toast answers the Label-mode delete that opened its window; it
+      deliberately survives a posture switch. Dismissing it there would
+      silently finalize the delete — practice flow switches modes constantly,
+      and an undo that evaporates on the switch is a trap, not read-only. */}
       {undo !== null && (
         <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
       )}

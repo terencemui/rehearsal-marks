@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LoadResult } from '../audio';
 import { createAutosave } from '../storage';
+import type { PlayerMode } from '../storage';
 import type { MockController } from '../test/controller-fixture';
 import { mockController } from '../test/controller-fixture';
 import { uploadLoad } from '../test/load-fixture';
 import { marker } from '../test/marker-fixture';
-import { projectRecord } from '../test/project-fixture';
+import { projectRecord, youtubeProjectRecord } from '../test/project-fixture';
 import { closeTestStorages, testStorage } from '../test/storage-fixture';
 import { Player } from './Player';
 
@@ -195,6 +196,20 @@ describe('Player playback controls', () => {
     await user.keyboard(' ');
     expect(controller.togglePlay).toHaveBeenCalledTimes(2);
 
+    // Focus on a mode button: its native Space activation is the one mode
+    // switch — the window handler must not double-toggle playback on top.
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveFocus();
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Label' })).toHaveFocus();
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(2);
+
     // Focus on another button: Space does nothing at all.
     await user.tab();
     expect(screen.getByRole('button', { name: 'Add marker' })).toHaveFocus();
@@ -234,6 +249,206 @@ describe('Player playback controls', () => {
     // view still guards) pins to the recording's end instead of overflowing.
     act(() => controller.emitPlayback({ currentTime: 15 }));
     expect(playhead.style.left).toBe('80px');
+  });
+});
+
+/* T18 modes. The record's persisted playerMode is the player's initial
+posture — uploads arrive in Label mode, YouTube and library-seeded projects
+in Playback — and the segmented control persists each switch. */
+
+/** Renders a player whose record persisted Playback as the last-used mode. */
+function renderPlaybackPlayer(record = projectRecord({ playerMode: 'playback' })) {
+  return renderMarkingPlayer(record);
+}
+
+describe('Player modes', () => {
+  it('opens an upload project in Label mode, its persisted default', async () => {
+    const { container } = await renderMarkingPlayer();
+
+    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
+    expect(flags(container)).toHaveLength(2);
+  });
+
+  it('opens a project whose record persisted Playback mode read-only', async () => {
+    const { container } = await renderPlaybackPlayer();
+
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+    expect(flags(container)).toHaveLength(2);
+  });
+
+  it('opens a legacy upload record — no persisted mode — in Label mode', async () => {
+    // Records saved before the playerMode field existed read back without it;
+    // every pre-existing project is an upload, whose first-open posture is
+    // Label mode.
+    const { container } = await renderMarkingPlayer(
+      projectRecord({ playerMode: undefined as unknown as PlayerMode }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
+    expect(flags(container)).toHaveLength(2);
+  });
+
+  it('opens a YouTube record with no persisted mode in Playback mode', async () => {
+    const { container } = await renderPlaybackPlayer(
+      youtubeProjectRecord({ playerMode: undefined as unknown as PlayerMode }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+    expect(flags(container)).toHaveLength(2);
+  });
+
+  it('switches postures from the segmented control without touching playback', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderMarkingPlayer();
+    act(() => controller.emitPlayback({ playing: true }));
+
+    await user.click(screen.getByRole('button', { name: 'Playback' }));
+
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+    expect(controller.togglePlay).not.toHaveBeenCalled();
+    expect(controller.getPlaybackState().playing).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'Label' }));
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
+  });
+
+  it('persists the last-used mode with the record', async () => {
+    const user = userEvent.setup();
+    const { storage, record, unmount } = await renderMarkingPlayer();
+
+    await user.click(screen.getByRole('button', { name: 'Playback' }));
+    unmount();
+
+    await waitFor(async () => {
+      const stored = await storage.projects.get(record.id);
+      expect(stored!.playerMode).toBe('playback');
+    });
+  });
+
+  it('keeps every navigation tool working in Playback mode', async () => {
+    const user = userEvent.setup();
+    const { controller } = await renderPlaybackPlayer();
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(1);
+
+    await user.keyboard('{ArrowRight}');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+
+    await user.keyboard('b');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+
+    await user.keyboard('{ArrowDown}');
+    expect(controller.seek).toHaveBeenLastCalledWith(10); // wraps from 20
+
+    const slider = screen.getByRole('slider', { name: 'Volume' });
+    fireEvent.change(slider, { target: { value: '0.5' } });
+    expect(controller.setVolume).toHaveBeenCalledWith(0.5);
+  });
+
+  it('leaves every editing tool behind in Playback mode', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderPlaybackPlayer();
+    mockShellRect(container, 800);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+
+    await user.keyboard('m');
+    expect(flags(container)).toHaveLength(2); // M adds nothing here
+
+    fireEvent.doubleClick(shell, { clientX: 200 });
+    expect(flags(container)).toHaveLength(2); // double-click adds nothing
+
+    fireEvent.keyDown(document.body, { key: 'Delete' });
+    expect(flags(container)).toHaveLength(2); // no selection to delete
+
+    // The player still owns Alt+arrows — the browser Back stays blocked —
+    // but without a selection there is nothing to nudge.
+    expect(fireEvent.keyDown(document.body, { key: 'ArrowLeft', altKey: true })).toBe(false);
+    expect(flags(container)[0].style.left).toBe(`${(10 / RECORD_SECONDS) * 100}%`);
+
+    // A flag click jumps but never selects.
+    fireEvent.click(flags(container)[1]);
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+    expect(screen.queryByRole('region', { name: 'Marker B' })).not.toBeInTheDocument();
+    expect(flags(container)[1]).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('adds nothing on a long-press in Playback mode', async () => {
+    const { container } = await renderPlaybackPlayer();
+    mockShellRect(container, 800);
+    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.touchStart(shell, { touches: [{ clientX: 400, clientY: 10 }] });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(flags(container)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a Label-mode selection hidden in Playback and restores it on return', async () => {
+    const user = userEvent.setup();
+    const { container } = await renderMarkingPlayer();
+    fireEvent.click(flags(container)[0]); // select A, inspector opens
+    expect(screen.getByRole('region', { name: 'Marker A' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Playback' }));
+
+    // The selection neither shows nor acts while practicing.
+    expect(screen.queryByRole('region', { name: 'Marker A' })).not.toBeInTheDocument();
+    expect(flags(container)[0]).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.keyDown(document.body, { key: 'Delete' });
+    expect(flags(container)).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: 'Label' }));
+
+    // The posture switch is not a deselect: the same marker is still there.
+    expect(screen.getByRole('region', { name: 'Marker A' })).toBeInTheDocument();
+  });
+
+  it('unsticks shortcuts when a mode switch closes the focused inspector field', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderMarkingPlayer();
+    fireEvent.click(flags(container)[0]); // select A, inspector opens
+    await user.click(screen.getByLabelText('Time'));
+
+    await user.click(screen.getByRole('button', { name: 'Playback' }));
+
+    // The field left with the inspector; Playback-mode keys work from the
+    // button now — no dead suppression follows the closed input.
+    await user.keyboard('b');
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+  });
+
+  it('lets M join the letter jumps in Playback mode', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = await renderPlaybackPlayer(
+      projectRecord({
+        playerMode: 'playback',
+        markers: Array.from({ length: 13 }, (_, i) => marker(`m${i}`, i + 1)), // labels A–M
+      }),
+    );
+    act(() => controller.emitPlayback({ currentTime: 50 }));
+
+    await user.keyboard('m');
+
+    // No marker added — the playhead jumped to the marker labeled M.
+    expect(flags(container)).toHaveLength(13);
+    expect(controller.seek).toHaveBeenCalledTimes(1);
+    expect(controller.seek).toHaveBeenLastCalledWith(13);
   });
 });
 

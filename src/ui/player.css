@@ -30,6 +30,34 @@ two-finger pan mid-pinch and the handlers could no longer cancel it. */
   margin-top: 8px;
 }
 
+/* The Playback | Label segmented control: one posture toggle, two buttons.
+The pressed half carries the player's accent, so the active posture reads at
+a glance without adding another visual language to the transport. */
+.player-modes {
+  display: flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.player-modes button {
+  padding: 4px 14px;
+  border: 0;
+  background: #fff;
+  color: #334155;
+  font: 500 13px/20px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.player-modes button + button {
+  border-left: 1px solid #cbd5e1;
+}
+
+.player-modes button[aria-pressed='true'] {
+  background: #0f766e;
+  color: #fff;
+}
+
 .player-volume {
   display: flex;
   align-items: center;
