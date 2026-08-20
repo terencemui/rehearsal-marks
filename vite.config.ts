@@ -13,5 +13,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // Stale worktrees under .claude/ hold old code with its own test files —
+    // the default include glob would run them against the current node_modules.
+    exclude: ['**/node_modules/**', '**/dist/**', '.claude/worktrees/**'],
   },
 });

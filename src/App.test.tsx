@@ -10,6 +10,7 @@ import { exportProjectZip } from './portability';
 import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
 import { mockController } from './test/controller-fixture';
+import { uploadLoad } from './test/load-fixture';
 import { projectRecord, uploadAudio } from './test/project-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
 import App from './App';
@@ -144,7 +145,7 @@ describe('App upload flow', () => {
     expect(stored!.audioMeta.filename).toBe('brahms-op118.mp3');
 
     // The player rendered the waveform through the seam with the same blob.
-    const loadOptions = vi.mocked(controller.load).mock.calls[0][0];
+    const loadOptions = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(loadOptions.blob).toBeInstanceOf(Blob);
     expect(loadOptions.peaks).toEqual({ peaks: [[0, 1]], duration: 10 });
   });
@@ -264,7 +265,7 @@ describe('App Projects workspace', () => {
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     const extractOptions = vi.mocked(controller.extractPeaks).mock.calls[0][0];
     expect(new Uint8Array(await extractOptions.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
-    const loadOptions = vi.mocked(controller.load).mock.calls[0][0];
+    const loadOptions = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(new Uint8Array(await loadOptions.blob!.arrayBuffer())).toEqual(
       new Uint8Array([1, 2, 3, 4]),
     );
@@ -550,7 +551,7 @@ describe('App Library tab', () => {
       await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Streaming from the library/)).toBeInTheDocument();
-    const loadOptions = vi.mocked(controller.load).mock.calls[0][0];
+    const loadOptions = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(loadOptions.blob).toBeNull();
     expect(loadOptions.url).toBe(LIBRARY_AUDIO_URL);
 
@@ -603,7 +604,7 @@ describe('App Library tab', () => {
     expect(
       await screen.findByRole('heading', { name: 'Goldberg Variations, BWV 988 — Aria' }),
     ).toBeInTheDocument();
-    const loadOptions = vi.mocked(controller.load).mock.calls[0][0];
+    const loadOptions = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(loadOptions.url).toBeNull();
     expect(new Uint8Array(await loadOptions.blob!.arrayBuffer())).toEqual(new Uint8Array([5, 6, 7]));
     // Only the catalog fetch ever ran.

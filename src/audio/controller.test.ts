@@ -127,6 +127,7 @@ describe('AudioController playback', () => {
     async function loadRuler(container: HTMLElement) {
       const controller = createAudioController();
       const pending = controller.load({
+        source: 'upload',
         blob: new Blob(['audio']),
         url: null,
         container,
@@ -235,6 +236,7 @@ describe('AudioController playback', () => {
       const container = document.createElement('div');
       const controller = createAudioController();
       const pending = controller.load({
+        source: 'upload',
         blob: null,
         url: 'https://example.org/piece.mp3',
         container,
@@ -259,6 +261,7 @@ describe('AudioController playback', () => {
       const container = document.createElement('div');
       const controller = createAudioController();
       const pending = controller.load({
+        source: 'upload',
         blob: null,
         url: 'https://example.org/piece.mp3',
         container,
@@ -278,6 +281,7 @@ describe('AudioController playback', () => {
       const controller = createAudioController();
       const container = document.createElement('div');
       const result = await controller.load({
+        source: 'upload',
         blob: new Blob(['audio']),
         url: null,
         container,
