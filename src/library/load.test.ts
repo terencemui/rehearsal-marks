@@ -25,7 +25,7 @@ const ENTRY: CatalogEntry = {
 function labelset(): ProjectFileData {
   return parseProjectFile(
     serializeProjectFile({
-      project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0 },
+      project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0, source: 'upload' },
       markers: [
         { id: 'm1', time: 10, aliases: ['Recap'], createdAt: 111 },
         { id: 'm2', time: 222.35, aliases: [], createdAt: 222 },

@@ -66,7 +66,7 @@ function catalogEntry(sha: string): CatalogEntry {
 /** A contributed label set carrying the recording's identity, as `project.json`. */
 function labelsetFile(sha: string): string {
   const data: ProjectFileData = {
-    project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0 },
+    project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0, source: 'upload' },
     markers: [
       { id: 'm1', time: 10, aliases: [], createdAt: 1 },
       { id: 'm2', time: 222.35, aliases: ['Recap'], createdAt: 2 },

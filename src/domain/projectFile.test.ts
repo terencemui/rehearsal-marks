@@ -33,9 +33,34 @@ const audioMeta: AudioMeta = {
 /** A project file's worth of domain data: markers deliberately out of time order. */
 function fileData(): ProjectFileData {
   return {
-    project: { id: newId(), name: 'Mozart K. 466, iii', createdAt: 1000, updatedAt: 2000 },
+    project: {
+      id: newId(),
+      name: 'Mozart K. 466, iii',
+      createdAt: 1000,
+      updatedAt: 2000,
+      source: 'upload',
+    },
     markers: [marker('a', 30, ['Recap']), marker('b', 10), marker('c', 20, ['Coda'])],
     audioMeta,
+  };
+}
+
+/** The same data with its project section marked YouTube, canonical URL included. */
+function youtubeFileData(): ProjectFileData {
+  const data = fileData();
+  return {
+    ...data,
+    project: { ...data.project, source: 'youtube' },
+    audioMeta: {
+      sha256: '',
+      duration: 542.25,
+      mimeType: '',
+      filename: 'Brahms Intermezzo',
+      sizeBytes: 0,
+      source: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      license: '',
+      attribution: '',
+    },
   };
 }
 
@@ -46,9 +71,27 @@ describe('serializeProjectFile', () => {
     const parsed = JSON.parse(serializeProjectFile(data)) as Record<string, unknown>;
 
     expect(parsed.schemaVersion).toBe(1);
-    expect(parsed.project).toEqual(data.project);
+    expect(parsed.project).toEqual({
+      id: data.project.id,
+      name: data.project.name,
+      createdAt: data.project.createdAt,
+      updatedAt: data.project.updatedAt,
+    });
+    // Uploads omit the discriminator — absent means upload, so upload files
+    // are byte-for-byte the files the app always wrote.
+    expect(parsed.project).not.toHaveProperty('source');
     expect(parsed.audioMeta).toEqual(data.audioMeta);
     expect(parsed.markers).toHaveLength(3);
+  });
+
+  it('writes the source discriminator into the project section of a YouTube file', () => {
+    const data = youtubeFileData();
+
+    const parsed = JSON.parse(serializeProjectFile(data)) as {
+      project: Record<string, unknown>;
+    };
+
+    expect(parsed.project.source).toBe('youtube');
   });
 
   it('writes each marker with id, time, label, aliases, createdAt — label informational, by time rank', () => {
@@ -81,6 +124,77 @@ describe('parseProjectFile', () => {
     const data = fileData();
 
     expectProjectFileEquals(parseProjectFile(serializeProjectFile(data)), data);
+  });
+
+  it('round-trips a YouTube file: source and canonical URL preserved, identity fields it does not apply are empty', () => {
+    const data = youtubeFileData();
+
+    expectProjectFileEquals(parseProjectFile(serializeProjectFile(data)), data);
+  });
+
+  it('reads a file without a source discriminator as an upload (files from before the field existed)', () => {
+    const data = fileData();
+    const parsed = JSON.parse(serializeProjectFile(data)) as {
+      project: Record<string, unknown>;
+    };
+
+    expect(parseProjectFile(JSON.stringify(parsed)).project.source).toBe('upload');
+  });
+
+  it('accepts an explicit "upload" discriminator written by another tool', () => {
+    const data = fileData();
+    const parsed = JSON.parse(serializeProjectFile(data)) as {
+      project: Record<string, unknown>;
+    };
+    parsed.project.source = 'upload';
+
+    expect(parseProjectFile(JSON.stringify(parsed)).project.source).toBe('upload');
+  });
+
+  it('rejects a source discriminator that is neither upload nor youtube', () => {
+    for (const source of ['vimeo', 'YouTube', 42, null, true]) {
+      const data = fileData();
+      const parsed = JSON.parse(serializeProjectFile(data)) as {
+        project: Record<string, unknown>;
+      };
+      parsed.project.source = source;
+
+      expectDomainError(() => parseProjectFile(JSON.stringify(parsed)), 'invalid-project-file');
+    }
+  });
+
+  it('rejects a YouTube-marked file whose canonical URL is empty — the URL is its recording identity', () => {
+    const data = youtubeFileData();
+    const parsed = JSON.parse(serializeProjectFile(data)) as {
+      audioMeta: Record<string, unknown>;
+    };
+    parsed.audioMeta.source = '';
+
+    expectDomainError(() => parseProjectFile(JSON.stringify(parsed)), 'invalid-project-file');
+  });
+
+  it('rejects a YouTube-marked file whose URL is not a YouTube video link', () => {
+    for (const source of ['not a url', 'https://example.com/watch?v=dQw4w9WgXcQ']) {
+      const data = youtubeFileData();
+      const parsed = JSON.parse(serializeProjectFile(data)) as {
+        audioMeta: Record<string, unknown>;
+      };
+      parsed.audioMeta.source = source;
+
+      expectDomainError(() => parseProjectFile(JSON.stringify(parsed)), 'invalid-project-file');
+    }
+  });
+
+  it('normalizes any accepted YouTube link form to the canonical URL on parse', () => {
+    const data = youtubeFileData();
+    const parsed = JSON.parse(serializeProjectFile(data)) as {
+      audioMeta: Record<string, unknown>;
+    };
+    parsed.audioMeta.source = 'https://youtu.be/dQw4w9WgXcQ';
+
+    const imported = parseProjectFile(JSON.stringify(parsed));
+
+    expect(imported.audioMeta.source).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   });
 
   it('rejects a newer schemaVersion with a clear error naming both versions', () => {
