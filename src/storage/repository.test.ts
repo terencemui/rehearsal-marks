@@ -11,7 +11,7 @@ const testStorage = () => createStorage({ name: `repo-test-${crypto.randomUUID()
 function labelset(markers: Marker[] = []): ProjectFileData {
   return parseProjectFile(
     serializeProjectFile({
-      project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0 },
+      project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0, source: 'upload' },
       markers,
       audioMeta: {
         sha256: 'lib-hash',
@@ -107,7 +107,8 @@ describe('project repository', () => {
       markerCount: 2,
       sizeBytes: FIXTURE_STORED_SIZE,
       updatedAt: 2_000,
-      source: '',
+      source: 'upload',
+      audioUrl: '',
       sha256: 'abc123',
     });
     expect(summaries[1].sizeBytes).toBe(FIXTURE_STORED_SIZE);

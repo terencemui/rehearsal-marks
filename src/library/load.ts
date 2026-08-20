@@ -110,12 +110,12 @@ export function seedProject(
  * fallback for records seeded before the hash join existed.
  */
 export function seededProjectId(
-  projects: readonly { id: string; source: string; sha256: string }[],
+  projects: readonly { id: string; audioUrl: string; sha256: string }[],
   entry: Pick<CatalogEntry, 'audioUrl' | 'sha256'>,
 ): string | undefined {
   return projects.find(
     (project) =>
       (project.sha256 !== '' && project.sha256 === entry.sha256) ||
-      project.source === entry.audioUrl,
+      project.audioUrl === entry.audioUrl,
   )?.id;
 }

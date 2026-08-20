@@ -6,6 +6,9 @@ import { setAliases } from './markers';
 /** The only schema version this app reads and writes. */
 export const SCHEMA_VERSION = 1;
 
+/** Where a project's recording comes from — the discriminated `source`. */
+export type ProjectSource = 'upload' | 'youtube';
+
 /** The `project` section of a project file. */
 export interface ProjectInfo {
   id: string;
@@ -14,6 +17,11 @@ export interface ProjectInfo {
   createdAt: number;
   /** Epoch ms. */
   updatedAt: number;
+  /**
+   * Where the recording comes from. Absent in files written before YouTube
+   * projects existed — those are always uploads, so the parse defaults here.
+   */
+  source: ProjectSource;
 }
 
 /**
@@ -152,7 +160,15 @@ function readProject(value: unknown): ProjectInfo {
     name: assertString(raw.name, '"project.name"'),
     createdAt: assertFiniteNumber(raw.createdAt, '"project.createdAt"'),
     updatedAt: assertFiniteNumber(raw.updatedAt, '"project.updatedAt"'),
+    // The optional field: a file predating YouTube projects has no source,
+    // and every such file is an upload.
+    source: raw.source === undefined ? 'upload' : readSource(raw.source),
   };
+}
+
+function readSource(value: unknown): ProjectSource {
+  if (value === 'upload' || value === 'youtube') return value;
+  throw invalidFile('"project.source" must be "upload" or "youtube".');
 }
 
 function readMarkers(value: unknown): Marker[] {

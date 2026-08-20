@@ -86,16 +86,26 @@ const YOUTUBE_RULER_NOTE =
   'playhead and click-to-seek land within about a quarter second. Typed times and nudges stay exact.';
 
 /**
- * What a YouTube project says when the load reported a failure — the video is
- * private, removed, region-blocked, embed-disabled, or the API never arrived.
- * Claiming coarse-but-working playback here would be a lie, so the precision
- * note gives way to the truth. The full browsable-but-muted treatment (an
- * error card with the URL, an "Open on YouTube" link, and retry) is T20's; the
- * floor T17 owes is not describing playback that is not happening.
+ * What an empty Label-mode YouTube project says: no community labels arrived
+ * for this video, and the next move is the user's own first mark. An empty
+ * read-only project would hide the only thing there is to do with it.
+ * "Loaded", not "exist": an unreachable index says nothing about existence,
+ * and an empty claim would be a lie either way.
  */
-const YOUTUBE_FAILED_NOTE =
-  'This YouTube video couldn’t be played — it may be private, removed, or blocked from ' +
-  'embedding. Your marks are still here, and the project still exports.';
+const YOUTUBE_NO_LABELS_NOTE =
+  'No community labels loaded for this video — place the first mark yourself.';
+
+/**
+ * The error card's explanation — the video is private, removed, region-
+ * blocked, embed-disabled, or the API never arrived. The card names the
+ * problem, shows the video's URL with an "Open on YouTube" link, and offers
+ * a retry, so a temporary outage or a restored video recovers without
+ * recreating the project. The marks stay visible on the stored-duration
+ * timeline, and the project still exports.
+ */
+const YOUTUBE_FAILED_EXPLANATION =
+  'This YouTube video couldn’t be played — it may be private, removed, region-blocked, ' +
+  'or unavailable for embedding. Your marks are still here, and the project still exports.';
 
 /** A deletion held for undo: the marker, its label, and any restore failure. */
 interface UndoState {
@@ -152,6 +162,8 @@ export function Player({
    * a live-looking transport over a dead embed.
    */
   const [loadFailed, setLoadFailed] = useState(false);
+  /** Bumped by the failure card's Retry — re-runs the load effect. */
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
   // The record's identity — name, source, and audio — never changes in the player.
   const record = autosave.get();
@@ -428,8 +440,10 @@ export function Player({
     if (plain && (event.key === 'm' || event.key === 'M')) {
       // The primary marking path: a marker at the playhead, mid-playback,
       // without pausing. Label mode only — in Playback mode there is nothing
-      // to reserve M for, so it falls through to the letter jump below.
-      if (editing) {
+      // to reserve M for, so it falls through to the letter jump below — and
+      // never against a source that cannot play: a mark from a dead clock is
+      // noise. In that state M falls through like any letter.
+      if (editing && !loadFailed) {
         event.preventDefault();
         addAtPlayhead();
         return;
@@ -521,7 +535,15 @@ export function Player({
         // a YouTube project has only its canonical URL to play from — no
         // blob, no peaks — and the audio layer owns everything after that.
         isYouTube
-          ? { source: 'youtube', url: youtubeUrl, container }
+          ? {
+              source: 'youtube',
+              url: youtubeUrl,
+              container,
+              // The stored duration is the failure state's timeline: a dead
+              // embed reports nothing, so the ruler and the marks that ride
+              // on it render from the last honest length the record has.
+              duration: autosave.get().audioMeta.duration,
+            }
           : {
               source: 'upload',
               blob: streamUrl !== null ? null : audioBlobRef.current,
@@ -552,15 +574,30 @@ export function Player({
         }
       })
       .catch(() => {
-        if (!cancelled) setMode('ruler');
+        if (!cancelled) {
+          setMode('ruler');
+          // A rejected YouTube load is a dead source, not a ruler fallback —
+          // the card must return rather than leaving live-looking controls
+          // over an embed that failed again. Uploads never set the flag (their
+          // rejection path falls back to a playing ruler).
+          if (isYouTube) setLoadFailed(true);
+        }
       });
     return () => {
       cancelled = true;
     };
     // `streamUrl` is the load's only changing target: the blob is a ref
     // (uploads never change it mid-session) so a stream stays uninterrupted.
-    // The source and its URL are fixed for the life of a session.
-  }, [autosave, controller, isYouTube, peaks, streamUrl, update, youtubeUrl]);
+    // The source and its URL are fixed for the life of a session; `loadAttempt`
+    // is the failure card's retry, the one deliberate re-run of the whole load.
+  }, [autosave, controller, isYouTube, loadAttempt, peaks, streamUrl, update, youtubeUrl]);
+
+  /** The failure card's retry: back to loading, then a fresh load attempt. */
+  function retryLoad(): void {
+    setMode(null);
+    setLoadFailed(false);
+    setLoadAttempt((attempt) => attempt + 1);
+  }
 
   useEffect(() => {
     const unsubscribe = autosave.subscribe(setStatus);
@@ -586,7 +623,8 @@ export function Player({
 
   /** The note under a ruler-only timeline, when the caller supplied none. */
   function defaultRulerNote(): string {
-    if (loadFailed && isYouTube) return YOUTUBE_FAILED_NOTE;
+    // The failure card carries its own explanation; this note only ever
+    // describes working playback.
     if (isYouTube) return YOUTUBE_RULER_NOTE;
     return 'Waveform unavailable — the timeline still works.';
   }
@@ -596,7 +634,12 @@ export function Player({
     // double-click is just two flag clicks) — this runs only on the surface.
     // Playback mode adds nothing: the double-click's clicks still seek
     // through the surface, which is exactly its navigation-only meaning.
-    if (!editing) return;
+    // A source that cannot play is muted the same way — no marks from a dead
+    // clock, while the clicks keep their seek meaning. `mode === null` also
+    // guards the retry window: after the failure card's Retry resets the
+    // load, a stale zoom view must not accept adds before the new load
+    // settles.
+    if (!editing || loadFailed || mode === null) return;
     const time = timeAtClientX(event.clientX);
     if (time !== null) addAt(time);
   }
@@ -609,8 +652,10 @@ export function Player({
     // guard must not eat a practice session's next seek click.
     suppressNextClick.current = false;
     // Playback mode adds nothing; a long-press there is just a pause before
-    // the seek the trailing click performs.
-    if (!editing) return;
+    // the seek the trailing click performs. A dead source is muted the same
+    // way — no marks from a clock that is not playing anything — and the
+    // retry window (`mode === null`) stays muted too.
+    if (!editing || loadFailed || mode === null) return;
     const { clientX: x, clientY: y } = event.touches[0];
     const timer = setTimeout(() => {
       const time = timeAtClientX(x);
@@ -841,6 +886,19 @@ export function Player({
           {STATUS_TEXT[status]}
         </p>
       </header>
+      {loadFailed && isYouTube && (
+        <div role="alert" className="player-youtube-error">
+          <p>{YOUTUBE_FAILED_EXPLANATION}</p>
+          <p>
+            <a href={youtubeUrl} target="_blank" rel="noreferrer">
+              {youtubeUrl}
+            </a>
+          </p>
+          <button type="button" onClick={retryLoad}>
+            Retry
+          </button>
+        </div>
+      )}
       <div
         ref={shellRef}
         className="player-waveform-shell"
@@ -892,7 +950,9 @@ export function Player({
         {editing && (
           <button
             type="button"
-            disabled={mode === null}
+            // A dead source has no honest playhead to mark from — the button
+            // stays visible (the mode is still Label) but promises nothing.
+            disabled={mode === null || loadFailed}
             title="Shortcut: M"
             onClick={() => addAtPlayhead()}
           >
@@ -929,7 +989,19 @@ export function Player({
       {undo !== null && (
         <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
       )}
-      {mode === 'ruler' && <p className="ruler-note">{rulerNote ?? defaultRulerNote()}</p>}
+      {/* The failure card carries the explanation when the video cannot play;
+      a precision note about working playback would be a lie beside it. */}
+      {mode === 'ruler' && !(loadFailed && isYouTube) && (
+        <p className="ruler-note">
+          {rulerNote ??
+            (isYouTube && editing && current.markers.length === 0
+              ? // One note, both truths: the missing labels and the coarse
+                // clock the first mark will inherit — stacked hint paragraphs
+                // would read as one warning doubled.
+                `${YOUTUBE_NO_LABELS_NOTE} ${YOUTUBE_RULER_NOTE}`
+              : defaultRulerNote())}
+        </p>
+      )}
     </main>
   );
 }

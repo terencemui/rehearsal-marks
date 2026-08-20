@@ -53,6 +53,12 @@ export type LoadOptions =
       url: string;
       /** The element the video and ruler render into. */
       container: HTMLElement;
+      /**
+       * The stored duration — the record's known length, from the community
+       * set or an earlier load. A video that cannot play reports nothing, so
+       * this is the timeline its failure state renders from.
+       */
+      duration: number;
     };
 
 /**
@@ -318,6 +324,7 @@ export function createAudioController(): AudioController {
           url: options.url,
           volume: state.volume,
           container: options.container,
+          duration: options.duration,
           onState: emit,
         });
         youtube = session;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseProjectFile } from '../domain';
-import { projectRecord } from '../test/project-fixture';
+import { projectRecord, youtubeProjectRecord } from '../test/project-fixture';
 import type { ProjectRecord } from '../storage';
-import { exportLabelSetJson, exportProjectZip, sanitizeDownloadName } from './export';
+import { exportLabelSetJson, exportProjectJson, exportProjectZip, sanitizeDownloadName } from './export';
 import { readZipEntries } from './zip';
 
 describe('exportProjectZip', () => {
@@ -20,6 +20,7 @@ describe('exportProjectZip', () => {
       name: record.name,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      source: 'upload',
     });
     expect(parsed.markers).toEqual(record.markers);
     expect(parsed.audioMeta).toEqual(record.audioMeta);
@@ -52,8 +53,47 @@ describe('exportLabelSetJson', () => {
       name: record.name,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      source: 'upload',
     });
     expect(parsed.markers).toHaveLength(2);
+  });
+});
+
+describe('exportProjectJson', () => {
+  it('exports a YouTube project as bare project JSON carrying the video identity', () => {
+    const record = youtubeProjectRecord({
+      audioMeta: {
+        sha256: '',
+        duration: 604.2,
+        mimeType: '',
+        filename: 'A performance',
+        sizeBytes: 0,
+        source: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        license: '',
+        attribution: '',
+      },
+    });
+
+    const parsed = JSON.parse(exportProjectJson(record)) as Record<string, unknown>;
+
+    // The same shape as the label-set format — the file doubles as the
+    // community contribution format — with the source discriminator.
+    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.project).toEqual({
+      id: record.id,
+      name: record.name,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      source: 'youtube',
+    });
+    expect(parsed.audioMeta).toEqual(record.audioMeta);
+    expect(parsed.markers).toHaveLength(2);
+  });
+
+  it('matches the label-set export for an upload record (one serialization, two names)', () => {
+    const record = projectRecord();
+
+    expect(exportProjectJson(record)).toBe(exportLabelSetJson(record));
   });
 });
 

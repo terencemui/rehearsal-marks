@@ -33,7 +33,7 @@ const audioMeta: AudioMeta = {
 /** A project file's worth of domain data: markers deliberately out of time order. */
 function fileData(): ProjectFileData {
   return {
-    project: { id: newId(), name: 'Mozart K. 466, iii', createdAt: 1000, updatedAt: 2000 },
+    project: { id: newId(), name: 'Mozart K. 466, iii', createdAt: 1000, updatedAt: 2000, source: 'upload' },
     markers: [marker('a', 30, ['Recap']), marker('b', 10), marker('c', 20, ['Coda'])],
     audioMeta,
   };
@@ -49,6 +49,19 @@ describe('serializeProjectFile', () => {
     expect(parsed.project).toEqual(data.project);
     expect(parsed.audioMeta).toEqual(data.audioMeta);
     expect(parsed.markers).toHaveLength(3);
+  });
+
+  it('writes the project source for both sources', () => {
+    expect(
+      (JSON.parse(serializeProjectFile(fileData())) as { project: { source: string } }).project
+        .source,
+    ).toBe('upload');
+
+    const data = fileData();
+    data.project.source = 'youtube';
+    expect(
+      (JSON.parse(serializeProjectFile(data)) as { project: { source: string } }).project.source,
+    ).toBe('youtube');
   });
 
   it('writes each marker with id, time, label, aliases, createdAt — label informational, by time rank', () => {
@@ -81,6 +94,43 @@ describe('parseProjectFile', () => {
     const data = fileData();
 
     expectProjectFileEquals(parseProjectFile(serializeProjectFile(data)), data);
+  });
+
+  it('round-trips a YouTube project: source youtube, empty identity fields, zero size', () => {
+    const data = fileData();
+    data.project.source = 'youtube';
+    data.audioMeta = {
+      sha256: '',
+      duration: 604.2,
+      mimeType: '',
+      filename: 'A performance on YouTube',
+      sizeBytes: 0,
+      source: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      license: '',
+      attribution: '',
+    };
+
+    expectProjectFileEquals(parseProjectFile(serializeProjectFile(data)), data);
+  });
+
+  it('reads a file without project.source as an upload (the field is optional; absent means upload)', () => {
+    const data = fileData();
+    const parsed = JSON.parse(serializeProjectFile(data)) as Record<string, unknown>;
+    delete (parsed.project as Record<string, unknown>).source;
+
+    const imported = parseProjectFile(JSON.stringify(parsed));
+
+    expect(imported.project.source).toBe('upload');
+  });
+
+  it('rejects a project.source that is not upload or youtube', () => {
+    for (const source of ['spotify', '', 3, null]) {
+      const data = fileData();
+      const parsed = JSON.parse(serializeProjectFile(data)) as Record<string, unknown>;
+      (parsed.project as Record<string, unknown>).source = source;
+
+      expectDomainError(() => parseProjectFile(JSON.stringify(parsed)), 'invalid-project-file');
+    }
   });
 
   it('rejects a newer schemaVersion with a clear error naming both versions', () => {

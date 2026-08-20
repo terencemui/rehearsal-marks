@@ -76,6 +76,12 @@ export interface YouTubeSourceOptions {
   volume: number;
   /** The element the video and ruler render into. */
   container: HTMLElement;
+  /**
+   * The stored duration — the record's known length. A video that cannot
+   * play reports nothing, so its failure state renders the timeline from
+   * this instead of a bare zero tick.
+   */
+  duration: number;
   /** Publishes playback-state changes into the controller's store. */
   onState: (changes: YouTubeStateChanges) => void;
 }
@@ -116,16 +122,32 @@ export function loadYouTubeSource({
   url,
   volume,
   container,
+  duration: storedDuration,
   onState,
 }: YouTubeSourceOptions): YouTubeSession {
   let settled = false;
   let disposed = false;
+  /**
+   * Set when the load ended in failure: a dead source must not report life,
+   * and the API is known to emit state events around error teardown.
+   */
+  let dead = false;
   let player: YouTubePlayer | null = null;
   let pollId: number | null = null;
   let settle: (result: LoadResult) => void;
   const ready = new Promise<LoadResult>((resolve) => {
     settle = resolve;
   });
+
+  /**
+   * The duration the failure paths render from: the record's stored length.
+   * A dead embed reports no duration of its own, so the timeline and the
+   * marks that ride on it keep the last honest number the app has.
+   */
+  const knownDuration =
+    typeof storedDuration === 'number' && Number.isFinite(storedDuration) && storedDuration > 0
+      ? storedDuration
+      : 0;
 
   function finish(result: LoadResult): void {
     if (settled) return;
@@ -146,8 +168,18 @@ export function loadYouTubeSource({
   // arriving (offline, a blocked origin) surfaces as its own error result.
   const apiTimeout = window.setTimeout(() => {
     if (settled) return;
-    renderTimeline(0);
-    finish({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(0) });
+    renderTimeline(knownDuration);
+    // The store must agree with the rendered timeline, exactly as onError
+    // publishes it — a reader that sees a full ruler and a zero duration
+    // would clamp every seek against the wrong length.
+    onState({ duration: knownDuration, currentTime: 0, playing: false });
+    // The dead script tag is why the API never arrived: drop it so the
+    // failure card's Retry re-injects a fresh one instead of waiting on the
+    // same corpse for another timeout. A retry that cannot recover is a
+    // false promise, and this one — an outage recovered — can.
+    document.querySelectorAll(`script[src="${API_SCRIPT_URL}"]`).forEach((tag) => tag.remove());
+    dead = true;
+    finish({ mode: 'ruler', duration: knownDuration, error: new YouTubePlaybackError(0) });
   }, API_SCRIPT_TIMEOUT_MS);
 
   /** The shared ruler over the embed, driving seeks straight into it. */
@@ -215,15 +247,20 @@ export function loadYouTubeSource({
   }
 
   function onStateChange(state: number): void {
-    if (disposed) return;
+    // A dead source must not report life: a late state event after a failure
+    // (the API emits them around error teardown) would flip the store to
+    // "playing" over an embed that is not. After a successful ready, state
+    // events are the session's own clock and flow through.
+    if (disposed || dead) return;
     onState({ playing: state === PLAYER_STATE_PLAYING });
   }
 
   function onError(code: number): void {
     if (disposed || settled) return;
-    renderTimeline(0);
-    onState({ duration: 0, currentTime: 0, playing: false });
-    finish({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(code) });
+    dead = true;
+    renderTimeline(knownDuration);
+    onState({ duration: knownDuration, currentTime: 0, playing: false });
+    finish({ mode: 'ruler', duration: knownDuration, error: new YouTubePlaybackError(code) });
   }
 
   function destroy(): void {

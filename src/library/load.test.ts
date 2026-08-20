@@ -25,7 +25,7 @@ const ENTRY: CatalogEntry = {
 function labelset(): ProjectFileData {
   return parseProjectFile(
     serializeProjectFile({
-      project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0 },
+      project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0, source: 'upload' },
       markers: [
         { id: 'm1', time: 10, aliases: ['Recap'], createdAt: 111 },
         { id: 'm2', time: 222.35, aliases: [], createdAt: 222 },
@@ -177,11 +177,11 @@ describe('seededProjectId', () => {
     expect(
       seededProjectId(
         [
-          { id: 'p1', source: '', sha256: 'b'.repeat(64) },
+          { id: 'p1', audioUrl: '', sha256: 'b'.repeat(64) },
           // Same recording, different URL: a catalog redeploy moved the audio.
           {
             id: 'p2',
-            source: 'https://elsewhere.example.org/aria.mp3',
+            audioUrl: 'https://elsewhere.example.org/aria.mp3',
             sha256: HASH,
           },
         ],
@@ -194,8 +194,8 @@ describe('seededProjectId', () => {
     expect(
       seededProjectId(
         [
-          { id: 'p1', source: '', sha256: '' },
-          { id: 'p2', source: 'https://example.org/audio/goldberg-aria.mp3', sha256: '' },
+          { id: 'p1', audioUrl: '', sha256: '' },
+          { id: 'p2', audioUrl: 'https://example.org/audio/goldberg-aria.mp3', sha256: '' },
         ],
         ENTRY,
       ),
@@ -203,7 +203,7 @@ describe('seededProjectId', () => {
   });
 
   it('returns undefined when no project was seeded from the entry', () => {
-    expect(seededProjectId([{ id: 'p1', source: '', sha256: 'b'.repeat(64) }], ENTRY)).toBeUndefined();
+    expect(seededProjectId([{ id: 'p1', audioUrl: '', sha256: 'b'.repeat(64) }], ENTRY)).toBeUndefined();
   });
 });
 

@@ -10,15 +10,16 @@ export interface ImportPickerProps {
 }
 
 /**
- * The workspace's zip-import entry point, next to "Create project". A single
- * file picker; anything that isn't a valid project zip is explained by the
+ * The workspace's project-import entry point, next to "Create project". One
+ * file picker for both import formats — an upload's zip or a YouTube
+ * project's bare JSON — and anything that is neither is explained by the
  * pipeline after the pick, so the picker itself only narrows the hint.
  */
 export function ImportPicker({ onFile, busy = false, working = false }: ImportPickerProps) {
   return (
     <section aria-label="Import project">
       <FilePicker
-        accept=".zip,application/zip"
+        accept=".zip,.json,application/zip,application/json"
         label="Import project"
         onFile={onFile}
         busy={busy}

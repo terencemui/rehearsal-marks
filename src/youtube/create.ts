@@ -8,11 +8,19 @@
 import { DomainError, errorMessage, newId, parseYouTubeLink } from '../domain';
 import { defaultPlayerMode } from '../storage';
 import type { ProjectRecord } from '../storage';
+import type { CommunityLabelSet } from './community';
 
 /** Everything the pipeline needs from outside itself, injectable in tests. */
 export interface YouTubeDependencies {
   /** The video's title, or null when it cannot be read. Never rejects the project. */
   fetchTitle: (canonicalUrl: string) => Promise<string | null>;
+  /**
+   * The video's community label set, or null when none exists or loads —
+   * never rejects the project; an unlabeled video is a Label-mode start.
+   * The transport (a Supabase query, per ADR-0001) lands with T21; until
+   * then the app passes a resolver that always answers null.
+   */
+  loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null>;
   save: (record: ProjectRecord) => Promise<void>;
   now?: () => number;
 }
@@ -32,15 +40,17 @@ function fallbackName(videoId: string): string {
 
 /**
  * Turns a pasted link into a persisted project: resolves it to one video,
- * names the project after the video's title, and saves. A playlist or a
- * malformed link returns guidance and writes nothing. A title lookup that
- * fails is not a rejection — the video may still play, and one that cannot is
- * the player's story to tell — so the name falls back to the video ID.
- * Storage failures propagate to the caller, exactly as the upload path's do.
+ * names the project after the video's title, copies in the community label
+ * set when one exists, and saves. A playlist or a malformed link returns
+ * guidance and writes nothing. A title or label lookup that fails is not a
+ * rejection — the video may still play, and one that cannot is the player's
+ * story to tell — so the name falls back to the video ID and the marks fall
+ * back to empty. Storage failures propagate to the caller, exactly as the
+ * upload path's do.
  */
 export async function createProjectFromYouTubeLink(
   input: string,
-  { fetchTitle, save, now = Date.now }: YouTubeDependencies,
+  { fetchTitle, loadCommunityLabels, save, now = Date.now }: YouTubeDependencies,
 ): Promise<YouTubeOutcome> {
   let link;
   try {
@@ -52,8 +62,14 @@ export async function createProjectFromYouTubeLink(
     throw error;
   }
 
-  const title = await readTitle(fetchTitle, link.canonicalUrl);
+  // Title and labels are independent lookups about the same video, fetched
+  // concurrently: creation waits for the slower one, never their sum.
+  const [title, community] = await Promise.all([
+    readTitle(fetchTitle, link.canonicalUrl),
+    readCommunityLabels(loadCommunityLabels, link.videoId),
+  ]);
   const name = title ?? fallbackName(link.videoId);
+  const markers = community?.markers ?? [];
 
   const createdAt = now();
   const project: ProjectRecord = {
@@ -67,9 +83,11 @@ export async function createProjectFromYouTubeLink(
     audio: null,
     audioMeta: {
       sha256: '',
-      // The embed reports the real duration once it is ready; the player
-      // persists it through the same metadata-duration path uploads use.
-      duration: 0,
+      // The embed reports the real duration once it is ready and the player
+      // persists it through the same metadata-duration path uploads use; the
+      // community set's duration seeds the record, so a project with marks
+      // has an honest timeline even before the embed reports its own.
+      duration: community?.duration ?? 0,
       mimeType: '',
       filename: name,
       sizeBytes: 0,
@@ -77,14 +95,28 @@ export async function createProjectFromYouTubeLink(
       license: '',
       attribution: '',
     },
-    markers: [],
-    // The source's own rule decides the posture rather than a literal here —
-    // a bare link arrives with no marks, so this is Label today, and it
-    // becomes Playback for free once community label sets load at creation.
-    playerMode: defaultPlayerMode('youtube', 0),
+    // The community set's marks are copied in as the project's own editable
+    // copy — editing them never touches the shared set.
+    markers,
+    // The source's own rule decides the posture: marks in hand means
+    // immediately practiceable (Playback); a bare link arrives with an empty
+    // timeline and lands in Label with the marking tools in reach.
+    playerMode: defaultPlayerMode('youtube', markers.length),
   };
   await save(project);
   return { ok: true, project };
+}
+
+/** The video's community label set, or null — a failed lookup never rejects the project. */
+async function readCommunityLabels(
+  loadCommunityLabels: YouTubeDependencies['loadCommunityLabels'],
+  videoId: string,
+): Promise<CommunityLabelSet | null> {
+  try {
+    return await loadCommunityLabels(videoId);
+  } catch {
+    return null;
+  }
 }
 
 /** The trimmed title, or null for anything unusable — blank, missing, or failed. */

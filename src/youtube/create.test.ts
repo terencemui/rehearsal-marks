@@ -15,6 +15,8 @@ async function dependencies(overrides: Partial<YouTubeDependencies> = {}) {
     storage,
     deps: {
       fetchTitle: vi.fn<(url: string) => Promise<string | null>>(async () => TITLE),
+      // No community labels by default: the bare-link case is the baseline.
+      loadCommunityLabels: vi.fn(async () => null),
       save: (record: ProjectRecord) => storage.projects.save(record),
       now: () => 1_700_000_000_000,
       ...overrides,
@@ -145,5 +147,46 @@ describe('createProjectFromYouTubeLink', () => {
     });
 
     await expect(createProjectFromYouTubeLink(CANONICAL, deps)).rejects.toThrow('storage-full');
+  });
+
+  it('copies a loaded community label set into the project as its own marks', async () => {
+    const community = {
+      markers: [
+        { id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 },
+        { id: 'm2', time: 222.35, aliases: [], createdAt: 2 },
+      ],
+      duration: 604.2,
+    };
+    const { deps } = await dependencies({
+      loadCommunityLabels: vi.fn(async () => community),
+    });
+
+    const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.markers).toEqual(community.markers);
+    // The set's duration seeds the record, so a project with marks has an
+    // honest timeline before the embed reports its own.
+    expect(outcome.project.audioMeta.duration).toBe(604.2);
+    // Marks in hand means immediately practiceable: the source's own default.
+    expect(outcome.project.playerMode).toBe('playback');
+    // The loader is asked about the video's identity, not the pasted text.
+    expect(deps.loadCommunityLabels).toHaveBeenCalledWith(ID);
+  });
+
+  it('still creates the project when the community lookup fails outright', async () => {
+    const { deps } = await dependencies({
+      loadCommunityLabels: vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    });
+
+    const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.markers).toEqual([]);
+    expect(outcome.project.playerMode).toBe('label');
   });
 });

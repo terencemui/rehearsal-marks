@@ -1,6 +1,6 @@
-import { errorMessage, newId, parseProjectFile } from '../domain';
+import { errorMessage, newId, parseProjectFile, parseYouTubeLink } from '../domain';
 import type { Marker, ProjectFileData } from '../domain';
-import { sha256 } from '../storage';
+import { defaultPlayerMode, sha256 } from '../storage';
 import type { ProjectRecord } from '../storage';
 import { PROJECT_JSON_PATH, readZipEntries } from './zip';
 
@@ -108,6 +108,72 @@ export async function importProjectZip(
   return { ok: true, project };
 }
 
+/**
+ * Imports a bare project JSON — the YouTube export format and the community
+ * contribution format. A file marked YouTube becomes a full project pointing
+ * at its video: no audio to bundle, no sha256 to verify (there is nothing to
+ * hash — whether the video still plays is the player's honest failure state,
+ * not an import gate). The URL is re-normalized to the canonical form, so a
+ * hand-authored file in any accepted shape still lands on one identity.
+ *
+ * A file marked upload is a label set for a recording, not a project —
+ * importing it here would create a project with no recording inside, so it
+ * is pointed at the row's "Import labels" instead.
+ */
+export async function importProjectJson(
+  file: Blob,
+  { existingNames, save, now = Date.now }: ProjectImportDependencies,
+): Promise<ProjectImportOutcome> {
+  let data: ProjectFileData;
+  try {
+    data = parseProjectFile(await file.text());
+  } catch (error) {
+    return { ok: false, guidance: errorMessage(error) };
+  }
+
+  if (data.project.source !== 'youtube') {
+    return {
+      ok: false,
+      guidance:
+        'This JSON is a label set for an uploaded recording, not a project file. Use ' +
+        '“Import labels” on that project’s row instead.',
+    };
+  }
+
+  // The file names the video its project plays from. Anything that is not a
+  // YouTube link would create a project that can never play — refuse it up
+  // front rather than saving a dead project. Parsing also yields the
+  // canonical form, which becomes the stored recording identity.
+  let canonicalUrl: string;
+  try {
+    canonicalUrl = parseYouTubeLink(data.audioMeta.source).canonicalUrl;
+  } catch {
+    return {
+      ok: false,
+      guidance: 'This project file doesn’t name a valid YouTube video — its source is not a YouTube link.',
+    };
+  }
+
+  const createdAt = now();
+  const baseName = data.project.name.trim() === '' ? 'Imported project' : data.project.name;
+  const project: ProjectRecord = {
+    id: newId(), // a fresh identity — the file's id is never reused
+    name: uniqueProjectName(existingNames, baseName),
+    createdAt,
+    updatedAt: createdAt,
+    source: 'youtube',
+    // The app never holds YouTube audio: no blob, no bytes, no hash.
+    audio: null,
+    audioMeta: { ...data.audioMeta, source: canonicalUrl },
+    markers: data.markers,
+    // The source's own first-open rule: marks in hand means practiceable
+    // immediately (Playback); an empty file starts in Label.
+    playerMode: defaultPlayerMode('youtube', data.markers.length),
+  };
+  await save(project);
+  return { ok: true, project };
+}
+
 export type LabelSetImportOutcome =
   | { ok: true; markers: Marker[] }
   | { ok: false; guidance: string };
@@ -116,6 +182,10 @@ export type LabelSetImportOutcome =
  * Validates a label set against a recording's identity: the sha256 is the
  * hard gate — timestamps only line up on the recording they were made for.
  * The caller applies the returned markers; nothing is applied on mismatch.
+ *
+ * Label-set application is uploads-only: a YouTube-marked file names a video,
+ * not a recording this project holds, so it is pointed at the project import
+ * instead.
  */
 export function importLabelSet(jsonText: string, recordingSha256: string): LabelSetImportOutcome {
   let data: ProjectFileData;
@@ -123,6 +193,14 @@ export function importLabelSet(jsonText: string, recordingSha256: string): Label
     data = parseProjectFile(jsonText);
   } catch (error) {
     return { ok: false, guidance: errorMessage(error) };
+  }
+  if (data.project.source === 'youtube') {
+    return {
+      ok: false,
+      guidance:
+        'This file is a YouTube project, not a label set for this recording. Import it with ' +
+        '“Import project” instead — it becomes a fresh project pointing at its video.',
+    };
   }
   if (data.audioMeta.sha256 !== recordingSha256) {
     return {

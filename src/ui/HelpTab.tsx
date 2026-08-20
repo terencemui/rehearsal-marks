@@ -15,8 +15,8 @@ export function HelpTab() {
     <section className="help">
       <h2>Help</h2>
       <p className="help-intro">
-        Everything about this app in one place. Your work never leaves your browser. The Library
-        tab is still in development — where this page mentions it, it is on its way.
+        Everything about this app in one place. Your marks never leave your browser — YouTube
+        playback streams from Google, and the app itself sends nothing out.
       </p>
 
       <section aria-labelledby="help-keyboard">
@@ -31,8 +31,9 @@ export function HelpTab() {
           segmented control in the transport bar. <strong>Playback mode</strong> is the practice
           posture: navigation tools with read-only markers. <strong>Label mode</strong> keeps
           every navigation tool and adds the editing tools. Uploads open in Label mode; YouTube
-          and library-seeded projects open in Playback mode. The last-used mode is remembered
-          per project.
+          projects open in Playback mode when community labels load for the video, in Label mode
+          otherwise; library-seeded projects open in Playback mode. The last-used mode is
+          remembered per project.
         </p>
         <h4>Both modes</h4>
         <table>
@@ -158,9 +159,15 @@ export function HelpTab() {
         <h3 id="help-storage">Storage</h3>
         <ul>
           <li>
-            Projects live entirely in this browser: your recording and your markers{' '}
-            <strong>never leave your browser</strong>. There are no accounts and no server uploads
-            — the app is your hard drive.
+            Projects live entirely in this browser: your markers and your uploaded recordings{' '}
+            <strong>never leave your browser</strong>. There are no accounts and no server
+            uploads — the app is your hard drive.
+          </li>
+          <li>
+            A <strong>YouTube project</strong> plays its video from YouTube itself: playback
+            streams from Google's servers while the video stays visible, per YouTube's terms.
+            The project still lives entirely in this browser — its marks never leave it, and
+            Google never sees them.
           </li>
           <li>
             Everything is saved <strong>automatically</strong> as you work (no save button), with a

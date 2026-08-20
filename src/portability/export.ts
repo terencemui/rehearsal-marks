@@ -16,6 +16,7 @@ function fileData(record: ProjectRecord): ProjectFileData {
       name: record.name,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      source: record.source,
     },
     markers: record.markers,
     audioMeta: record.audioMeta,
@@ -39,6 +40,16 @@ export async function exportProjectZip(record: ProjectRecord): Promise<Blob> {
  * set and the app can verify it against the right recording on import.
  */
 export function exportLabelSetJson(record: ProjectRecord): string {
+  return exportProjectJson(record);
+}
+
+/**
+ * The bare `project.json` serialization. For an uploaded recording it is the
+ * label-set export; for a YouTube project it is the *full* export — there is
+ * no audio to bundle, and the same file doubles as the community contribution
+ * format, carrying the canonical URL as the recording identity.
+ */
+export function exportProjectJson(record: ProjectRecord): string {
   return serializeProjectFile(fileData(record));
 }
 
