@@ -1,14 +1,15 @@
-import { errorMessage, newId, parseProjectFile, parseYouTubeLink } from '../domain';
+import { errorMessage, newId, parseProjectFile, youtubeAudioMeta } from '../domain';
 import type { Marker, ProjectFileData } from '../domain';
 import { defaultPlayerMode, sha256 } from '../storage';
 import type { ProjectRecord } from '../storage';
 import { PROJECT_JSON_PATH, readZipEntries } from './zip';
 
 /**
- * The inbound side of portability: zip imports that always create a fresh
- * project, and label-set imports gated on recording identity. Every failure
- * the user can cause comes back as guidance text, never a thrown error; only
- * storage failures propagate (the caller owns the save vocabulary).
+ * The inbound side of portability: zip imports for uploads and bare JSON
+ * imports for YouTube — both always create a fresh project — plus label-set
+ * imports gated on recording identity. Every failure the user can cause
+ * comes back as guidance text, never a thrown error; only storage failures
+ * propagate (the caller owns the save vocabulary).
  */
 
 export interface ProjectImportDependencies {
@@ -56,6 +57,17 @@ export async function importProjectZip(
     data = parseProjectFile(new TextDecoder().decode(jsonBytes));
   } catch (error) {
     return { ok: false, guidance: errorMessage(error) };
+  }
+
+  // The zip path is the upload path. A YouTube-marked project file inside a
+  // zip can only be hand-made — this app's YouTube export is bare JSON, and
+  // a YouTube project has no audio for the zip's sha256 gate to verify.
+  if (data.project.source === 'youtube') {
+    return {
+      ok: false,
+      guidance:
+        'This zip contains a YouTube project file. YouTube projects carry no audio — they export as a single JSON file, not a zip.',
+    };
   }
 
   // The data file and the audio share one namespace inside the zip; an audio
@@ -109,21 +121,22 @@ export async function importProjectZip(
 }
 
 /**
- * Imports a bare project JSON — the YouTube export format and the community
- * contribution format. A file marked YouTube becomes a full project pointing
- * at its video: no audio to bundle, no sha256 to verify (there is nothing to
- * hash — whether the video still plays is the player's honest failure state,
- * not an import gate). The URL is re-normalized to the canonical form, so a
- * hand-authored file in any accepted shape still lands on one identity.
- *
- * A file marked upload is a label set for a recording, not a project —
- * importing it here would create a project with no recording inside, so it
- * is pointed at the row's "Import labels" instead.
+ * Turns a bare project-JSON file into a persisted project. A file marked
+ * YouTube becomes a brand-new YouTube project pointing at its canonical URL:
+ * a fresh id and timestamps — import can create, never overwrite — and no
+ * sha256 gate, since there is no audio to verify; the file's media claims
+ * are dropped rather than validated. An upload-shaped file has no audio
+ * alongside it and cannot become a project; those files are label sets,
+ * applied through importLabelSet.
  */
 export async function importProjectJson(
   file: Blob,
   { existingNames, save, now = Date.now }: ProjectImportDependencies,
 ): Promise<ProjectImportOutcome> {
+  // parseProjectFile enforces the version policy and every domain invariant,
+  // including that a YouTube-marked file carries its canonical URL — any
+  // accepted link form is normalized to the canonical form there, so the
+  // stored recording identity is exactly one form.
   let data: ProjectFileData;
   try {
     data = parseProjectFile(await file.text());
@@ -140,20 +153,6 @@ export async function importProjectJson(
     };
   }
 
-  // The file names the video its project plays from. Anything that is not a
-  // YouTube link would create a project that can never play — refuse it up
-  // front rather than saving a dead project. Parsing also yields the
-  // canonical form, which becomes the stored recording identity.
-  let canonicalUrl: string;
-  try {
-    canonicalUrl = parseYouTubeLink(data.audioMeta.source).canonicalUrl;
-  } catch {
-    return {
-      ok: false,
-      guidance: 'This project file doesn’t name a valid YouTube video — its source is not a YouTube link.',
-    };
-  }
-
   const createdAt = now();
   const baseName = data.project.name.trim() === '' ? 'Imported project' : data.project.name;
   const project: ProjectRecord = {
@@ -162,12 +161,19 @@ export async function importProjectJson(
     createdAt,
     updatedAt: createdAt,
     source: 'youtube',
-    // The app never holds YouTube audio: no blob, no bytes, no hash.
+    // The app never holds YouTube audio: no blob, no bytes, no hash — the
+    // canonical URL in audioMeta.source carries the recording identity.
+    // Parsing already normalized any accepted link form to the canonical
+    // URL, so the stored identity is exactly one form.
     audio: null,
-    audioMeta: { ...data.audioMeta, source: canonicalUrl },
+    // What the file claims about stored bytes is dropped, not validated:
+    // there are no bytes to hash or describe. What applies carries through —
+    // the canonical URL, the known duration, and the title. The same shared
+    // rule the exporter uses, so the two directions cannot drift apart.
+    audioMeta: youtubeAudioMeta(data.audioMeta),
     markers: data.markers,
-    // The source's own first-open rule: marks in hand means practiceable
-    // immediately (Playback); an empty file starts in Label.
+    // The source's own rule decides the posture: a file that arrives with
+    // marks opens in Playback, ready to practise.
     playerMode: defaultPlayerMode('youtube', data.markers.length),
   };
   await save(project);
@@ -181,11 +187,11 @@ export type LabelSetImportOutcome =
 /**
  * Validates a label set against a recording's identity: the sha256 is the
  * hard gate — timestamps only line up on the recording they were made for.
- * The caller applies the returned markers; nothing is applied on mismatch.
- *
- * Label-set application is uploads-only: a YouTube-marked file names a video,
- * not a recording this project holds, so it is pointed at the project import
- * instead.
+ * Label-set application is uploads-only: a YouTube-marked file has no hash
+ * to gate on, and a YouTube project has no hash to gate against — for both,
+ * the sha256 gate is trivially satisfied and marks from a different
+ * performance would land silently, so both are refused up front. The caller
+ * applies the returned markers; nothing is applied on any refusal.
  */
 export function importLabelSet(jsonText: string, recordingSha256: string): LabelSetImportOutcome {
   let data: ProjectFileData;
@@ -200,6 +206,14 @@ export function importLabelSet(jsonText: string, recordingSha256: string): Label
       guidance:
         'This file is a YouTube project, not a label set for this recording. Import it with ' +
         '“Import project” instead — it becomes a fresh project pointing at its video.',
+    };
+  }
+  if (recordingSha256 === '') {
+    return {
+      ok: false,
+      guidance:
+        'Label sets apply only to uploaded recordings — a YouTube project has no recording ' +
+        'hash to match one against, so it can’t be applied here.',
     };
   }
   if (data.audioMeta.sha256 !== recordingSha256) {

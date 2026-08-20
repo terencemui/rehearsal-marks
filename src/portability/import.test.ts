@@ -7,6 +7,8 @@ import { exportLabelSetJson, exportProjectJson, exportProjectZip } from './expor
 import { importLabelSet, importProjectJson, importProjectZip, uniqueProjectName } from './import';
 import { PROJECT_JSON_PATH } from './zip';
 
+const CANONICAL_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
 /** An upload-shaped record whose audio is known non-null. */
 type UploadRecord = ProjectRecord & { audio: Blob };
 
@@ -24,6 +26,47 @@ async function hashableRecord(overrides: Partial<ProjectRecord> = {}): Promise<U
 async function importZip(zip: Blob, existingNames: string[] = []) {
   const save = vi.fn(async () => {});
   const outcome = await importProjectZip(zip, { existingNames, save, now: () => 42_000 });
+  return { outcome, save };
+}
+
+/** A YouTube project file exactly as the app exports one. */
+function youtubeProjectFile(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    project: {
+      id: 'file-1',
+      name: 'Brahms on YouTube',
+      createdAt: 5,
+      updatedAt: 6,
+      source: 'youtube',
+    },
+    // Written in time order, as the app's own serializer does.
+    markers: [
+      { id: 'm2', time: 10, aliases: [], createdAt: 2 },
+      { id: 'm1', time: 30, aliases: ['Recap'], createdAt: 1 },
+    ],
+    audioMeta: {
+      sha256: '',
+      duration: 600,
+      mimeType: '',
+      filename: 'Brahms Intermezzo',
+      sizeBytes: 0,
+      source: CANONICAL_URL,
+      license: '',
+      attribution: '',
+    },
+    ...overrides,
+  });
+}
+
+/** Imports a bare JSON file with the given workspace names and a captured save. */
+async function importJson(text: string, existingNames: string[] = []) {
+  const save = vi.fn(async () => {});
+  const outcome = await importProjectJson(new Blob([text], { type: 'application/json' }), {
+    existingNames,
+    save,
+    now: () => 42_000,
+  });
   return { outcome, save };
 }
 
@@ -63,6 +106,20 @@ describe('importProjectZip', () => {
     if (!first.outcome.ok || !second.outcome.ok) return;
     expect(first.outcome.project.id).not.toBe(second.outcome.project.id);
     expect(first.outcome.project.id).not.toBe(record.id);
+  });
+
+  it('rejects a zip whose project file is marked YouTube — that export is a bare JSON', async () => {
+    const file = JSON.parse(youtubeProjectFile()) as Record<string, unknown>;
+    const zip = new Blob([zipSync({ [PROJECT_JSON_PATH]: strToU8(JSON.stringify(file)) })]);
+
+    const { outcome, save } = await importZip(zip);
+
+    expect(outcome).toEqual({
+      ok: false,
+      guidance:
+        'This zip contains a YouTube project file. YouTube projects carry no audio — they export as a single JSON file, not a zip.',
+    });
+    expect(save).not.toHaveBeenCalled();
   });
 
   it('tolerates unknown fields and extra zip entries', async () => {
@@ -178,6 +235,146 @@ describe('importProjectZip', () => {
   });
 });
 
+describe('importProjectJson', () => {
+  it('imports a YouTube-marked file as a brand-new YouTube project — fresh identity, no audio', async () => {
+    const { outcome, save } = await importJson(youtubeProjectFile());
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    const saved = outcome.project;
+    expect(saved.id).not.toBe('file-1'); // a fresh identity — the file's id is never reused
+    expect(saved.name).toBe('Brahms on YouTube');
+    expect(saved.createdAt).toBe(42_000);
+    expect(saved.updatedAt).toBe(42_000);
+    expect(saved.source).toBe('youtube');
+    expect(saved.audio).toBeNull();
+    // The file's identity fields carry through: the canonical URL is the
+    // recording identity, duration the soft check, filename the title.
+    expect(saved.audioMeta).toEqual({
+      sha256: '',
+      duration: 600,
+      mimeType: '',
+      filename: 'Brahms Intermezzo',
+      sizeBytes: 0,
+      source: CANONICAL_URL,
+      license: '',
+      attribution: '',
+    });
+    // Markers arrive in time order, aliases validated by the domain's own
+    // rules — exactly as the zip path delivers them.
+    expect(saved.markers).toEqual([
+      { id: 'm2', time: 10, aliases: [], createdAt: 2 },
+      { id: 'm1', time: 30, aliases: ['Recap'], createdAt: 1 },
+    ]);
+    // Arrived with marks — the first-open posture is Playback, ready to practise.
+    expect(saved.playerMode).toBe('playback');
+    expect(save).toHaveBeenCalledWith(saved);
+  });
+
+  it('never validates sha256 — a YouTube file imports even when its sha256 claim lies', async () => {
+    const file = JSON.parse(youtubeProjectFile()) as { audioMeta: Record<string, unknown> };
+    file.audioMeta.sha256 = 'f'.repeat(64); // there is no audio to hash, so the claim is ignored
+
+    const { outcome } = await importJson(JSON.stringify(file));
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.audioMeta.sha256).toBe(''); // normalized, never trusted
+  });
+
+  it('stores the canonical URL whatever link form the file carries', async () => {
+    const file = JSON.parse(youtubeProjectFile()) as { audioMeta: Record<string, unknown> };
+    file.audioMeta.source = 'https://youtu.be/dQw4w9WgXcQ'; // an accepted form, not the canonical one
+
+    const { outcome } = await importJson(JSON.stringify(file));
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.audioMeta.source).toBe(CANONICAL_URL);
+  });
+
+  it('never overwrites: importing the same file twice yields two distinct projects', async () => {
+    const first = await importJson(youtubeProjectFile());
+    const second = await importJson(youtubeProjectFile());
+
+    expect(first.outcome.ok).toBe(true);
+    expect(second.outcome.ok).toBe(true);
+    if (!first.outcome.ok || !second.outcome.ok) return;
+    expect(first.outcome.project.id).not.toBe(second.outcome.project.id);
+    expect(first.outcome.project.id).not.toBe('file-1');
+  });
+
+  it('names a collision-free project against the workspace, as the zip path does', async () => {
+    const { outcome } = await importJson(youtubeProjectFile(), ['Brahms on YouTube']);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.name).toBe('Brahms on YouTube (2)');
+  });
+
+  it('rejects an upload-marked file — a bare JSON has no audio to become a project', async () => {
+    const file = JSON.parse(youtubeProjectFile()) as { project: Record<string, unknown> };
+    file.project.source = 'upload';
+
+    const { outcome, save } = await importJson(JSON.stringify(file));
+
+    expect(outcome).toEqual({
+      ok: false,
+      guidance:
+        'This JSON is a label set for an uploaded recording, not a project file. Use ' +
+        '“Import labels” on that project’s row instead.',
+    });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('treats a file with no discriminator as upload-shaped', async () => {
+    const file = JSON.parse(youtubeProjectFile()) as { project: Record<string, unknown> };
+    delete file.project.source;
+
+    const { outcome, save } = await importJson(JSON.stringify(file));
+
+    expect(outcome.ok).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('imports a YouTube file with no marks in Label mode (the otherwise case)', async () => {
+    const { outcome } = await importJson(youtubeProjectFile({ markers: [] }));
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.project.playerMode).toBe('label');
+  });
+
+  it('rejects a file whose URL is not a YouTube link, even when marked youtube', async () => {
+    const file = JSON.parse(youtubeProjectFile()) as { audioMeta: Record<string, unknown> };
+    file.audioMeta.source = 'https://example.com/not-youtube';
+
+    const { outcome, save } = await importJson(JSON.stringify(file));
+
+    expect(outcome.ok).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('rejects text that is not a project file at all', async () => {
+    const { outcome } = await importJson('{not json');
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.guidance).toContain('not valid JSON');
+  });
+
+  it('propagates a failed save to the caller', async () => {
+    await expect(
+      importProjectJson(new Blob([youtubeProjectFile()], { type: 'application/json' }), {
+        existingNames: [],
+        save: async () => {
+          throw new Error('quota exceeded');
+        },
+      }),
+    ).rejects.toThrow('quota exceeded');
+  });
+});
+
 describe('importLabelSet', () => {
   it('accepts a label set whose recording identity matches and returns its markers', async () => {
     const record = await hashableRecord();
@@ -186,6 +383,31 @@ describe('importLabelSet', () => {
     const outcome = importLabelSet(json, record.audioMeta.sha256);
 
     expect(outcome).toEqual({ ok: true, markers: record.markers });
+  });
+
+  it('rejects a YouTube-marked label set — label-set application is uploads-only', () => {
+    const outcome = importLabelSet(youtubeProjectFile(), 'a'.repeat(64));
+
+    expect(outcome).toEqual({
+      ok: false,
+      guidance:
+        'This file is a YouTube project, not a label set for this recording. Import it with ' +
+        '“Import project” instead — it becomes a fresh project pointing at its video.',
+    });
+  });
+
+  it('rejects applying any label set to a YouTube project — there is no hash to gate against', () => {
+    const record = projectRecord();
+    const json = exportLabelSetJson(record);
+
+    const outcome = importLabelSet(json, '');
+
+    expect(outcome).toEqual({
+      ok: false,
+      guidance:
+        'Label sets apply only to uploaded recordings — a YouTube project has no recording ' +
+        'hash to match one against, so it can’t be applied here.',
+    });
   });
 
   it('rejects a label set made for a different recording with the explanation', () => {
@@ -236,6 +458,42 @@ describe('uniqueProjectName', () => {
   });
 });
 
+describe('YouTube round-trip through the bare JSON', () => {
+  it('export then import preserves source, canonical URL, duration, and markers', async () => {
+    const record = youtubeProjectRecord({
+      audioMeta: {
+        sha256: '',
+        duration: 300.5,
+        mimeType: '',
+        filename: 'Brahms Intermezzo',
+        sizeBytes: 0,
+        source: CANONICAL_URL,
+        license: '',
+        attribution: '',
+      },
+      markers: [
+        { id: 'm1', time: 30, aliases: ['Recap'], createdAt: 1 },
+        { id: 'm2', time: 10, aliases: [], createdAt: 2 },
+      ],
+    });
+
+    const { outcome } = await importJson(exportProjectJson(record));
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    const imported = outcome.project;
+    expect(imported.id).not.toBe(record.id);
+    expect(imported.name).toBe(record.name);
+    expect(imported.source).toBe('youtube');
+    expect(imported.audio).toBeNull();
+    expect(imported.audioMeta).toEqual(record.audioMeta);
+    expect(imported.markers).toEqual([
+      { id: 'm2', time: 10, aliases: [], createdAt: 2 },
+      { id: 'm1', time: 30, aliases: ['Recap'], createdAt: 1 },
+    ]);
+  });
+});
+
 describe('serializeProjectFile round-trip through the zip', () => {
   it('keeps every marker field intact through zip export and import', async () => {
     const record = await hashableRecord({
@@ -259,152 +517,5 @@ describe('serializeProjectFile round-trip through the zip', () => {
       { id: 'm3', time: 20.25, aliases: ['Coda'], createdAt: 3 },
       { id: 'm1', time: 30.5, aliases: ['Recap'], createdAt: 1 },
     ]);
-  });
-});
-
-describe('importProjectJson', () => {
-  /** A YouTube project with the canonical URL as its recording identity. */
-  function youtubeRecord(): ProjectRecord {
-    return youtubeProjectRecord({
-      audioMeta: {
-        sha256: '',
-        duration: 604.2,
-        mimeType: '',
-        filename: 'A performance',
-        sizeBytes: 0,
-        source: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-        license: '',
-        attribution: '',
-      },
-    });
-  }
-
-  /** The record's exported JSON — the community contribution format. */
-  function youtubeJson(): string {
-    return exportProjectJson(youtubeRecord());
-  }
-
-  async function importJson(json: string, existingNames: string[] = []) {
-    const save = vi.fn(async () => {});
-    const outcome = await importProjectJson(new Blob([json], { type: 'application/json' }), {
-      existingNames,
-      save,
-      now: () => 42_000,
-    });
-    return { outcome, save };
-  }
-
-  it('imports a YouTube-marked file as a fresh full project, skipping sha256 validation', async () => {
-    const record = youtubeRecord();
-    const { outcome, save } = await importJson(youtubeJson());
-
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    const project = outcome.project;
-    expect(project.id).not.toBe(record.id); // a fresh identity every time
-    expect(project.name).toBe(record.name);
-    expect(project.createdAt).toBe(42_000);
-    expect(project.updatedAt).toBe(42_000);
-    // The project points at the video, holds no audio, and copies the marks.
-    expect(project.source).toBe('youtube');
-    expect(project.audio).toBeNull();
-    expect(project.audioMeta).toEqual(record.audioMeta);
-    expect(project.markers).toEqual(record.markers);
-    // Marks arrived with the file, so the source's own default applies:
-    // immediately practiceable projects open in Playback.
-    expect(project.playerMode).toBe('playback');
-    expect(save).toHaveBeenCalledWith(project);
-  });
-
-  it('round-trips: an exported YouTube project imports as a project pointing at the same video', async () => {
-    const { outcome } = await importJson(youtubeJson());
-
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.project.audioMeta.source).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-  });
-
-  it('imports a YouTube file with no marks in Label mode (the otherwise case)', async () => {
-    const record = youtubeRecord();
-    const json = exportProjectJson({ ...record, markers: [] });
-
-    const { outcome } = await importJson(json);
-
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.project.playerMode).toBe('label');
-  });
-
-  it('never overwrites an existing project name', async () => {
-    const { outcome } = await importJson(youtubeJson(), ['Brahms Op. 118 No. 2']);
-
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.project.name).toBe('Brahms Op. 118 No. 2 (2)');
-  });
-
-  it('rejects a file whose URL is not a YouTube link, even when marked youtube', async () => {
-    const record = youtubeProjectRecord();
-    const parsed = JSON.parse(exportProjectJson(record)) as Record<string, unknown>;
-    (parsed.audioMeta as Record<string, unknown>).source = 'https://example.com/not-youtube';
-
-    const { outcome, save } = await importJson(JSON.stringify(parsed));
-
-    expect(outcome.ok).toBe(false);
-    expect(save).not.toHaveBeenCalled();
-  });
-
-  it('rejects a label-set JSON for an uploaded recording with its own guidance', async () => {
-    const record = projectRecord();
-    const { outcome, save } = await importJson(exportLabelSetJson(record));
-
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.guidance).toContain('Import labels');
-    expect(save).not.toHaveBeenCalled();
-  });
-
-  it('rejects text that is not a project file', async () => {
-    const { outcome } = await importJson('{not json');
-
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.guidance).toContain('not valid JSON');
-  });
-
-  it('propagates a failed save to the caller', async () => {
-    await expect(
-      importProjectJson(new Blob([youtubeJson()]), {
-        existingNames: [],
-        save: async () => {
-          throw new Error('quota exceeded');
-        },
-      }),
-    ).rejects.toThrow('quota exceeded');
-  });
-});
-
-describe('importLabelSet and YouTube projects', () => {
-  it('rejects a YouTube-marked file — label sets apply only to uploaded recordings', () => {
-    const json = exportProjectJson(
-      youtubeProjectRecord({
-        audioMeta: {
-          sha256: '',
-          duration: 604.2,
-          mimeType: '',
-          filename: 'A performance',
-          sizeBytes: 0,
-          source: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-          license: '',
-          attribution: '',
-        },
-      }),
-    );
-
-    const outcome = importLabelSet(json, 'f'.repeat(64));
-
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.guidance).toContain('YouTube');
   });
 });

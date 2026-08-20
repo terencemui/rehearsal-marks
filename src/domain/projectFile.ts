@@ -2,11 +2,12 @@ import { DomainError } from './errors';
 import { deriveLabels } from './labels';
 import type { Marker } from './marker';
 import { setAliases } from './markers';
+import { parseYouTubeLink } from './youtube';
 
 /** The only schema version this app reads and writes. */
 export const SCHEMA_VERSION = 1;
 
-/** Where a project's recording comes from — the discriminated `source`. */
+/** Where a project's recording comes from; absent in a file means upload. */
 export type ProjectSource = 'upload' | 'youtube';
 
 /** The `project` section of a project file. */
@@ -18,8 +19,9 @@ export interface ProjectInfo {
   /** Epoch ms. */
   updatedAt: number;
   /**
-   * Where the recording comes from. Absent in files written before YouTube
-   * projects existed — those are always uploads, so the parse defaults here.
+   * The recording's origin. Optional on disk — absent means upload, so files
+   * from before the field existed read exactly as they always did — and
+   * normalized by parsing, so consumers never see a missing discriminator.
    */
   source: ProjectSource;
 }
@@ -48,15 +50,43 @@ export interface ProjectFileData {
 }
 
 /**
+ * The audioMeta a YouTube project file carries: the identity that applies —
+ * canonical URL, known duration, title — and nothing that describes stored
+ * bytes. Export and import both pass through this one function, so the two
+ * directions can never drift apart on which fields are empty.
+ */
+export function youtubeAudioMeta(meta: AudioMeta): AudioMeta {
+  return {
+    ...meta,
+    sha256: '',
+    mimeType: '',
+    sizeBytes: 0,
+    license: '',
+    attribution: '',
+  };
+}
+
+/**
  * Serializes a project to the versioned `project.json` format — the zip
  * export's data file and the community label-set format. Markers are written
  * in time order with their derived `label` for human review only: labels are
  * re-derived by time rank on import, never trusted from the file.
  */
 export function serializeProjectFile(data: ProjectFileData): string {
+  // Uploads omit the discriminator — absent means upload, so upload files
+  // stay byte-for-byte the files this app always wrote, and older app
+  // versions reading a YouTube file ignore the unknown field (their honest
+  // failure is on the missing audio, not on this).
+  const project = {
+    id: data.project.id,
+    name: data.project.name,
+    createdAt: data.project.createdAt,
+    updatedAt: data.project.updatedAt,
+    ...(data.project.source === 'youtube' ? { source: data.project.source } : {}),
+  };
   const file = {
     schemaVersion: SCHEMA_VERSION,
-    project: data.project,
+    project,
     markers: deriveLabels(data.markers).map((m) => ({
       id: m.id,
       time: m.time,
@@ -90,7 +120,10 @@ export function parseProjectFile(text: string): ProjectFileData {
   } catch {
     throw invalidFile('The file is not valid JSON.');
   }
-  const root = assertObject(raw, 'the file root');
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw invalidFile('the file root must be an object.');
+  }
+  const root = raw as JsonObject;
 
   const schemaVersion = root.schemaVersion;
   if (typeof schemaVersion !== 'number' || !Number.isInteger(schemaVersion) || schemaVersion < 1) {
@@ -103,11 +136,37 @@ export function parseProjectFile(text: string): ProjectFileData {
     );
   }
 
-  return {
-    project: readProject(root.project),
-    markers: readMarkers(root.markers),
-    audioMeta: readAudioMeta(root.audioMeta),
-  };
+  // The section readers throw neutral DomainErrors; rebrand those as file
+  // errors so every malformed section reads as one boundary. Anything else
+  // is a semantic error and keeps its own code.
+  try {
+    const project = readProject(root.project);
+    let audioMeta = readAudioMeta(root.audioMeta);
+    // A YouTube file's recording identity is its canonical URL. A string that
+    // names no video would import a project that can never point at one, so
+    // refuse it here — and normalize every accepted link form to the canonical
+    // URL, so any file that parses carries one recording identity.
+    if (project.source === 'youtube') {
+      try {
+        audioMeta = { ...audioMeta, source: parseYouTubeLink(audioMeta.source).canonicalUrl };
+      } catch {
+        throw invalidFile('"audioMeta.source" must be a valid YouTube video link for a YouTube project.');
+      }
+    }
+    return {
+      project,
+      markers: parseMarkers(root.markers),
+      audioMeta,
+    };
+  } catch (error) {
+    if (
+      error instanceof DomainError &&
+      (error.code === 'invalid-value' || error.code === 'invalid-markers')
+    ) {
+      throw invalidFile(error.message);
+    }
+    throw error;
+  }
 }
 
 type JsonObject = Record<string, unknown>;
@@ -116,9 +175,20 @@ function invalidFile(reason: string): DomainError {
   return new DomainError(`Invalid project file: ${reason}`, 'invalid-project-file');
 }
 
+function invalidValue(reason: string): DomainError {
+  return new DomainError(reason, 'invalid-value');
+}
+
+function invalidMarkers(reason: string): DomainError {
+  return new DomainError(reason, 'invalid-markers');
+}
+
+// The section readers share these assertion helpers; each throws a neutral
+// DomainError that the owning boundary (this file, or the Commons row parser)
+// rebrands with its own context.
 function assertObject(value: unknown, path: string): JsonObject {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw invalidFile(`${path} must be an object.`);
+    throw invalidValue(`${path} must be an object.`);
   }
   // TS narrows the guard to `object`; a non-null, non-array object is a JsonObject.
   return value as JsonObject;
@@ -126,21 +196,21 @@ function assertObject(value: unknown, path: string): JsonObject {
 
 function assertArray(value: unknown, path: string): unknown[] {
   if (!Array.isArray(value)) {
-    throw invalidFile(`${path} must be an array.`);
+    throw invalidValue(`${path} must be an array.`);
   }
   return value;
 }
 
 function assertString(value: unknown, path: string): string {
   if (typeof value !== 'string') {
-    throw invalidFile(`${path} must be a string.`);
+    throw invalidValue(`${path} must be a string.`);
   }
   return value;
 }
 
 function assertFiniteNumber(value: unknown, path: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw invalidFile(`${path} must be a finite number.`);
+    throw invalidValue(`${path} must be a finite number.`);
   }
   return value;
 }
@@ -148,7 +218,7 @@ function assertFiniteNumber(value: unknown, path: string): number {
 function assertNonNegativeNumber(value: unknown, path: string): number {
   const number = assertFiniteNumber(value, path);
   if (number < 0) {
-    throw invalidFile(`${path} must not be negative.`);
+    throw invalidValue(`${path} must not be negative.`);
   }
   return number;
 }
@@ -160,18 +230,27 @@ function readProject(value: unknown): ProjectInfo {
     name: assertString(raw.name, '"project.name"'),
     createdAt: assertFiniteNumber(raw.createdAt, '"project.createdAt"'),
     updatedAt: assertFiniteNumber(raw.updatedAt, '"project.updatedAt"'),
-    // The optional field: a file predating YouTube projects has no source,
-    // and every such file is an upload.
-    source: raw.source === undefined ? 'upload' : readSource(raw.source),
+    source: readSource(raw.source),
   };
 }
 
+/** The optional on-disk discriminator, defaulted to upload when absent. */
 function readSource(value: unknown): ProjectSource {
+  if (value === undefined) return 'upload';
   if (value === 'upload' || value === 'youtube') return value;
-  throw invalidFile('"project.source" must be "upload" or "youtube".');
+  throw invalidFile('"project.source" must be "upload" or "youtube" when present.');
 }
 
-function readMarkers(value: unknown): Marker[] {
+/**
+ * Parses a markers document — the shared validation for every boundary where
+ * markers arrive as JSON: a project file's `"markers"` and a Commons
+ * label-set row's markers document. Validates shape, enforces unique marker
+ * ids, and routes every marker through the domain's own setAliases (it trims
+ * and enforces every alias rule against the final derived label set), so a
+ * hand-edited document cannot smuggle in state the app itself could not
+ * create. Errors are neutral DomainErrors; the owning boundary rebrands them.
+ */
+export function parseMarkers(value: unknown): Marker[] {
   const raw = assertArray(value, '"markers"');
   const markers = raw.map((item, index) => {
     const marker = assertObject(item, `"markers[${index}]"`);
@@ -190,21 +269,18 @@ function readMarkers(value: unknown): Marker[] {
   const seenIds = new Set<string>();
   for (const m of markers) {
     if (seenIds.has(m.id)) {
-      throw invalidFile(`"markers" contain duplicate id "${m.id}".`);
+      throw invalidMarkers(`"markers" contain duplicate id "${m.id}".`);
     }
     seenIds.add(m.id);
   }
 
-  // Route every marker through the domain's own setAliases: it trims and
-  // enforces every alias rule against the final derived label set, so a
-  // hand-edited file cannot smuggle in state the app itself could not create.
   let validated = markers;
   for (const m of markers) {
     try {
       validated = setAliases(validated, m.id, m.aliases);
     } catch (error) {
       if (error instanceof DomainError) {
-        throw invalidFile(`marker "${m.id}": ${error.message}`);
+        throw invalidMarkers(`marker "${m.id}": ${error.message}`);
       }
       throw error;
     }

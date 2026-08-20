@@ -19,11 +19,13 @@ const PLAYING = 1;
 const PAUSED = 2;
 
 interface FakePlayerOptions {
+  videoId?: string;
   playerVars?: { origin?: string };
   events: {
     onReady?: () => void;
-    onStateChange?: (state: number) => void;
-    onError?: (code: number) => void;
+    /** Either the bare value classic builds pass or the modern `{data}` wrap. */
+    onStateChange?: (payload: number | { data: number }) => void;
+    onError?: (payload: number | { data: number }) => void;
   };
 }
 
@@ -35,18 +37,25 @@ interface FakePlayerOptions {
 class FakeYouTubePlayer {
   private readonly options: FakePlayerOptions;
   readonly iframe: HTMLIFrameElement;
+  /**
+   * The video id the backend constructed with. The real API negotiates its
+   * method surface with the embed only once a real video is behind the
+   * player, so the id must exist at construction — the fake records it so a
+   * regression to the cue-after pattern cannot pass silently.
+   */
+  readonly videoId: string | undefined;
   currentTime = 0;
   duration = 0;
   playerState = -1;
 
   constructor(host: HTMLElement, options: FakePlayerOptions) {
     this.options = options;
+    this.videoId = options.videoId;
     this.iframe = document.createElement('iframe');
     host.appendChild(this.iframe);
     players.push(this);
   }
 
-  cueVideoByUrl = vi.fn();
   getCurrentTime = vi.fn(() => this.currentTime);
   getDuration = vi.fn(() => this.duration);
   getPlayerState = vi.fn(() => this.playerState);
@@ -67,8 +76,13 @@ class FakeYouTubePlayer {
   });
 
   /** Fires one of the API's events, exactly as the browser would. */
-  dispatch(event: 'onReady' | 'onStateChange' | 'onError', arg?: number): void {
-    const handler = this.options.events[event] as ((arg?: number) => void) | undefined;
+  dispatch(
+    event: 'onReady' | 'onStateChange' | 'onError',
+    arg?: number | { data: number },
+  ): void {
+    const handler = this.options.events[event] as
+      | ((arg?: number | { data: number }) => void)
+      | undefined;
     handler?.(arg);
   }
 }
@@ -123,7 +137,11 @@ describe('AudioController YouTube playback', () => {
     expect(result).toEqual({ mode: 'ruler', duration: 42 });
     // The video stays visible inside the container, per the API's terms.
     expect(container.querySelector('.rm-youtube-player iframe')).not.toBeNull();
-    expect(player.cueVideoByUrl).toHaveBeenCalledWith({ mediaContentUrl: CANONICAL_URL });
+    // The embed is constructed with the video id from the canonical URL. The
+    // API negotiates the player's method surface with the embed only once a
+    // real video is behind it, so cueing after construction is not an option
+    // the modern API offers.
+    expect(player.videoId).toBe('dQw4w9WgXcQ');
     // The shared ruler sits below the video.
     expect(container.querySelector('.rm-youtube-ruler .rm-ruler')).not.toBeNull();
   });
@@ -174,6 +192,31 @@ describe('AudioController YouTube playback', () => {
 
     player.dispatch('onStateChange', 0); // ended
     expect(controller.getPlaybackState().playing).toBe(false);
+  });
+
+  it('reads the wrapped state events the modern API delivers', async () => {
+    const container = document.createElement('div');
+    const { controller, player } = await loadReady(container);
+
+    // The current widgetapi wraps every event as {target, data} — the raw
+    // number the classic builds passed is the `data` field now.
+    player.dispatch('onStateChange', { data: PLAYING });
+    expect(controller.getPlaybackState().playing).toBe(true);
+
+    player.dispatch('onStateChange', { data: PAUSED });
+    expect(controller.getPlaybackState().playing).toBe(false);
+  });
+
+  it('reads the wrapped error codes the modern API delivers', async () => {
+    const container = document.createElement('div');
+    const { pending, player } = await loadYouTube(container);
+
+    player.dispatch('onError', { data: 101 });
+    const result = await pending;
+
+    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result.error).toBeInstanceOf(YouTubePlaybackError);
+    expect(result.error?.code).toBe(101);
   });
 
   it('seek clamps to the recording and calls seekTo with exact landings', async () => {
@@ -314,7 +357,7 @@ describe('AudioController YouTube playback', () => {
       outcome = result;
     });
 
-    player.dispatch('onReady'); // duration 0 — unplayable metadata
+    player.dispatch('onReady'); // duration 0 — metadata still in flight
     await flush();
     expect(outcome).toBe('pending');
 
@@ -322,6 +365,52 @@ describe('AudioController YouTube playback', () => {
     await flush();
     expect(outcome).toMatchObject({ mode: 'ruler', duration: 0 });
     expect((outcome as { error: YouTubePlaybackError }).error.code).toBe(100);
+  });
+
+  it('settles once the metadata duration lands after ready had none', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    const { controller, pending, player } = await loadYouTube(container);
+    let outcome: unknown = 'pending';
+    void pending.then((result) => {
+      outcome = result;
+    });
+
+    player.dispatch('onReady'); // duration 0 — metadata still in flight
+    await flush();
+    expect(outcome).toBe('pending');
+
+    player.duration = 42;
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(outcome).toMatchObject({ mode: 'ruler', duration: 42 });
+    expect(controller.getPlaybackState().duration).toBe(42);
+  });
+
+  it('fails honestly when the metadata duration never arrives after ready', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    const { pending, player } = await loadYouTube(container);
+
+    player.dispatch('onReady'); // duration 0, and it never improves
+    await vi.advanceTimersByTimeAsync(10_100);
+
+    const result = await pending;
+    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result.error).toBeInstanceOf(YouTubePlaybackError);
+    expect(result.error?.code).toBe(0);
+  });
+
+  it('rejects a URL the domain would reject, before any embed exists', async () => {
+    const container = document.createElement('div');
+    const { pending } = await loadYouTube(container, 'not a youtube link');
+
+    const result = await pending;
+    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result.error).toBeInstanceOf(YouTubePlaybackError);
+    expect(result.error?.code).toBe(2);
+    expect(players).toHaveLength(0); // no embed was ever constructed
+    expect(container.querySelector('.rm-ruler')).not.toBeNull();
   });
 
   it('ignores an error that arrives after a successful ready', async () => {

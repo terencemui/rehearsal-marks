@@ -12,8 +12,9 @@ export class DecodeError extends Error {
 /**
  * The YouTube embed's playability failure — the load result's error channel,
  * so the player can show an honest state instead of a silent dead embed.
- * `code` is the IFrame API's `onError` code (2, 5, 100, 101, 150), or 0 when
- * the API script itself never loaded.
+ * `code` is the IFrame API's `onError` code (2, 5, 100, 101, 150), 2 when the
+ * stored URL names no valid video, or 0 when the API script itself never
+ * loaded or the video's metadata never arrived.
  */
 export class YouTubePlaybackError extends Error {
   readonly code: number;

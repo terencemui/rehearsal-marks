@@ -9,6 +9,8 @@ export type DomainErrorCode =
   | 'alias-duplicate'
   | 'alias-label-collision'
   | 'invalid-project-file'
+  | 'invalid-value'
+  | 'invalid-markers'
   | 'unsupported-schema-version'
   | 'invalid-youtube-link'
   | 'youtube-playlist-link';
