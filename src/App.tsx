@@ -11,13 +11,14 @@ import { validateProjectName } from './projects/summary';
 import { createAutosave, createStorage, saveStatusFor, sha256, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
 import { createProjectFromUpload } from './upload';
+import { createProjectFromYouTubeLink, fetchYouTubeTitle } from './youtube';
+import { CreateProject } from './ui/CreateProject';
 import { LibraryScreen } from './ui/LibraryScreen';
 import { triggerDownload } from './ui/download';
 import { HelpTab } from './ui/HelpTab';
 import { ImportPicker } from './ui/ImportPicker';
 import { Player } from './ui/Player';
 import { ProjectsScreen } from './ui/ProjectsScreen';
-import { UploadPicker } from './ui/UploadPicker';
 import './ui/app.css';
 
 export interface AppProps {
@@ -27,6 +28,8 @@ export interface AppProps {
   storage?: Storage;
   /** Test seam: captures downloads instead of handing them to the browser. */
   download?: (blob: Blob, filename: string) => void;
+  /** Test seam: the video-title lookup, so component tests never touch the network. */
+  fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
 }
 
 /** One open project session: the autosave, its peaks, and its controller. */
@@ -121,6 +124,7 @@ function App({
   controllerFactory = createAudioController,
   storage: injectedStorage,
   download = triggerDownload,
+  fetchTitle = fetchYouTubeTitle,
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -131,6 +135,13 @@ function App({
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  /**
+   * The link field's own failure channel, separate from the file picker's:
+   * the create surface shows each rejection beside the input that caused it,
+   * so a bad link never blanks out a file's guidance or the reverse.
+   */
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [creatingFromLink, setCreatingFromLink] = useState(false);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   /**
    * The Library tab's failure channels, kept separate so one cannot wipe the
@@ -260,6 +271,8 @@ function App({
         return;
       }
       peaksCacheRef.current.set(outcome.project.id, outcome.peaks);
+      // Symmetrically, a successful upload retires the link field's guidance.
+      setLinkError(null);
       setSession({
         autosave: createAutosave(outcome.project, {
           save: (record) => storage.projects.save(record),
@@ -280,6 +293,64 @@ function App({
     } finally {
       workingRef.current = false;
       setUploading(false);
+    }
+  }
+
+  /**
+   * The create surface's other input: a pasted YouTube link becomes a project
+   * and opens the same player session an upload does. Nothing decodes and
+   * nothing is hashed — there is no audio here — so the whole path is the
+   * link rules plus one title lookup.
+   */
+  async function handleLink(url: string): Promise<void> {
+    if (storage === null || workingRef.current) return;
+    workingRef.current = true;
+    setLinkError(null);
+    setCreatingFromLink(true);
+    const controller = controllerFactory();
+    const token = openTokenRef.current;
+    try {
+      const outcome = await createProjectFromYouTubeLink(url, {
+        fetchTitle,
+        save: (record) => storage.projects.save(record),
+      });
+      if (!outcome.ok) {
+        // The controller never entered a session — release it.
+        controller.destroy();
+        setLinkError(outcome.guidance);
+        return;
+      }
+      // A YouTube project has no waveform to decode, ever; the cache entry
+      // says so up front, so reopening never tries.
+      peaksCacheRef.current.set(outcome.project.id, null);
+      if (token !== openTokenRef.current) {
+        // The user switched tabs while the title lookup ran (up to ten
+        // seconds) — the project is saved and waiting in the list, but
+        // yanking them off the tab they navigated to is not ours to do.
+        controller.destroy();
+        await refreshProjects(storage);
+        return;
+      }
+      // A link create that lands is a fresh start for the whole surface: the
+      // other input's stale rejection has nothing left to describe.
+      setUploadError(null);
+      setSession({
+        autosave: createAutosave(outcome.project, {
+          save: (record) => storage.projects.save(record),
+        }),
+        peaks: null,
+        controller,
+      });
+    } catch (error) {
+      controller.destroy();
+      setLinkError(
+        error instanceof StorageError && error.code === 'storage-full'
+          ? 'Browser storage is full — free up space, then try the link again.'
+          : 'Something went wrong creating the project. Please try again.',
+      );
+    } finally {
+      workingRef.current = false;
+      setCreatingFromLink(false);
     }
   }
 
@@ -589,6 +660,15 @@ function App({
         await refreshProjects(storage);
         return;
       }
+      if (record.audio === null) {
+        // A zip bundles the recording, and a YouTube project has none to
+        // bundle — that is the design, not a fault, so say so and point at
+        // the export that does work rather than reporting a generic failure.
+        setNotice(
+          'A YouTube project has no audio file to bundle into a zip. Use “Export labels” to save its marks.',
+        );
+        return;
+      }
       download(await exportProjectZip(record), `${sanitizeDownloadName(record.name)}.zip`);
     } catch {
       setNotice('Something went wrong exporting the project. Try again.');
@@ -660,7 +740,11 @@ function App({
   // must be disabled across all of them, or a pick made mid-flight is silently
   // dropped by the lock guard.
   const workspaceBusy =
-    uploading || openingId !== null || importingZip || importingLabelsId !== null;
+    uploading ||
+    creatingFromLink ||
+    openingId !== null ||
+    importingZip ||
+    importingLabelsId !== null;
 
   if (session !== null) {
     return (
@@ -696,8 +780,17 @@ function App({
       </div>
       {tab === 'projects' && storage !== null && (
         <>
-          <UploadPicker onFile={handleFile} error={uploadError} busy={workspaceBusy} />
-          <ImportPicker onFile={handleImportZip} busy={workspaceBusy} />
+          <CreateProject
+            onFile={handleFile}
+            onLink={(url) => void handleLink(url)}
+            onLinkEdit={() => setLinkError(null)}
+            fileError={uploadError}
+            linkError={linkError}
+            busy={workspaceBusy}
+            uploading={uploading}
+            creatingFromLink={creatingFromLink}
+          />
+          <ImportPicker onFile={handleImportZip} busy={workspaceBusy} working={importingZip} />
           <ProjectsScreen
             projects={projects}
             status={status}

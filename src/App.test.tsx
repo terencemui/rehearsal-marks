@@ -10,8 +10,8 @@ import { exportProjectZip } from './portability';
 import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
 import { mockController } from './test/controller-fixture';
-import { uploadLoad } from './test/load-fixture';
-import { projectRecord, uploadAudio } from './test/project-fixture';
+import { uploadLoad, youtubeLoad } from './test/load-fixture';
+import { projectRecord, uploadAudio, youtubeProjectRecord } from './test/project-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
 import App from './App';
 
@@ -20,11 +20,24 @@ async function renderApp(
   controller = mockController(),
   storage?: Storage,
   download?: (blob: Blob, filename: string) => void,
+  fetchTitle: (canonicalUrl: string) => Promise<string | null> = async () => VIDEO_TITLE,
 ) {
   const opened = storage ?? (await testStorage());
-  const view = render(<App controllerFactory={() => controller} storage={opened} download={download} />);
+  const view = render(
+    <App
+      controllerFactory={() => controller}
+      storage={opened}
+      download={download}
+      // Stubbed by default so no test reaches YouTube's oEmbed endpoint.
+      fetchTitle={fetchTitle}
+    />,
+  );
   return { ...view, storage: opened, controller };
 }
+
+const VIDEO_ID = 'dQw4w9WgXcQ';
+const YOUTUBE_CANONICAL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
+const VIDEO_TITLE = 'Brahms — Intermezzo Op. 118 No. 2';
 
 function mp3File(name = 'brahms-op118.mp3'): File {
   return new File([new Uint8Array([1, 2, 3, 4])], name, { type: 'audio/mpeg' });
@@ -214,6 +227,131 @@ describe('App upload flow', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/storage is full/i);
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
     expect(await storage.projects.list()).toEqual([]);
+  });
+});
+
+describe('App create from a YouTube link', () => {
+  /** Types a link into the create surface's second input and submits it. */
+  async function pasteLink(user: ReturnType<typeof userEvent.setup>, url: string) {
+    await user.type(screen.getByLabelText(/paste a YouTube link/i), url);
+    await user.click(screen.getByRole('button', { name: /create from link/i }));
+  }
+
+  it('lands in the same player session an upload does', async () => {
+    const user = userEvent.setup();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+    });
+    const { storage } = await renderApp(controller);
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    // The player, named after the video, with the transport an upload gets.
+    expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled();
+    expect(screen.getByLabelText('Volume')).toBeInTheDocument();
+    expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
+
+    // Nothing was decoded — there is no audio on this path at all.
+    expect(controller.extractPeaks).not.toHaveBeenCalled();
+    const [stored] = await storage.projects.list();
+    expect(stored.name).toBe(VIDEO_TITLE);
+    expect((await storage.projects.get(stored.id))!.audio).toBeNull();
+  });
+
+  it('records the canonical URL as identity whatever form was pasted', async () => {
+    const user = userEvent.setup();
+    const { storage } = await renderApp();
+
+    await pasteLink(user, `https://youtu.be/${VIDEO_ID}?t=42`);
+
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
+    const [stored] = await storage.projects.list();
+    expect(stored.source).toBe(YOUTUBE_CANONICAL);
+    expect(stored.sizeBytes).toBeLessThan(1000); // no audio bytes stored
+  });
+
+  it.each([
+    ['a playlist', 'https://www.youtube.com/playlist?list=PLabcdef', /playlist/i],
+    ['a malformed link', 'https://example.com/not-a-video', /YouTube video link/],
+  ])('rejects %s with guidance and stores nothing', async (_case, url, expected) => {
+    const user = userEvent.setup();
+    const { storage } = await renderApp();
+
+    await pasteLink(user, url);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(expected);
+    // Still on the workspace — a rejection never opens a player.
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+    expect(await storage.projects.list()).toEqual([]);
+  });
+
+  it('still creates the project when the title cannot be read', async () => {
+    const user = userEvent.setup();
+    const { storage } = await renderApp(mockController(), undefined, undefined, async () => null);
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    // Offline, or a video whose title is not public: the project is still the
+    // user's to keep, named by something they can recognize and rename.
+    expect(await screen.findByRole('heading', { name: `YouTube video ${VIDEO_ID}` })).toBeInTheDocument();
+    expect(await storage.projects.list()).toHaveLength(1);
+  });
+
+  it('surfaces a full-storage failure on the link input, not the file picker', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    const fullStorage: Storage = {
+      ...storage,
+      projects: {
+        ...storage.projects,
+        save: async () => {
+          throw new StorageError('Browser storage is full.', 'storage-full');
+        },
+      },
+    };
+    await renderApp(mockController(), fullStorage);
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/storage is full/i);
+    // The guidance belongs to the field that produced it: the link input is
+    // marked invalid, and the file picker's own channel stays clean.
+    expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+  });
+
+  it('reopens a stored YouTube project without trying to decode it', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    await storage.projects.save(
+      youtubeProjectRecord({
+        name: 'Brahms on YouTube',
+        audioMeta: { ...projectRecord().audioMeta, sizeBytes: 0, source: YOUTUBE_CANONICAL },
+      }),
+    );
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+    });
+    const { container } = await renderApp(controller, storage);
+
+    await user.click(await screen.findByRole('button', { name: /Brahms on YouTube/ }));
+
+    await screen.findByRole('heading', { name: 'Brahms on YouTube' });
+    // Reopening is the other way into a YouTube session, and it must reach the
+    // same arm of the seam — there is no blob here to decode or play.
+    expect(controller.extractPeaks).not.toHaveBeenCalled();
+    expect(youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]).url).toBe(YOUTUBE_CANONICAL);
+    expect(container.querySelector('.player-waveform')).toBeInTheDocument();
+  });
+
+  it('offers both create inputs on one surface', async () => {
+    await renderApp();
+
+    const surface = await screen.findByRole('region', { name: 'Create project' });
+    expect(surface).toContainElement(screen.getByRole('button', { name: 'Create project' }));
+    expect(surface).toContainElement(screen.getByLabelText(/paste a YouTube link/i));
   });
 });
 
@@ -954,5 +1092,34 @@ describe('App export and import', () => {
     );
 
     expect(await screen.findByRole('alert')).toHaveTextContent('isn’t a valid project zip');
+  });
+
+  it('says why a YouTube project has no zip, and points at the export that works', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    await storage.projects.save(
+      youtubeProjectRecord({
+        name: 'Brahms on YouTube',
+        audioMeta: { ...projectRecord().audioMeta, sizeBytes: 0, source: YOUTUBE_CANONICAL },
+      }),
+    );
+    const { downloads, download } = captureDownloads();
+    await renderApp(mockController(), storage, download);
+    const row = (await screen.findByText('Brahms on YouTube')).closest('li')!;
+
+    await user.click(within(row).getByRole('button', { name: 'Export' }));
+
+    // Not a generic "something went wrong": there is no audio to bundle by
+    // design, and the label-set export is the one that carries these marks.
+    expect(await screen.findByText(/no audio file to bundle/i)).toBeInTheDocument();
+    expect(download).not.toHaveBeenCalled();
+
+    // And that export does work for a YouTube project.
+    await user.click(within(row).getByRole('button', { name: 'Export labels' }));
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+    expect(downloads[0].filename).toBe('Brahms on YouTube.labels.json');
+    expect(parseProjectFile(await downloads[0].blob.text()).audioMeta.source).toBe(
+      YOUTUBE_CANONICAL,
+    );
   });
 });

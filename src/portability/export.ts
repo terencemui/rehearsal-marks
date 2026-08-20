@@ -24,8 +24,9 @@ function fileData(record: ProjectRecord): ProjectFileData {
 
 /** The full project as one zip: project.json + the audio file. */
 export async function exportProjectZip(record: ProjectRecord): Promise<Blob> {
-  // A YouTube project has no audio to bundle, so a zip export is impossible
-  // — unreachable today, since no YouTube project can exist in the app yet.
+  // A YouTube project has no audio to bundle, so a zip export is impossible.
+  // Callers are expected to check the source and offer the label-set export
+  // instead — this is the backstop that keeps a missed check loud.
   if (record.audio === null) {
     throw new Error('A YouTube project has no audio to bundle into a zip.');
   }

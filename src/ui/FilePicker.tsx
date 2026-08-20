@@ -7,8 +7,14 @@ export interface FilePickerProps {
   label: string;
   /** Called with the picked file; the caller runs the pipeline. */
   onFile: (file: File) => void;
-  /** True while the pipeline is running; disables the picker. */
+  /** True while any pipeline is running; disables the picker. */
   busy?: boolean;
+  /**
+   * True while *this* picker's own pipeline is running — only then does the
+   * button report progress. A picker disabled because some other pipeline
+   * holds the lock keeps its label, rather than claiming to be importing.
+   */
+  working?: boolean;
   /** Guidance from the last attempt, if any. */
   error?: string | null;
 }
@@ -24,6 +30,7 @@ export function FilePicker({
   label,
   onFile,
   busy = false,
+  working = false,
   error = null,
 }: FilePickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +53,7 @@ export function FilePicker({
         }}
       />
       <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>
-        {busy ? 'Importing…' : label}
+        {working ? 'Importing…' : label}
       </button>
       {error !== null && (
         <p role="alert" className="upload-error">

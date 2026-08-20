@@ -9,7 +9,9 @@ export type DomainErrorCode =
   | 'alias-duplicate'
   | 'alias-label-collision'
   | 'invalid-project-file'
-  | 'unsupported-schema-version';
+  | 'unsupported-schema-version'
+  | 'invalid-youtube-link'
+  | 'youtube-playlist-link';
 
 /** A rejected domain operation. */
 export class DomainError extends Error {

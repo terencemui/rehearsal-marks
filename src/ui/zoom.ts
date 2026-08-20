@@ -26,13 +26,23 @@ export interface ZoomView {
 }
 
 /**
+ * The level at which the whole recording spans exactly the viewport — no
+ * horizontal scroll, nothing off-screen. Zero for an unknown duration, which
+ * cannot be fitted. This is the only level a YouTube project ever uses: the
+ * video is the main item, and stretching its embed past the viewport to make
+ * room for a zoomed timeline would bury it.
+ */
+export function fitPxPerSec(viewportWidth: number, duration: number): number {
+  return duration > 0 ? viewportWidth / duration : 0;
+}
+
+/**
  * The zoomed-out limit: the ~5–10 px/s floor, or fit-to-view for recordings
  * short enough that fitting exceeds the floor. An unknown duration gets the
  * floor — nothing sensible can be fitted yet.
  */
 export function minPxPerSec(viewportWidth: number, duration: number): number {
-  const fit = duration > 0 ? viewportWidth / duration : 0;
-  return Math.max(ZOOM_FLOOR_PX_PER_SEC, fit);
+  return Math.max(ZOOM_FLOOR_PX_PER_SEC, fitPxPerSec(viewportWidth, duration));
 }
 
 /**
@@ -46,8 +56,10 @@ export function clampPxPerSec(
   duration: number,
 ): number {
   const lower = minPxPerSec(viewportWidth, duration);
-  const fit = duration > 0 ? viewportWidth / duration : 0;
-  const upper = Math.max(ZOOM_MAX_PX_PER_SEC, fit * ZOOM_MAX_FIT_MULTIPLE);
+  const upper = Math.max(
+    ZOOM_MAX_PX_PER_SEC,
+    fitPxPerSec(viewportWidth, duration) * ZOOM_MAX_FIT_MULTIPLE,
+  );
   return Math.min(upper, Math.max(lower, pxPerSec));
 }
 

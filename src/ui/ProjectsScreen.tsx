@@ -141,7 +141,10 @@ export function ProjectsScreen({
                 <button
                   type="button"
                   className="projects-open"
-                  disabled={openingId !== null}
+                  // Every workspace pipeline holds the working lock, and an
+                  // open attempted under it is silently dropped — so the row
+                  // must be disabled across all of them, not just opens.
+                  disabled={openingId !== null || busy}
                   onClick={() => onOpen(project.id)}
                 >
                   <span className="projects-name">{project.name}</span>
