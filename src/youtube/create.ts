@@ -6,6 +6,7 @@
  */
 
 import { DomainError, errorMessage, newId, parseYouTubeLink } from '../domain';
+import { defaultPlayerMode } from '../storage';
 import type { ProjectRecord } from '../storage';
 
 /** Everything the pipeline needs from outside itself, injectable in tests. */
@@ -77,10 +78,10 @@ export async function createProjectFromYouTubeLink(
       attribution: '',
     },
     markers: [],
-    // Label mode: a project created from a bare link has no marks yet, and
-    // the community label sets that would justify Playback mode are not
-    // fetched here.
-    playerMode: 'label',
+    // The source's own rule decides the posture rather than a literal here —
+    // a bare link arrives with no marks, so this is Label today, and it
+    // becomes Playback for free once community label sets load at creation.
+    playerMode: defaultPlayerMode('youtube', 0),
   };
   await save(project);
   return { ok: true, project };

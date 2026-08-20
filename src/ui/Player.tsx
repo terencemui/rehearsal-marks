@@ -174,7 +174,7 @@ export function Player({
   // creation stamps it. `editing` is the one gate every editing tool reads;
   // navigation never does.
   const [playerMode, setPlayerMode] = useState<PlayerMode>(
-    record.playerMode ?? defaultPlayerMode(record.source),
+    record.playerMode ?? defaultPlayerMode(record.source, record.markers.length),
   );
   const editing = playerMode === 'label';
   const [undo, setUndo] = useState<UndoState | null>(null);

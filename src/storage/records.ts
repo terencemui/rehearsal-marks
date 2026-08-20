@@ -42,13 +42,26 @@ export interface ProjectRecord {
 
 /**
  * A project's first-open posture. Uploads (including legacy records, whose
- * missing source always means upload) open in Label mode, ready to mark;
- * YouTube and library-seeded projects open in Playback mode. Creation paths
- * stamp this into new records; the player applies it when the persisted mode
- * is missing.
+ * missing source always means upload) open in Label mode, ready to mark.
+ *
+ * A YouTube project turns on whether it arrived with marks: a video whose
+ * community label set loaded is immediately practiceable, so it opens in
+ * Playback; a bare pasted link has an empty timeline and nothing to practise
+ * against, so it opens in Label with the marking tools in reach. Opening an
+ * empty project read-only would hide the only thing there is to do with it.
+ *
+ * Library-seeded projects are their own case — they carry a label set but
+ * their source is the audio file they were seeded from, so `seedProject`
+ * states Playback directly rather than deriving it here.
+ *
+ * Creation paths stamp this into new records; the player applies it when the
+ * persisted mode is missing.
  */
-export function defaultPlayerMode(source: ProjectSource | undefined): PlayerMode {
-  return source === 'youtube' ? 'playback' : 'label';
+export function defaultPlayerMode(
+  source: ProjectSource | undefined,
+  markerCount: number,
+): PlayerMode {
+  return source === 'youtube' && markerCount > 0 ? 'playback' : 'label';
 }
 
 /** One row of the Projects screen: what story #4 asks the list to show. */

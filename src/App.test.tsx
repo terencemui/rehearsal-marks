@@ -237,6 +237,26 @@ describe('App create from a YouTube link', () => {
     await user.click(screen.getByRole('button', { name: /create from link/i }));
   }
 
+  it('opens a freshly pasted link in Label mode, with the marking tools in reach', async () => {
+    // End to end, the behaviour the stamped mode and the player's fallback
+    // have to agree on: a project with an empty timeline must not open
+    // read-only, or there is no visible way to place the first mark.
+    const user = userEvent.setup();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+    });
+    const { storage } = await renderApp(controller);
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
+    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
+
+    const [summary] = await storage.projects.list();
+    expect((await storage.projects.get(summary.id))!.playerMode).toBe('label');
+  });
+
   it('lands in the same player session an upload does', async () => {
     const user = userEvent.setup();
     const controller = mockController({
