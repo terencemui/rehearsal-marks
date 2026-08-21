@@ -334,9 +334,10 @@ describe('ProjectsScreen Commons submission', () => {
 });
 
 describe('ProjectsScreen empty state', () => {
-  it('offers the two first-run paths and hides the list', () => {
+  it('points at pasting a YouTube link and hides the list', () => {
     const { props } = renderScreen({ projects: [] });
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByText(/paste a YouTube link/i)).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
     expect(screen.queryByText(/Total used/)).not.toBeInTheDocument();
     expect(props.onBrowseLibrary).toBeDefined();

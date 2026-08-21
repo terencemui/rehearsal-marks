@@ -4,38 +4,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { CreateProject } from './CreateProject';
 
 function setup(props: Partial<React.ComponentProps<typeof CreateProject>> = {}) {
-  const onFile = vi.fn();
   const onLink = vi.fn();
-  const view = render(
-    <CreateProject
-      onFile={onFile}
-      onLink={onLink}
-      fileError={null}
-      linkError={null}
-      {...props}
-    />,
-  );
-  return { onFile, onLink, ...view };
+  const view = render(<CreateProject onLink={onLink} linkError={null} {...props} />);
+  return { onLink, ...view };
 }
 
 describe('CreateProject', () => {
-  it('offers both inputs on one surface', () => {
+  it('offers the YouTube link input on the create surface', () => {
     setup();
 
     const surface = screen.getByRole('region', { name: 'Create project' });
-    expect(surface).toContainElement(screen.getByRole('button', { name: 'Create project' }));
     expect(surface).toContainElement(screen.getByLabelText(/paste a YouTube link/i));
-  });
-
-  it('hands the picked file to the upload pipeline', async () => {
-    const user = userEvent.setup();
-    const { onFile, container } = setup();
-    const file = new File([new Uint8Array([1])], 'brahms.mp3', { type: 'audio/mpeg' });
-
-    await user.upload(container.querySelector('input[type="file"]')!, file);
-
-    expect(onFile).toHaveBeenCalledTimes(1);
-    expect(onFile.mock.calls[0][0].name).toBe('brahms.mp3');
+    expect(surface).toContainElement(screen.getByRole('button', { name: /create from link/i }));
+    // The upload picker is gone: the link is the only input on the surface.
+    expect(screen.queryByRole('button', { name: 'Create project' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /import/i })).not.toBeInTheDocument();
   });
 
   it('hands the pasted link to the YouTube pipeline verbatim', async () => {
@@ -70,14 +53,7 @@ describe('CreateProject', () => {
     await user.type(field, 'https://www.youtube.com/playlist?list=PLx');
     await user.click(screen.getByRole('button', { name: /create from link/i }));
 
-    rerender(
-      <CreateProject
-        onFile={vi.fn()}
-        onLink={onLink}
-        fileError={null}
-        linkError="That link points at a playlist, not a single video."
-      />,
-    );
+    rerender(<CreateProject onLink={onLink} linkError="That link points at a playlist, not a single video." />);
 
     expect(field).toHaveValue('https://www.youtube.com/playlist?list=PLx');
     expect(screen.getByRole('alert')).toHaveTextContent(/playlist/);
@@ -97,46 +73,30 @@ describe('CreateProject', () => {
     expect(onLink).not.toHaveBeenCalled();
   });
 
-  it('keeps each input’s guidance beside its own control', () => {
-    setup({ fileError: 'WAV files aren’t supported yet', linkError: null });
+  it('shows rejection guidance beside the field as an alert', () => {
+    setup({ linkError: 'That link points at a playlist, not a single video.' });
 
-    // A file rejection must not surface as a link rejection, or vice versa:
-    // they are separate attempts and one must never blank the other.
-    expect(screen.getByRole('alert')).toHaveTextContent(/WAV/);
+    expect(screen.getByRole('alert')).toHaveTextContent(/playlist/);
     expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute(
       'aria-invalid',
-      'false',
+      'true',
     );
   });
 
-  it('disables both inputs while any pipeline runs', () => {
+  it('disables the link input and button while any pipeline runs', () => {
     setup({ busy: true });
 
-    expect(screen.getByRole('button', { name: 'Create project' })).toBeDisabled();
     expect(screen.getByLabelText(/paste a YouTube link/i)).toBeDisabled();
     expect(screen.getByRole('button', { name: /create from link/i })).toBeDisabled();
   });
 
-  it('reports progress only on the input whose pipeline is actually running', () => {
-    // A disabled control must not narrate someone else's work: during a link
-    // create the file button is merely locked, not importing.
+  it('reports progress while the link create runs', () => {
     const { rerender } = setup({ busy: true, creatingFromLink: true });
 
     expect(screen.getByRole('button', { name: 'Creating…' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create project' })).toBeDisabled();
 
-    rerender(
-      <CreateProject
-        onFile={vi.fn()}
-        onLink={vi.fn()}
-        fileError={null}
-        linkError={null}
-        busy
-        uploading
-      />,
-    );
+    rerender(<CreateProject onLink={vi.fn()} linkError={null} busy creatingFromLink={false} />);
 
-    expect(screen.getByRole('button', { name: 'Importing…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /create from link/i })).toBeInTheDocument();
   });
 

@@ -18,7 +18,6 @@ import { exportLabelSetJson, exportProjectJson, exportProjectZip, importLabelSet
 import { validateProjectName } from './projects/summary';
 import { createAutosave, createStorage, saveStatusFor, sha256, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
-import { createProjectFromUpload } from './upload';
 import { createProjectFromYouTubeLink, fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
 import { ContributorControl } from './ui/Contributor';
@@ -178,12 +177,12 @@ function rowsById(rows: LabelSetRow[]): Record<string, LabelSetRow> {
 }
 
 /**
- * The app shell: the Projects tab is home — the list, upload, rename,
- * delete, export, and import. The Library tab (T11) lists the community
- * catalog and loads entries into editable projects; Help (T13) is the
- * discoverable reference. Opening a project (upload or click) drops into
- * the player; leaving flushes the session's autosave before the list is
- * re-read, so the workspace never shows stale data.
+ * The app shell: the Projects tab is home — the link-only create, the list,
+ * rename, delete, export, and import. The Library tab (T11) lists the
+ * community catalog and loads entries into editable projects; Help (T13) is
+ * the discoverable reference. Opening a project drops into the player;
+ * leaving flushes the session's autosave before the list is re-read, so the
+ * workspace never shows stale data.
  */
 function App({
   controllerFactory = createAudioController,
@@ -213,12 +212,9 @@ function App({
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [notice, setNotice] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   /**
-   * The link field's own failure channel, separate from the file picker's:
-   * the create surface shows each rejection beside the input that caused it,
-   * so a bad link never blanks out a file's guidance or the reverse.
+   * The link field's own failure channel: the create surface shows each
+   * rejection beside the input that caused it.
    */
   const [linkError, setLinkError] = useState<string | null>(null);
   const [creatingFromLink, setCreatingFromLink] = useState(false);
@@ -475,54 +471,11 @@ function App({
     }
   }
 
-  async function handleFile(file: File): Promise<void> {
-    if (storage === null || workingRef.current) return;
-    workingRef.current = true;
-    setUploadError(null);
-    setUploading(true);
-    const controller = controllerFactory();
-    try {
-      const outcome = await createProjectFromUpload(file, {
-        extractPeaks: (blob) => controller.extractPeaks(blob),
-        save: (record) => storage.projects.save(record),
-      });
-      if (!outcome.ok) {
-        // The controller never entered a session — release it.
-        controller.destroy();
-        setUploadError(outcome.guidance);
-        return;
-      }
-      peaksCacheRef.current.set(outcome.project.id, outcome.peaks);
-      // Symmetrically, a successful upload retires the link field's guidance.
-      setLinkError(null);
-      setSession({
-        autosave: createAutosave(outcome.project, {
-          save: (record) => storage.projects.save(record),
-        }),
-        peaks: outcome.peaks,
-        controller,
-      });
-    } catch (error) {
-      // The first save is the one storage write outside the player's status
-      // line — surface its failures honestly instead of a silent unhandled
-      // rejection. The controller never entered a session — release it.
-      controller.destroy();
-      setUploadError(
-        error instanceof StorageError && error.code === 'storage-full'
-          ? 'Browser storage is full — free up space, then import again.'
-          : 'Something went wrong importing your recording. Please try again.',
-      );
-    } finally {
-      workingRef.current = false;
-      setUploading(false);
-    }
-  }
-
   /**
-   * The create surface's other input: a pasted YouTube link becomes a project
-   * and opens the same player session an upload does. Nothing decodes and
-   * nothing is hashed — there is no audio here — so the whole path is the
-   * link rules plus one title lookup.
+   * The create surface's one input: a pasted YouTube link becomes a project
+   * and opens the player session. Nothing decodes and nothing is hashed —
+   * there is no audio here — so the whole path is the link rules plus one
+   * title lookup.
    */
   async function handleLink(url: string): Promise<void> {
     if (storage === null || workingRef.current) return;
@@ -554,9 +507,7 @@ function App({
         await refreshProjects(storage);
         return;
       }
-      // A link create that lands is a fresh start for the whole surface: the
-      // other input's stale rejection has nothing left to describe.
-      setUploadError(null);
+      // A link create that lands is a fresh start for the surface.
       setSession({
         autosave: createAutosave(outcome.project, {
           save: (record) => storage.projects.save(record),
@@ -973,11 +924,10 @@ function App({
     }
   }
 
-  // Every workspace pipeline holds the working lock while it runs; each picker
-  // must be disabled across all of them, or a pick made mid-flight is silently
-  // dropped by the lock guard.
+  // Every workspace pipeline holds the working lock while it runs; each
+  // control must be disabled across all of them, or an action made mid-flight
+  // is silently dropped by the lock guard.
   const workspaceBusy =
-    uploading ||
     creatingFromLink ||
     openingId !== null ||
     importingZip ||
@@ -1028,13 +978,10 @@ function App({
       {tab === 'projects' && storage !== null && (
         <>
           <CreateProject
-            onFile={handleFile}
             onLink={(url) => void handleLink(url)}
             onLinkEdit={() => setLinkError(null)}
-            fileError={uploadError}
             linkError={linkError}
             busy={workspaceBusy}
-            uploading={uploading}
             creatingFromLink={creatingFromLink}
           />
           <ImportPicker onFile={handleImportFile} busy={workspaceBusy} working={importingZip} />
