@@ -1,19 +1,56 @@
 # Contributing a label set
 
+Label sets are the community's shared marks for a recording, contributed two
+ways, depending on the recording:
+
+- **YouTube performances — from the app.** Sign in, submit, await review.
+  Nothing to download, nothing to set up. Written for musicians; start at
+  [From the app](#from-the-app--youtube-performances).
+- **CC0 Library recordings — through the repo.** The Library keeps its
+  GitHub pull-request flow, because its rows promise license and attribution.
+  [The Library flow](#the-cc0-library--through-the-repo) is unchanged.
+
+## From the app — YouTube performances
+
+You marked a public performance on YouTube and want every student to start
+from your marks. The whole path is inside the app — there is nothing to
+download or set up.
+
+> **Status:** the in-app submit step is documented here in full so the path
+> is in place from day one; it becomes usable when the Commons query (T21)
+> and sign-in (T24) land. The flow below is the target.
+
+1. **Open the performance.** Create a project from its YouTube link and
+   place your marks while listening (press `M` as each rehearsal mark goes
+   by). Labels come out A, B, C… in time order automatically; correct any
+   timestamps with the nudge buttons in the inspector.
+2. **Sign in with Google.** The only account the app ever asks for. Reading
+   label sets never requires one; publishing does.
+3. **Submit your label set.** One step in the app. Your marks for this
+   video go to the Commons as a **pending** submission — visible to you,
+   not yet to anyone else.
+4. **Await review.** A maintainer listens and checks the marks, exactly as
+   they would check any contribution. Submissions are usually quick.
+5. **Published.** Your label set loads for every student who opens the
+   video. You can update it any time — edits return it to pending and go
+   through review again.
+
+A label set is facts about a recording (like a table of contents), not
+copyrightable expression — sharing your own marks is unproblematic. Publish
+only marks you placed yourself on this exact performance: marks made against
+one recording never transfer to another, and the app says so plainly.
+
+## The CC0 Library — through the repo
+
 The community library of CC0 recordings is labeled by students like you. A
 label set is **one JSON file** — your markers plus the facts that tie them to
 exactly one recording. Contributing one is a ten-minute, one-pull-request
-task.
+task. This flow needs a GitHub account; it is the Library's by design (see
+ADR-0001) and unchanged. The same workflow is documented in the app's Help
+tab; this file is the GitHub-facing version with the review rules made
+explicit.
 
-The same workflow is documented in the app's Help tab; this file is the
-GitHub-facing version with the review rules made explicit.
-
-> **Status:** the Library tab is still in development; the label-set export is
-> live. This file documents the target workflow in full so the path is in
-> place from day one — the export step works today, and the Library step
-> becomes usable when the tab lands.
-
-## What a label set is
+### What a label set is
 
 A label set is a `project.json` file containing:
 
@@ -29,7 +66,7 @@ performance don't transfer, and the app says so plainly.
 Label sets are facts about a recording (like a table of contents), not
 copyrightable expression — sharing them is unproblematic.
 
-## The rules
+### The rules
 
 1. **One file, one recording, one pull request.** A PR adds exactly
    `library/labelsets/<entry-id>.json` and nothing else. Split unrelated
@@ -42,7 +79,7 @@ copyrightable expression — sharing them is unproblematic.
 4. **The markers must be your own, placed on this exact recording.** The
    sha256 check makes this verifiable, not just promised.
 
-## Step by step
+### Step by step
 
 1. **Open the recording** in the app — from the Library tab. Place your
    markers while listening (press `M` as each rehearsal mark goes by). Labels
@@ -64,7 +101,7 @@ copyrightable expression — sharing them is unproblematic.
 7. **Merged.** Your label set ships in the Library for every student on the
    next deploy.
 
-## Self-check before you open the PR
+### Self-check before you open the PR
 
 - [ ] The PR contains exactly one file: `library/labelsets/<entry-id>.json`.
 - [ ] The `<entry-id>` matches an existing entry in `library/library.json`.
