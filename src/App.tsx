@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createAudioController, decodePeaksOrNull } from './audio';
 import type { AudioController, PeakData } from './audio';
+import { createDefaultAuthController } from './auth';
+import type { AuthController, AuthState } from './auth';
 import { errorMessage } from './domain';
 import { parseCatalog, resolveUrl } from './library/catalog';
 import type { CatalogEntry } from './library/catalog';
@@ -13,6 +15,7 @@ import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } fro
 import { createProjectFromUpload } from './upload';
 import { createProjectFromYouTubeLink, fetchYouTubeTitle } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
+import { ContributorControl } from './ui/Contributor';
 import { CreateProject } from './ui/CreateProject';
 import { LibraryScreen } from './ui/LibraryScreen';
 import { triggerDownload } from './ui/download';
@@ -33,6 +36,12 @@ export interface AppProps {
   fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
   /** Test seam: the community label-set lookup — same reason as fetchTitle. */
   loadCommunityLabels?: (videoId: string) => Promise<CommunityLabelSet | null>;
+  /**
+   * Test seam: the contributor sign-in surface, so component tests never
+   * construct a supabase-js client — the same containment the audio tests
+   * get from faking `window.YT`.
+   */
+  authFactory?: () => AuthController;
 }
 
 /** One open project session: the autosave, its peaks, and its controller. */
@@ -133,6 +142,7 @@ function App({
   // create pipeline's seam stays, and the pure identity gate
   // (validateYouTubeLabelSet) is what T21's loader will run behind it.
   loadCommunityLabels = async () => null,
+  authFactory = createDefaultAuthController,
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -164,6 +174,8 @@ function App({
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [importingZip, setImportingZip] = useState(false);
   const [importingLabelsId, setImportingLabelsId] = useState<string | null>(null);
+  /** The contributor session — the header's sign-in state. Anonymous first paint. */
+  const [authState, setAuthState] = useState<AuthState>({ kind: 'anonymous' });
 
   /**
    * Serializes session creation and every workspace mutation (upload, open,
@@ -172,6 +184,12 @@ function App({
    * silently reverts or hides the loser's data.
    */
   const workingRef = useRef(false);
+  /**
+   * The session controller for the app's lifetime — created on mount,
+   * destroyed on unmount. Auth state lives here in App state only: it never
+   * touches storage, so signing in or out cannot disturb local projects.
+   */
+  const authRef = useRef<AuthController | null>(null);
   /** Bumped whenever the tab changes; an in-flight open checks it before committing. */
   const openTokenRef = useRef(0);
   /** Decoded peaks per project, so reopening never re-decodes an unchanged blob. */
@@ -192,6 +210,26 @@ function App({
       setNotice('Something went wrong reading the project list. Please reload.');
     }
   }
+
+  // Runs once per mount, never per render: an inline `authFactory` from a
+  // re-rendering parent can't recycle the controller mid-mount and drop
+  // in-flight session events — the first factory wins for the mount.
+  // (StrictMode's effect replay destroys and re-creates the controller,
+  // which is exactly the fresh start a dev remount wants.)
+  useEffect(() => {
+    const controller = authFactory();
+    authRef.current = controller;
+    const unsubscribe = controller.subscribe(setAuthState);
+    // The snapshot, not the first subscription callback: a restored session
+    // must be painted before the backend's own event arrives.
+    setAuthState(controller.getState());
+    return () => {
+      authRef.current = null;
+      unsubscribe();
+      controller.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design
+  }, []);
 
   useEffect(() => {
     if (injectedStorage) {
@@ -260,6 +298,16 @@ function App({
     }
     return bySource;
   }, [projects, catalog]);
+
+  /** Starts the Google OAuth flow; the session lands when the flow returns. */
+  function handleSignIn(): void {
+    void authRef.current?.signInWithGoogle();
+  }
+
+  /** Ends the session; the app returns to anonymous browsing. */
+  function handleSignOut(): void {
+    void authRef.current?.signOut();
+  }
 
   async function handleFile(file: File): Promise<void> {
     if (storage === null || workingRef.current) return;
@@ -788,8 +836,17 @@ function App({
 
   return (
     <main>
-      <h1>Rehearsal Marks</h1>
-      <p>Pin your score's rehearsal marks to your recording.</p>
+      <header className="app-header">
+        <div>
+          <h1>Rehearsal Marks</h1>
+          <p>Pin your score's rehearsal marks to your recording.</p>
+        </div>
+        <ContributorControl
+          state={authState}
+          onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
+        />
+      </header>
       <div role="tablist" aria-label="Workspace" className="tabs">
         <button type="button" role="tab" aria-selected={tab === 'projects'} onClick={() => setTab('projects')}>
           Projects

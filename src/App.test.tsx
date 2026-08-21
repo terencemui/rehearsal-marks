@@ -9,6 +9,8 @@ import type { CatalogEntry } from './library/catalog';
 import { exportProjectZip } from './portability';
 import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
+import { createAuthController } from './auth';
+import { mockAuth } from './test/auth-fixture';
 import { mockController } from './test/controller-fixture';
 import { uploadLoad, youtubeLoad } from './test/load-fixture';
 import { projectRecord, uploadAudio, youtubeProjectRecord } from './test/project-fixture';
@@ -25,18 +27,20 @@ async function renderApp(
   loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null> = async () => null,
 ) {
   const opened = storage ?? (await testStorage());
+  const auth = mockAuth();
   const view = render(
     <App
       controllerFactory={() => controller}
       storage={opened}
       download={download}
       // Stubbed by default so no test reaches YouTube's oEmbed endpoint or
-      // the community index.
+      // the community index, and no test constructs a supabase-js client.
       fetchTitle={fetchTitle}
       loadCommunityLabels={loadCommunityLabels}
+      authFactory={() => auth.controller}
     />,
   );
-  return { ...view, storage: opened, controller };
+  return { ...view, storage: opened, controller, auth: auth.backend };
 }
 
 const VIDEO_ID = 'dQw4w9WgXcQ';
@@ -1223,5 +1227,103 @@ describe('App export and import', () => {
     expect(stored.audioMeta.source).toBe(YOUTUBE_CANONICAL);
     expect(stored.markers).toHaveLength(1);
     expect(stored.playerMode).toBe('playback');
+  });
+});
+
+describe('App contributor sign-in', () => {
+  it('shows Sign in with Google to an anonymous visitor, who can use the whole app', async () => {
+    const { container, storage } = await renderApp();
+    const user = userEvent.setup();
+
+    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+
+    // No account, no prompt: an anonymous visitor uploads and gets a project.
+    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
+    expect(await screen.findByRole('heading', { name: 'brahms-op118' })).toBeInTheDocument();
+    expect(await storage.projects.list()).toHaveLength(1);
+  });
+
+  it('signs in with Google and shows the contributor in the header', async () => {
+    const { auth } = await renderApp();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+
+    expect(auth.signInWithGoogle).toHaveBeenCalledOnce();
+    // The redirect round-trip lands the session through the backend's events.
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+
+    expect(await screen.findByText('Signed in as Ava Cellist')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    // The sign-in prompt is gone once the contributor is signed in.
+    expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
+  });
+
+  it('signing out returns to anonymous browsing and leaves local projects untouched', async () => {
+    const { container, storage, auth } = await renderApp();
+    const user = userEvent.setup();
+
+    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
+    await screen.findByRole('heading', { name: 'brahms-op118' });
+    // Back to the workspace with the saved project.
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByText('brahms-op118');
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await screen.findByText('Signed in as Ava Cellist');
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    // Anonymous again, and the workspace row is exactly what it was before.
+    expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+    const projects = await storage.projects.list();
+    expect(projects.map((p) => p.name)).toEqual(['brahms-op118']);
+  });
+
+  it('degrades a failed sign-in to anonymous browsing with a notice', async () => {
+    const { auth } = await renderApp();
+    const user = userEvent.setup();
+
+    auth.failNextSignIn();
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/didn't work/i);
+    // The app never blocked on the failure: the workspace is still live.
+    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: 'Workspace' })).toBeInTheDocument();
+  });
+
+  it('a failed sign-out lands anonymous with a partial-sign-out notice — the session was removed', async () => {
+    // supabase-js removes the local session (firing SIGNED_OUT) before the
+    // API error surfaces, so the honest state is anonymous plus the notice
+    // that the server side was not reached.
+    const { auth } = await renderApp();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await screen.findByText('Signed in as Ava Cellist');
+
+    auth.failNextSignOut();
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/signed out on this device/i);
+    expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+  });
+
+  it('an unconfigured deployment says sign-in is unavailable and keeps browsing', async () => {
+    const storage = await testStorage();
+    render(
+      <App
+        controllerFactory={() => mockController()}
+        storage={storage}
+        authFactory={() => createAuthController(null)}
+      />,
+    );
+
+    expect(await screen.findByText("Sign-in isn't set up yet")).toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: 'Workspace' })).toBeInTheDocument();
+    // No sign-in affordance on an unconfigured deployment — nothing to press.
+    expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
   });
 });

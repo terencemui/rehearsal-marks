@@ -208,35 +208,28 @@ export function HelpTab() {
       <section aria-labelledby="help-contribute">
         <h3 id="help-contribute">Contribute a label set</h3>
         <p>
-          The community library of CC0 recordings is labeled by students like you, one pull
-          request at a time. Contributing a label set is a single JSON file — here is the whole
-          path:
+          The Commons is the collection of label sets for YouTube recordings — readable by
+          everyone, contributed by students like you. Publishing needs an account; browsing
+          never does. Here is the whole path:
         </p>
         <ol>
           <li>
-            Open the library recording in the app and place your markers — labels come out
-            A, B, C… in time order automatically.
+            Open the recording in the app and place your markers — labels come out A, B,
+            C… in time order automatically.
           </li>
           <li>
-            On the Projects screen, choose <strong>Export labels</strong> on that project's row.
-            This downloads one JSON file carrying your markers and the recording's identity
-            (sha256, duration, source, license, attribution) — the facts that make the set
-            applicable to exactly one recording.
+            Sign in with Google at the top of the screen. Contributing requires an account;
+            viewing the Commons never does.
           </li>
           <li>
-            Fork the{' '}
-            <a href="https://github.com/terencemui/rehearsal-marks">rehearsal-marks repo</a> and
-            add the exported file, renamed to <code>&lt;entry-id&gt;.json</code>, at{' '}
-            <code>library/labelsets/</code> — one file, one recording, nothing else.
+            Your label set is one JSON — Export labels on the Projects screen prepares it.
+            No GitHub account, no pull requests: contributions go to the Commons, not to the
+            repository. Your recordings never leave your browser; the Commons holds label
+            sets for YouTube recordings only.
           </li>
           <li>
-            Open a pull request with that single file. Reviewers verify the checklist in
-            docs/maintainer-catalog.md — recording identity, marker sanity, and the CC0-only rule.
-          </li>
-          <li>
-            Once merged, your label set ships in the Library for every student. Only label sets
-            for library recordings can be contributed: your own recordings never leave your
-            browser.
+            Contributions are moderated: a new one waits as pending until a maintainer
+            reviews it, then it loads for every student.
           </li>
         </ol>
       </section>

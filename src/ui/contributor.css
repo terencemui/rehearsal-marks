@@ -1,0 +1,36 @@
+/* The header sign-in surface: status and action, one quiet line. */
+
+.contributor-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: #444;
+}
+
+.contributor-status button {
+  padding: 6px 12px;
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  background: none;
+  color: #0f766e;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.contributor-status button:hover {
+  background: #0f766e;
+  color: #fff;
+}
+
+.contributor-status-unavailable {
+  font-style: italic;
+  cursor: help;
+}
+
+.contributor-notice {
+  margin: 0;
+  max-width: 24em;
+  font-size: 13px;
+  color: #9a3412;
+}

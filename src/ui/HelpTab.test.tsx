@@ -63,11 +63,18 @@ describe('HelpTab', () => {
 
     const workflow = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
     const steps = withinOrderedList(workflow);
-    expect(steps.length).toBeGreaterThanOrEqual(4);
-    expect(steps.map((step) => step.textContent).join('\n')).toMatch(/export/i);
-    expect(steps.map((step) => step.textContent).join('\n')).toMatch(/labelsets/i);
-    expect(steps.map((step) => step.textContent).join('\n')).toMatch(/pull request/i);
-    expect(steps.map((step) => step.textContent).join('\n')).toMatch(/one/i);
+    expect(steps.length).toBeGreaterThanOrEqual(3);
+    const text = steps.map((step) => step.textContent).join('\n');
+    expect(text).toMatch(/sign in with google/i);
+    expect(text).toMatch(/no github account/i);
+    expect(text).toMatch(/no pull requests/i);
+    expect(text).toMatch(/review/i);
+    // The steps only promise actions that exist today — the contribution UI
+    // is not here yet, so the copy points at Export labels, not an app button.
+    expect(text).toMatch(/export labels/i);
+    // The PR contribution flow is retired (ADR-0001) — nothing here sends a
+    // student to fork the repo.
+    expect(text).not.toMatch(/fork/i);
   });
 
 });
