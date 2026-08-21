@@ -1761,4 +1761,60 @@ describe('Player — YouTube projects', () => {
     await waitFor(() => expect(autosave.get().audioMeta.duration).toBe(372.5));
     storage.close();
   });
+
+  describe('the practice split view (T27)', () => {
+    const readout = () => screen.getByRole('region', { name: 'Practice readout' });
+
+    it('splits the view: the readout sits beside the timeline shell', async () => {
+      const { storage } = await renderYouTubePlayer();
+
+      const split = document.querySelector('.player-practice-split') as HTMLElement;
+      // The shell and the readout are the split's two panes.
+      expect(split.querySelector('.player-waveform-shell')).not.toBeNull();
+      expect(within(split).getByRole('region', { name: 'Practice readout' })).toBeInTheDocument();
+      storage.close();
+    });
+
+    it('keeps the split and the readout off upload projects', async () => {
+      await renderLoadedPlayer();
+
+      expect(document.querySelector('.player-practice-split')).toBeNull();
+      expect(screen.queryByRole('region', { name: 'Practice readout' })).not.toBeInTheDocument();
+      // The flags-overlay confinement is a YouTube-only posture too.
+      expect(document.querySelector('.player-waveform-shell')).not.toHaveClass('youtube-shell');
+    });
+
+    it('reads Start, then the passed and next markers, following seeks', async () => {
+      const { controller, storage } = await renderYouTubePlayer();
+
+      // The mock's store starts at its 10s default; the real controller
+      // resets the store to the load's duration — mirror it so seeks clamp
+      // on the same boundary production does.
+      act(() => controller.emitPlayback({ duration: 200 }));
+
+      // Before the first mark (markers at 10s and 20s) the left slot is Start.
+      expect(within(readout()).getByText('Start')).toBeInTheDocument();
+
+      act(() => controller.seek(15));
+      expect(within(readout()).getByText('A')).toBeInTheDocument();
+      expect(within(readout()).getByText('B')).toBeInTheDocument();
+      expect(within(readout()).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0.5');
+      expect(within(readout()).getByText('00:10.000')).toBeInTheDocument();
+      expect(within(readout()).getByText('00:20.000')).toBeInTheDocument();
+
+      act(() => controller.seek(25));
+      expect(within(readout()).getByText('B')).toBeInTheDocument();
+      expect(within(readout()).getByText('End')).toBeInTheDocument();
+      storage.close();
+    });
+
+    it('confines the flags and playhead to the timeline band', async () => {
+      const { storage } = await renderYouTubePlayer();
+
+      // The shell carries the posture; the CSS pins the overlays to the ruler
+      // band's height, so nothing overlays the video.
+      expect(document.querySelector('.player-waveform-shell')).toHaveClass('youtube-shell');
+      storage.close();
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { labelSetRow } from '../test/commons-fixture';
 import type { ProjectSummary } from '../storage';
 import { ProjectsScreen } from './ProjectsScreen';
 import type { ProjectsScreenProps } from './ProjectsScreen';
@@ -31,6 +32,10 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
     onExport: vi.fn(),
     onExportLabels: vi.fn(),
     onImportLabels: vi.fn(),
+    authKind: 'signed-in',
+    commonsRows: null,
+    onSubmitToCommons: vi.fn(),
+    onSignIn: vi.fn(),
     onBrowseLibrary: vi.fn(),
     ...overrides,
   };
@@ -67,6 +72,10 @@ describe('ProjectsScreen list', () => {
         onExport={vi.fn()}
         onExportLabels={vi.fn()}
         onImportLabels={vi.fn()}
+        authKind="signed-in"
+        commonsRows={null}
+        onSubmitToCommons={vi.fn()}
+        onSignIn={vi.fn()}
         onBrowseLibrary={vi.fn()}
       />,
     );
@@ -258,6 +267,69 @@ describe('ProjectsScreen label-set import', () => {
     await user.upload(container.querySelector('input[type="file"]')!, file);
 
     expect(props.onImportLabels).toHaveBeenCalledWith('project-1', file);
+  });
+});
+
+describe('ProjectsScreen Commons submission', () => {
+  const youtube = () => summary({ source: 'youtube' });
+
+  it('offers the submit action on a YouTube project to a signed-in contributor', async () => {
+    const user = userEvent.setup();
+    const { props } = renderScreen({ projects: [youtube()] });
+
+    await user.click(screen.getByRole('button', { name: 'Submit to Commons' }));
+    expect(props.onSubmitToCommons).toHaveBeenCalledWith('project-1');
+  });
+
+  it('offers no submit action on an uploaded project — only YouTube label sets publish', () => {
+    renderScreen();
+    expect(screen.queryByRole('button', { name: /submit/i })).not.toBeInTheDocument();
+  });
+
+  it('re-labels the action "Update submission" once the project has a Commons row', () => {
+    renderScreen({
+      projects: [youtube()],
+      commonsRows: { 'project-1': labelSetRow({ id: 'project-1', publication_status: 'pending' }) },
+    });
+    expect(screen.getByRole('button', { name: 'Update submission' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit to Commons' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['pending', 'Pending review'],
+    ['published', 'Published'],
+    ['rejected', 'Rejected'],
+  ] as const)('shows the %s status badge the contributor can read', (status, text) => {
+    renderScreen({
+      projects: [youtube()],
+      commonsRows: { 'project-1': labelSetRow({ id: 'project-1', publication_status: status }) },
+    });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it('routes a signed-out contributor\'s click to sign-in, not to submit', async () => {
+    const user = userEvent.setup();
+    const { props } = renderScreen({ projects: [youtube()], authKind: 'anonymous' });
+
+    await user.click(screen.getByRole('button', { name: 'Sign in to submit' }));
+    expect(props.onSignIn).toHaveBeenCalled();
+    expect(props.onSubmitToCommons).not.toHaveBeenCalled();
+  });
+
+  it('disables the action on an unconfigured deployment, with the reason on the button', () => {
+    renderScreen({ projects: [youtube()], authKind: 'unavailable' });
+
+    // The label falls through to the sign-in wording — only 'signed-in' shows
+    // "Submit to Commons" — but the button is inert and explains why.
+    const button = screen.getByRole('button', { name: 'Sign in to submit' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', expect.stringMatching(/isn't set up/));
+  });
+
+  it('disables the row\'s submit button while one submission runs — other row actions stay live', () => {
+    renderScreen({ projects: [youtube()], submittingId: 'project-1' });
+    expect(screen.getByRole('button', { name: /Submitting/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Rename' })).not.toBeDisabled();
   });
 });
 

@@ -12,6 +12,7 @@ import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
 import { createAuthController } from './auth';
 import { mockAuth } from './test/auth-fixture';
+import { mockCommonsWrite } from './test/commons-write-fixture';
 import { mockController } from './test/controller-fixture';
 import { uploadLoad, youtubeLoad } from './test/load-fixture';
 import { projectRecord, uploadAudio, youtubeProjectRecord } from './test/project-fixture';
@@ -26,6 +27,7 @@ async function renderApp(
   download?: (blob: Blob, filename: string) => void,
   fetchTitle: (canonicalUrl: string) => Promise<string | null> = async () => VIDEO_TITLE,
   loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null> = async () => null,
+  commons = mockCommonsWrite(),
 ) {
   const opened = storage ?? (await testStorage());
   const auth = mockAuth();
@@ -39,9 +41,10 @@ async function renderApp(
       fetchTitle={fetchTitle}
       loadCommunityLabels={loadCommunityLabels}
       authFactory={() => auth.controller}
+      commonsWriteFactory={() => commons.controller}
     />,
   );
-  return { ...view, storage: opened, controller, auth: auth.backend };
+  return { ...view, storage: opened, controller, auth: auth.backend, commons: commons.backend };
 }
 
 const VIDEO_ID = 'dQw4w9WgXcQ';
@@ -1465,5 +1468,90 @@ describe('App contributor sign-in', () => {
     expect(screen.getByRole('tablist', { name: 'Workspace' })).toBeInTheDocument();
     // No sign-in affordance on an unconfigured deployment — nothing to press.
     expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
+  });
+});
+
+describe('App Commons submission', () => {
+  /** A YouTube project on the workspace, with the contributor signed in. */
+  async function seededYouTubeProject(
+    user: ReturnType<typeof userEvent.setup>,
+    commons: ReturnType<typeof mockCommonsWrite>,
+  ): Promise<string> {
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+    });
+    const { storage, auth } = await renderApp(
+      controller,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      commons,
+    );
+    await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
+    await user.click(screen.getByRole('button', { name: /create from link/i }));
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByText(VIDEO_TITLE);
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await screen.findByText('Signed in as Ava Cellist');
+    const [summary] = await storage.projects.list();
+    return summary.id;
+  }
+
+  it('a signed-in contributor’s submission reaches the Commons and the answer becomes the badge', async () => {
+    const user = userEvent.setup();
+    const commons = mockCommonsWrite();
+    const id = await seededYouTubeProject(user, commons);
+
+    await user.click(screen.getByRole('button', { name: 'Submit to Commons' }));
+
+    await waitFor(() =>
+      expect(commons.backend.insertLabelSet).toHaveBeenCalledWith({
+        id,
+        video_id: VIDEO_ID,
+        title: VIDEO_TITLE,
+        duration: 604.2,
+        markers: [],
+      }),
+    );
+    // The refresh after the insert answers with the moderation gate's default.
+    expect(await screen.findByText('Pending review')).toBeInTheDocument();
+  });
+
+  it('a signed-out contributor’s click routes to sign-in and never reaches the Commons', async () => {
+    const user = userEvent.setup();
+    const commons = mockCommonsWrite();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+    });
+    const { auth } = await renderApp(controller, undefined, undefined, undefined, undefined, commons);
+    await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
+    await user.click(screen.getByRole('button', { name: /create from link/i }));
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByText(VIDEO_TITLE);
+
+    await user.click(screen.getByRole('button', { name: 'Sign in to submit' }));
+
+    // The click starts the sign-in flow; the submission itself waits for it.
+    expect(auth.signInWithGoogle).toHaveBeenCalledOnce();
+    expect(commons.backend.insertLabelSet).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a rate-limited submission as the moderation gate’s own rejection', async () => {
+    const user = userEvent.setup();
+    const commons = mockCommonsWrite();
+    await seededYouTubeProject(user, commons);
+    // The transport maps the PostgREST error's message by prefix (RATE_LIMITED).
+    commons.backend.failNextInsert(
+      'RATE_LIMITED: This account has submitted 3 label sets in the last 7 days — the limit. Try again later.',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Submit to Commons' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/3 label sets in the last 7 days/);
+    // The rejection is not a badge state — no row was created.
+    expect(screen.queryByText('Pending review')).not.toBeInTheDocument();
   });
 });

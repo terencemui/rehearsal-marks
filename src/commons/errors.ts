@@ -4,7 +4,12 @@ export type CommonsErrorCode =
   | 'invalid-label-set'
   | 'not-youtube-label-set'
   | 'fetch-failed'
-  | 'invalid-response';
+  | 'invalid-response'
+  | 'not-configured'
+  | 'not-signed-in'
+  | 'rate-limited'
+  | 'banned'
+  | 'already-published';
 
 /**
  * A rejected Commons operation: a bad row from the Commons, a project the

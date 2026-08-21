@@ -9,8 +9,12 @@ import { buildProjectZip } from './zip';
  * all derived from the same stored record and the same serialization.
  */
 
-/** The record's data fields, as the project-file format wants them. */
-function fileData(record: ProjectRecord): ProjectFileData {
+/**
+ * The record's data fields, as the project-file format wants them — the
+ * shared conversion behind every export and the Commons submission (the
+ * same serialization, and the same identity rules, whichever direction).
+ */
+export function projectFileFromRecord(record: ProjectRecord): ProjectFileData {
   return {
     project: {
       id: record.id,
@@ -45,7 +49,7 @@ export async function exportProjectZip(record: ProjectRecord): Promise<Blob> {
  * For a YouTube record this same file doubles as the full project export.
  */
 export function exportLabelSetJson(record: ProjectRecord): string {
-  return serializeProjectFile(fileData(record));
+  return serializeProjectFile(projectFileFromRecord(record));
 }
 
 /**

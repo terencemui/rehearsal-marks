@@ -5,12 +5,16 @@ import { createDefaultAuthController } from './auth';
 import type { AuthController, AuthState } from './auth';
 import { errorMessage } from './domain';
 import { CommonsError } from './commons/errors';
+import { labelSetValuesFromProjectFile } from './commons/labelSet';
+import type { LabelSetRow } from './commons/labelSet';
 import { readCommonsConfig } from './commons/load';
+import { createDefaultCommonsWrite } from './commons/write';
+import type { CommonsWriteController } from './commons/write';
 import { parseCatalog, resolveUrl } from './library/catalog';
 import type { CatalogEntry } from './library/catalog';
 import { LibraryError } from './library/errors';
 import { downloadAndCache, fetchLabelset, seededProjectId, seedProject } from './library/load';
-import { exportLabelSetJson, exportProjectJson, exportProjectZip, importLabelSet, importProjectJson, importProjectZip, sanitizeDownloadName } from './portability';
+import { exportLabelSetJson, exportProjectJson, exportProjectZip, importLabelSet, importProjectJson, importProjectZip, projectFileFromRecord, sanitizeDownloadName } from './portability';
 import { validateProjectName } from './projects/summary';
 import { createAutosave, createStorage, saveStatusFor, sha256, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
@@ -49,6 +53,12 @@ export interface AppProps {
    * get from faking `window.YT`.
    */
   authFactory?: () => AuthController;
+  /**
+   * Test seam: the Commons write surface (submit + own-submissions reads),
+   * so component tests never construct a supabase-js client — the same
+   * containment the auth and audio tests get from their fakes.
+   */
+  commonsWriteFactory?: () => CommonsWriteController;
 }
 
 /** One open project session: the autosave, its peaks, and its controller. */
@@ -162,6 +172,11 @@ async function decodePeaksFor(
   return decodePeaksOrNull((blob) => controller.extractPeaks(blob), record.audio);
 }
 
+/** The submissions list as a lookup by project id — the badges' source. */
+function rowsById(rows: LabelSetRow[]): Record<string, LabelSetRow> {
+  return Object.fromEntries(rows.map((row) => [row.id, row]));
+}
+
 /**
  * The app shell: the Projects tab is home — the list, upload, rename,
  * delete, export, and import. The Library tab (T11) lists the community
@@ -186,6 +201,10 @@ function App({
       fetchText: fetchCommonsText,
     }),
   authFactory = createDefaultAuthController,
+  // The Commons write surface, per ADR-0001: the signed-in contributor's
+  // submissions ride the same env and the same unconfigured degradation as
+  // sign-in — a deployment without a Supabase project offers no Commons.
+  commonsWriteFactory = createDefaultCommonsWrite,
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -219,6 +238,14 @@ function App({
   const [importingLabelsId, setImportingLabelsId] = useState<string | null>(null);
   /** The contributor session — the header's sign-in state. Anonymous first paint. */
   const [authState, setAuthState] = useState<AuthState>({ kind: 'anonymous' });
+  /**
+   * The signed-in contributor's Commons rows by project id — the row badges'
+   * source, refreshed on every sign-in and every submission. Null while
+   * signed out (no rows exist to show).
+   */
+  const [commonsRows, setCommonsRows] = useState<Record<string, LabelSetRow> | null>(null);
+  /** The row whose Commons submission runs, if any — rows are inert then. */
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   /**
    * Serializes session creation and every workspace mutation (upload, open,
@@ -233,6 +260,12 @@ function App({
    * touches storage, so signing in or out cannot disturb local projects.
    */
   const authRef = useRef<AuthController | null>(null);
+  /**
+   * The Commons write controller for the app's lifetime — created on mount
+   * like the auth controller. It holds no subscriptions, so there is nothing
+   * to destroy; it is dropped on unmount the same way.
+   */
+  const commonsWriteRef = useRef<CommonsWriteController | null>(null);
   /** Bumped whenever the tab changes; an in-flight open checks it before committing. */
   const openTokenRef = useRef(0);
   /** Decoded peaks per project, so reopening never re-decodes an unchanged blob. */
@@ -273,6 +306,40 @@ function App({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design
   }, []);
+
+  // The same mount-only rule as the auth controller: an inline factory from
+  // a re-rendering parent must not recycle the controller mid-mount.
+  useEffect(() => {
+    const commons = commonsWriteFactory();
+    commonsWriteRef.current = commons;
+    return () => {
+      commonsWriteRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design
+  }, []);
+
+  // The contributor's own submissions follow the session: loaded on every
+  // sign-in (including a restored one), cleared on sign-out. The list is a
+  // convenience — a failed read leaves the rows unknown (no badges) with the
+  // failure surfaced, never a crash.
+  useEffect(() => {
+    if (authState.kind !== 'signed-in') {
+      setCommonsRows(null);
+      return;
+    }
+    let cancelled = false;
+    void commonsWriteRef.current
+      ?.listMySubmissions()
+      .then((rows) => {
+        if (!cancelled) setCommonsRows(rowsById(rows));
+      })
+      .catch(() => {
+        if (!cancelled) setNotice("Couldn't load your Commons submissions.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authState.kind]);
 
   useEffect(() => {
     if (injectedStorage) {
@@ -355,6 +422,57 @@ function App({
   /** Deletes the contributor's account and its label sets (T26). */
   function handleDeleteAccount(): void {
     void authRef.current?.deleteAccount();
+  }
+
+  /**
+   * Submits (or re-submits) a YouTube project's label set to the Commons —
+   * the moderation gate's intake. A signed-out contributor is routed to
+   * sign-in first: contributing prompts Sign in with Google, viewing never
+   * requires one. The submission lands `pending` (or `published` for a
+   * contributor with a track record — the server decides, and the badges
+   * refresh from its answer).
+   */
+  async function handleSubmitToCommons(id: string): Promise<void> {
+    if (authState.kind !== 'signed-in') {
+      setNotice('Sign in with Google to submit your label set.');
+      void authRef.current?.signInWithGoogle();
+      return;
+    }
+    if (storage === null || workingRef.current) return;
+    workingRef.current = true;
+    setSubmittingId(id);
+    setNotice(null);
+    try {
+      const record = await storage.projects.get(id);
+      if (record === undefined) {
+        // A stale row (another tab deleted it) — quietly re-sync the list.
+        await refreshProjects(storage);
+        return;
+      }
+      const commons = commonsWriteRef.current;
+      if (commons === null) return;
+      await commons.submit(
+        labelSetValuesFromProjectFile(projectFileFromRecord(record)),
+        commonsRows?.[id],
+      );
+      setNotice(
+        commonsRows?.[id] !== undefined
+          ? 'Submission updated.'
+          : 'Submitted to the Commons.',
+      );
+      setCommonsRows(rowsById(await commons.listMySubmissions()));
+    } catch (error) {
+      // A Commons rejection is its own message (rate limit, ban, a label set
+      // the store will not hold); everything else is the transport's failure.
+      setNotice(
+        error instanceof CommonsError
+          ? error.message
+          : 'Something went wrong submitting your label set. Please try again.',
+      );
+    } finally {
+      workingRef.current = false;
+      setSubmittingId(null);
+    }
   }
 
   async function handleFile(file: File): Promise<void> {
@@ -933,6 +1051,11 @@ function App({
             onExportLabels={(id) => void handleExportLabels(id)}
             onImportLabels={(id, file) => void handleImportLabels(id, file)}
             importingLabelsId={importingLabelsId}
+            authKind={authState.kind}
+            commonsRows={commonsRows}
+            submittingId={submittingId}
+            onSubmitToCommons={(id) => void handleSubmitToCommons(id)}
+            onSignIn={handleSignIn}
             onBrowseLibrary={() => setTab('library')}
           />
         </>

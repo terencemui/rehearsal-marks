@@ -65,6 +65,22 @@
   color: #334155;
 }
 
+/* The Commons publication-status badges (T25) — one tint per status. */
+.projects-badge-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.projects-badge-published {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.projects-badge-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .projects-meta {
   font-size: 13px;
   color: #555;

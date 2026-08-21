@@ -127,7 +127,16 @@ describe('parseLabelSetRow', () => {
   });
 
   it('rejects an unknown publication status', () => {
-    expectRowError(validRow({ publication_status: 'archived' }), /"publication_status" must be "pending" or "published"/);
+    expectRowError(
+      validRow({ publication_status: 'archived' }),
+      /"publication_status" must be "pending", "published", or "rejected"/,
+    );
+  });
+
+  it('parses every status the moderation gate allows, including rejected', () => {
+    expect(parseLabelSetRow(validRow({ publication_status: 'pending' })).publication_status).toBe('pending');
+    expect(parseLabelSetRow(validRow({ publication_status: 'published' })).publication_status).toBe('published');
+    expect(parseLabelSetRow(validRow({ publication_status: 'rejected' })).publication_status).toBe('rejected');
   });
 
   it('rejects a missing or unparseable created_at or updated_at', () => {
