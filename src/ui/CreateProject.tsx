@@ -1,45 +1,32 @@
 import { useId, useState } from 'react';
-import { FilePicker } from './FilePicker';
 import './createProject.css';
 
 export interface CreateProjectProps {
-  /** Called with the picked file; the caller runs the upload pipeline. */
-  onFile: (file: File) => void;
   /** Called with the pasted link, verbatim; the caller runs the YouTube pipeline. */
   onLink: (url: string) => void;
   /** Called when the link field is edited, so the caller can retire stale guidance. */
   onLinkEdit?: () => void;
-  /** Rejection guidance from the last file pick, if any. */
-  fileError: string | null;
   /** Rejection guidance from the last link attempt, if any. */
   linkError: string | null;
-  /** True while any workspace pipeline is running; disables both inputs. */
+  /** True while any workspace pipeline is running; disables the link input and button. */
   busy?: boolean;
-  /** True while *this* surface's upload runs — only then does the file button report progress. */
-  uploading?: boolean;
-  /** True while *this* surface's link create runs — same rule for the link button. */
+  /** True while *this* surface's link create runs — only then does the button report progress. */
   creatingFromLink?: boolean;
 }
 
 /**
- * The one create surface, with two inputs: pick an audio file, or paste a
- * YouTube link. Both land in the same player session, so there is exactly one
- * place to start a project whatever the source.
+ * The one create surface: paste a YouTube link. Pasting an accepted link
+ * creates a project named after the video and opens the player — there is no
+ * other way into a project.
  *
- * The two inputs keep separate guidance lines, each beside the control that
- * produced it — a rejected link must not blank out a file's rejection, and a
- * screen reader should hear the failure next to the field it belongs to. The
- * link field's own value is never validated here: the domain module owns what
+ * The field's own value is never validated here: the domain module owns what
  * a YouTube link is, and its guidance comes back through `linkError`.
  */
 export function CreateProject({
-  onFile,
   onLink,
   onLinkEdit,
-  fileError,
   linkError,
   busy = false,
-  uploading = false,
   creatingFromLink = false,
 }: CreateProjectProps) {
   const [url, setUrl] = useState('');
@@ -47,15 +34,7 @@ export function CreateProject({
   const errorId = useId();
 
   return (
-    <section aria-label="Create project" className="create-project">
-      <FilePicker
-        accept=".mp3,.m4a,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a"
-        label="Create project"
-        onFile={onFile}
-        busy={busy}
-        working={uploading}
-        error={fileError}
-      />
+    <section aria-label="Create project">
       <form
         className="create-project-link"
         onSubmit={(event) => {
@@ -65,7 +44,7 @@ export function CreateProject({
           onLink(url);
         }}
       >
-        <label htmlFor={inputId}>or paste a YouTube link</label>
+        <label htmlFor={inputId}>Paste a YouTube link</label>
         <input
           id={inputId}
           type="text"

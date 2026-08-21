@@ -1,7 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DecodeError } from './audio';
 import type { PeakData } from './audio';
 import { parseProjectFile, serializeProjectFile } from './domain';
 import { labelSetRow } from './test/commons-fixture';
@@ -50,10 +49,6 @@ async function renderApp(
 const VIDEO_ID = 'dQw4w9WgXcQ';
 const YOUTUBE_CANONICAL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
 const VIDEO_TITLE = 'Brahms — Intermezzo Op. 118 No. 2';
-
-function mp3File(name = 'brahms-op118.mp3'): File {
-  return new File([new Uint8Array([1, 2, 3, 4])], name, { type: 'audio/mpeg' });
-}
 
 /** The app's catalog URL — resolved the same way App.tsx resolves it. */
 const catalogUrl = new URL(import.meta.env.BASE_URL + 'library.json', window.location.href).toString();
@@ -154,102 +149,13 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-describe('App upload flow', () => {
-  it('drops the user straight into the player, named after the file and persisted', async () => {
-    const user = userEvent.setup();
-    const { container, storage, controller } = await renderApp();
-
-    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
-
-    expect(await screen.findByRole('heading', { name: 'brahms-op118' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Rehearsal Marks' })).not.toBeInTheDocument();
-
-    const projects = await storage.projects.list();
-    expect(projects.map((p) => p.name)).toEqual(['brahms-op118']);
-    expect(projects[0].duration).toBe(10);
-    const stored = await storage.projects.get(projects[0].id);
-    expect(stored!.audioMeta.filename).toBe('brahms-op118.mp3');
-
-    // The player rendered the waveform through the seam with the same blob.
-    const loadOptions = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
-    expect(loadOptions.blob).toBeInstanceOf(Blob);
-    expect(loadOptions.peaks).toEqual({ peaks: [[0, 1]], duration: 10 });
-  });
-
-  it('accepts an M4A the same way', async () => {
-    const user = userEvent.setup();
-    const { container, storage } = await renderApp();
-    const m4a = new File([new Uint8Array([5, 6])], 'mozart-k265.m4a', { type: 'audio/mp4' });
-
-    await user.upload(container.querySelector('input[type="file"]')!, m4a);
-
-    expect(await screen.findByRole('heading', { name: 'mozart-k265' })).toBeInTheDocument();
-    expect((await storage.projects.list()).map((p) => p.name)).toEqual(['mozart-k265']);
-  });
-
-  it('rejects WAV with conversion guidance and stores nothing', async () => {
-    // `applyAccept: false` — the accept attribute is a hint only; real
-    // browsers can't enforce it (drag-drop, mobile), so the app's own
-    // validation is what must reject. This test exercises that guard.
-    const user = userEvent.setup({ applyAccept: false });
-    const { container, storage, controller } = await renderApp();
-    const wav = new File([new Uint8Array([1, 2])], 'brahms.wav', { type: 'audio/wav' });
-
-    await user.upload(container.querySelector('input[type="file"]')!, wav);
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/WAV.*convert/i);
-    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-    expect(controller.extractPeaks).not.toHaveBeenCalled();
-    expect(await storage.projects.list()).toEqual([]);
-  });
-
-  it('degrades to ruler-only mode when decoding fails, without losing the project', async () => {
-    const user = userEvent.setup();
-    const controller = mockController({
-      extractPeaks: vi.fn(async () => {
-        throw new DecodeError(new Error('not audio'));
-      }),
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 8 })),
-    });
-    const { container, storage } = await renderApp(controller);
-
-    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
-
-    expect(await screen.findByRole('heading', { name: 'brahms-op118' })).toBeInTheDocument();
-    expect(await screen.findByText(/timeline still works/)).toBeInTheDocument();
-    expect(await storage.projects.list()).toHaveLength(1);
-  });
-
-  it('tells the user honestly when the first save runs out of storage', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    // The repository translates quota failures; simulate its translated error.
-    const fullStorage: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        save: async () => {
-          throw new StorageError('Browser storage is full.', 'storage-full');
-        },
-      },
-    };
-    const { container } = await renderApp(mockController(), fullStorage);
-
-    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/storage is full/i);
-    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-    expect(await storage.projects.list()).toEqual([]);
-  });
-});
+/** Types a link into the create surface's link input and submits it. */
+async function pasteLink(user: ReturnType<typeof userEvent.setup>, url: string) {
+  await user.type(screen.getByLabelText(/paste a YouTube link/i), url);
+  await user.click(screen.getByRole('button', { name: /create from link/i }));
+}
 
 describe('App create from a YouTube link', () => {
-  /** Types a link into the create surface's second input and submits it. */
-  async function pasteLink(user: ReturnType<typeof userEvent.setup>, url: string) {
-    await user.type(screen.getByLabelText(/paste a YouTube link/i), url);
-    await user.click(screen.getByRole('button', { name: /create from link/i }));
-  }
-
   it('opens a freshly pasted link in Label mode, with the marking tools in reach', async () => {
     // End to end, the behaviour the stamped mode and the player's fallback
     // have to agree on: a project with an empty timeline must not open
@@ -451,7 +357,7 @@ describe('App create from a YouTube link', () => {
     expect(await storage.projects.list()).toHaveLength(1);
   });
 
-  it('surfaces a full-storage failure on the link input, not the file picker', async () => {
+  it('surfaces a full-storage failure on the link input', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     const fullStorage: Storage = {
@@ -470,7 +376,7 @@ describe('App create from a YouTube link', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/storage is full/i);
     // The guidance belongs to the field that produced it: the link input is
-    // marked invalid, and the file picker's own channel stays clean.
+    // marked invalid.
     expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
   });
@@ -499,12 +405,13 @@ describe('App create from a YouTube link', () => {
     expect(container.querySelector('.player-waveform')).toBeInTheDocument();
   });
 
-  it('offers both create inputs on one surface', async () => {
+  it('offers the YouTube link input on the create surface, and no file picker', async () => {
     await renderApp();
 
     const surface = await screen.findByRole('region', { name: 'Create project' });
-    expect(surface).toContainElement(screen.getByRole('button', { name: 'Create project' }));
+    expect(surface).toContainElement(screen.getByRole('button', { name: /create from link/i }));
     expect(surface).toContainElement(screen.getByLabelText(/paste a YouTube link/i));
+    expect(screen.queryByRole('button', { name: 'Create project' })).not.toBeInTheDocument();
   });
 });
 
@@ -520,7 +427,7 @@ describe('App Projects workspace', () => {
     expect(screen.getByText(/Total used: 300 B/)).toBeInTheDocument();
   });
 
-  it('shows the empty state with both first-run paths', async () => {
+  it('shows the empty state pointing at a YouTube link and the library', async () => {
     const user = userEvent.setup();
     const { storage } = await renderApp();
     stubLibraryFetch({
@@ -530,7 +437,7 @@ describe('App Projects workspace', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create project' })).toBeInTheDocument();
+    expect(screen.getByText(/paste a YouTube link above to start marking/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Browse the library' }));
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument();
@@ -567,15 +474,18 @@ describe('App Projects workspace', () => {
 
   it('returns to the workspace from the player and lists the new project', async () => {
     const user = userEvent.setup();
-    const { container, storage } = await renderApp();
+    const { storage } = await renderApp();
 
-    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
-    await screen.findByRole('heading', { name: 'brahms-op118' });
+    await pasteLink(user, YOUTUBE_CANONICAL);
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
 
     await user.click(screen.getByRole('button', { name: 'Projects' }));
 
-    expect(await screen.findByText('brahms-op118')).toBeInTheDocument();
-    expect(screen.getByRole('tablist')).toBeInTheDocument();
+    // The tablist only renders in the workspace, so waiting for it guarantees
+    // the player (and its same-named heading) is gone before asserting on the
+    // list row — otherwise the title query can land on a node about to detach.
+    await screen.findByRole('tablist');
+    expect(screen.getByRole('listitem')).toHaveTextContent(VIDEO_TITLE);
     expect(await storage.projects.list()).toHaveLength(1);
   });
 
@@ -727,7 +637,7 @@ describe('App Projects workspace', () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     let saves = 0;
-    // The upload's first save succeeds; every later save hits a full store.
+    // The create's first save succeeds; every later save hits a full store.
     const flaky: Storage = {
       ...storage,
       projects: {
@@ -741,11 +651,11 @@ describe('App Projects workspace', () => {
     };
     const controller = mockController({
       // A different duration guarantees the player schedules a write.
-      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 42 })),
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 42 })),
     });
-    const { container } = await renderApp(controller, flaky);
-    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
-    await screen.findByRole('heading', { name: 'brahms-op118' });
+    await renderApp(controller, flaky);
+    await pasteLink(user, YOUTUBE_CANONICAL);
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
     // Wait for the debounced write to fail inside the player first.
     await screen.findByText('Storage full — free up space to keep saving.');
 
@@ -1098,7 +1008,7 @@ describe('App Library tab', () => {
 });
 
 describe('App export and import', () => {
-  /** The app's three file inputs, in document order: upload, zip import, label import. */
+  /** The app's two file inputs, in document order: zip import, label import. */
   function fileInputs(container: HTMLElement): HTMLInputElement[] {
     return [...container.querySelectorAll('input[type="file"]')] as HTMLInputElement[];
   }
@@ -1134,7 +1044,7 @@ describe('App export and import', () => {
       'Brahms Op. 118 No. 2.zip',
       { type: 'application/zip' },
     );
-    await user.upload(fileInputs(container)[1], zip);
+    await user.upload(fileInputs(container)[0], zip);
 
     // The workspace now holds both: the original and a fresh import with a
     // suffixed name — import created, it never overwrote.
@@ -1184,7 +1094,7 @@ describe('App export and import', () => {
     // A zip import then succeeds — the failure line must clear.
     const zip = await exportProjectZip(record);
     const file = new File([await zip.arrayBuffer()], 'brahms.zip', { type: 'application/zip' });
-    await user.upload(fileInputs(container)[1], file);
+    await user.upload(fileInputs(container)[0], file);
 
     await screen.findByText('Brahms Op. 118 No. 2 (2)');
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
@@ -1222,14 +1132,14 @@ describe('App export and import', () => {
     const mozartRow = screen.getByText('Mozart K. 466').closest('li')!;
     await user.click(within(mozartRow).getByRole('button', { name: 'Import labels' }));
     await user.click(within(mozartRow).getByRole('button', { name: 'Replace' }));
-    await user.upload(fileInputs(container)[2], labelsFile);
+    await user.upload(fileInputs(container)[1], labelsFile);
     expect(await screen.findByRole('alert')).toHaveTextContent('made for a different recording');
     expect((await storage.projects.get('mozart'))!.markers).toEqual(mozart.markers);
 
     // On its own recording it applies: the alert clears and the markers land.
     await user.click(within(brahmsRow).getByRole('button', { name: 'Import labels' }));
     await user.click(within(brahmsRow).getByRole('button', { name: 'Replace' }));
-    await user.upload(fileInputs(container)[2], labelsFile);
+    await user.upload(fileInputs(container)[1], labelsFile);
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(await screen.findByRole('status')).toHaveTextContent('Saved');
     expect((await storage.projects.get('project-1'))!.markers).toEqual(brahms.markers);
@@ -1242,7 +1152,7 @@ describe('App export and import', () => {
     // Not a zip (no PK magic) and not JSON — the content, not the name,
     // decides the pipeline, and the JSON parser explains itself.
     await user.upload(
-      fileInputs(container)[1],
+      fileInputs(container)[0],
       new File(['not a zip'], 'fake.zip', { type: 'application/zip' }),
     );
 
@@ -1300,7 +1210,7 @@ describe('App export and import', () => {
     });
 
     await user.upload(
-      fileInputs(container)[1],
+      fileInputs(container)[0],
       new File([json], 'shared.json', { type: 'application/json' }),
     );
 
@@ -1319,14 +1229,14 @@ describe('App export and import', () => {
 
 describe('App contributor sign-in', () => {
   it('shows Sign in with Google to an anonymous visitor, who can use the whole app', async () => {
-    const { container, storage } = await renderApp();
+    const { storage } = await renderApp();
     const user = userEvent.setup();
 
     expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
 
-    // No account, no prompt: an anonymous visitor uploads and gets a project.
-    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
-    expect(await screen.findByRole('heading', { name: 'brahms-op118' })).toBeInTheDocument();
+    // No account, no prompt: an anonymous visitor creates and gets a project.
+    await pasteLink(user, YOUTUBE_CANONICAL);
+    expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
     expect(await storage.projects.list()).toHaveLength(1);
   });
 
@@ -1347,14 +1257,14 @@ describe('App contributor sign-in', () => {
   });
 
   it('signing out returns to anonymous browsing and leaves local projects untouched', async () => {
-    const { container, storage, auth } = await renderApp();
+    const { storage, auth } = await renderApp();
     const user = userEvent.setup();
 
-    await user.upload(container.querySelector('input[type="file"]')!, mp3File());
-    await screen.findByRole('heading', { name: 'brahms-op118' });
+    await pasteLink(user, YOUTUBE_CANONICAL);
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
     // Back to the workspace with the saved project.
     await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByText('brahms-op118');
+    await screen.findByText(VIDEO_TITLE);
 
     await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
     act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
@@ -1364,7 +1274,7 @@ describe('App contributor sign-in', () => {
     // Anonymous again, and the workspace row is exactly what it was before.
     expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
     const projects = await storage.projects.list();
-    expect(projects.map((p) => p.name)).toEqual(['brahms-op118']);
+    expect(projects.map((p) => p.name)).toEqual([VIDEO_TITLE]);
   });
 
   it('degrades a failed sign-in to anonymous browsing with a notice', async () => {
@@ -1432,8 +1342,7 @@ describe('App Commons submission', () => {
       undefined,
       commons,
     );
-    await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
-    await user.click(screen.getByRole('button', { name: /create from link/i }));
+    await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     await user.click(screen.getByRole('button', { name: 'Projects' }));
     await screen.findByText(VIDEO_TITLE);
@@ -1470,8 +1379,7 @@ describe('App Commons submission', () => {
       load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
     });
     const { auth } = await renderApp(controller, undefined, undefined, undefined, undefined, commons);
-    await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
-    await user.click(screen.getByRole('button', { name: /create from link/i }));
+    await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     await user.click(screen.getByRole('button', { name: 'Projects' }));
     await screen.findByText(VIDEO_TITLE);

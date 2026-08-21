@@ -165,8 +165,8 @@ export function ProjectsScreen({
         <section className="projects-empty">
           <h2>No projects yet</h2>
           <p>
-            Upload a recording to start marking, or browse the community library for a
-            pre-marked recording.
+            Paste a YouTube link above to start marking, or browse the community library for
+            a pre-marked recording.
           </p>
           <button type="button" onClick={onBrowseLibrary}>
             Browse the library
