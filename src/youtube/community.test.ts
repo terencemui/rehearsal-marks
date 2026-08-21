@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { validateYouTubeLabelSet, videoIdOf } from './community';
+import { describe, expect, it, vi } from 'vitest';
+import { COMMUNITY_VIDEO_ID, labelSetRow } from '../test/commons-fixture';
+import {
+  communityLabelSetFromRow,
+  loadCommunityLabelSet,
+  validateYouTubeLabelSet,
+  videoIdOf,
+} from './community';
+
+const CONFIG = { supabaseUrl: 'https://abccompany.supabase.co', anonKey: 'anon-key-1' };
 
 /** A YouTube label set's project.json — the community contribution format. */
 function labelsetFile(url: string): string {
@@ -92,5 +100,72 @@ describe('validateYouTubeLabelSet', () => {
 
   it('resolves null for a set that is not a valid project file', () => {
     expect(validateYouTubeLabelSet('{not json', 'dQw4w9WgXcQ')).toBeNull();
+  });
+});
+
+describe('communityLabelSetFromRow', () => {
+  it('checks out a row naming the video as the set the project copies', () => {
+    expect(communityLabelSetFromRow(labelSetRow(), COMMUNITY_VIDEO_ID)).toEqual({
+      markers: labelSetRow().markers,
+      duration: 604.2,
+    });
+  });
+
+  it('resolves null for a row naming a different video — marks never transfer', () => {
+    expect(
+      communityLabelSetFromRow(labelSetRow({ video_id: 'ABCDEFGHIJK' }), COMMUNITY_VIDEO_ID),
+    ).toBeNull();
+  });
+});
+
+describe('loadCommunityLabelSet', () => {
+  /** A fetchText stub that responds with the body, or throws for a failure. */
+  function respondWith(body: string | null, throwOnFetch: Error | null = null) {
+    return vi.fn(async () => {
+      if (throwOnFetch !== null) throw throwOnFetch;
+      if (body === null) throw new Error('unexpected fetch');
+      return body;
+    });
+  }
+
+  it('returns the published set for the video, keyed on its ID', async () => {
+    const set = await loadCommunityLabelSet(COMMUNITY_VIDEO_ID, {
+      fetchText: respondWith(JSON.stringify([labelSetRow()])),
+      config: CONFIG,
+    });
+    expect(set).toEqual({ markers: labelSetRow().markers, duration: 604.2 });
+  });
+
+  it('returns null when the Commons has no published set for the video', async () => {
+    const set = await loadCommunityLabelSet(COMMUNITY_VIDEO_ID, {
+      fetchText: respondWith('[]'),
+      config: CONFIG,
+    });
+    expect(set).toBeNull();
+  });
+
+  it('returns null without fetching when the app is not wired to the Commons', async () => {
+    const fetchText = respondWith(null);
+    const set = await loadCommunityLabelSet(COMMUNITY_VIDEO_ID, { fetchText, config: null });
+    expect(set).toBeNull();
+    expect(fetchText).not.toHaveBeenCalled();
+  });
+
+  it('never checks out a row for a different video, whatever the query returned', async () => {
+    const set = await loadCommunityLabelSet(COMMUNITY_VIDEO_ID, {
+      fetchText: respondWith(JSON.stringify([labelSetRow({ video_id: 'ABCDEFGHIJK' })])),
+      config: CONFIG,
+    });
+    expect(set).toBeNull();
+  });
+
+  it('propagates a Commons failure — the create pipeline turns it into an unlabeled video', async () => {
+    const failure = new Error('offline');
+    await expect(
+      loadCommunityLabelSet(COMMUNITY_VIDEO_ID, {
+        fetchText: respondWith(null, failure),
+        config: CONFIG,
+      }),
+    ).rejects.toBe(failure);
   });
 });
