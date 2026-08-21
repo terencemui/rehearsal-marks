@@ -1,4 +1,12 @@
-/* App shell chrome: the workspace tab bar. */
+/* App shell chrome: the workspace header and tab bar. */
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 8px;
+}
 
 .tabs {
   display: flex;

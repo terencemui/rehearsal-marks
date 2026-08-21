@@ -1,0 +1,208 @@
+/**
+ * The auth controller — the app's whole sign-in surface, over a minimal
+ * backend shape the supabase-js adapter (`supabase.ts`) implements. The
+ * containment rule from the IFrame API holds here too: supabase-js is
+ * referenced nowhere outside the auth layer, and the controller is driven
+ * through this narrow interface so the tests can fake it exactly the way the
+ * audio tests fake `window.YT`.
+ *
+ * The controller's contract with the app: every failure degrades to
+ * anonymous browsing with an honest notice — a failed sign-in or sign-out
+ * never rejects out of the controller, and an unconfigured deployment is
+ * `unavailable`, not broken.
+ */
+
+/** A signed-in person — the `contributor_id` the Commons derives from the session. */
+export interface Contributor {
+  /** The auth account id (Supabase `auth.users.id`), never sent by the client. */
+  id: string;
+  /** The display name the provider sent, or the email when there is none. */
+  name: string;
+  email: string;
+}
+
+/**
+ * The app's view of the auth session. The notice rides on the state it
+ * describes: a failed sign-in leaves `anonymous` with the reason, a failed
+ * sign-out leaves `signed-in` with the reason.
+ */
+export type AuthState =
+  | { kind: 'anonymous'; notice?: string }
+  | { kind: 'signed-in'; contributor: Contributor; notice?: string }
+  /** No backend (unconfigured deployment): sign-in is inert, browsing is untouched. */
+  | { kind: 'unavailable'; reason: string };
+
+export interface AuthController {
+  /** The current snapshot — read at mount, so the first paint is already honest. */
+  getState(): AuthState;
+  /** Registers a listener; returns the unsubscribe. */
+  subscribe(listener: (state: AuthState) => void): () => void;
+  /**
+   * Starts the Google OAuth flow. Resolves when the flow leaves the app (the
+   * session lands later, through the backend's session events) or fails —
+   * a failure lands in state as anonymous + notice, never as a rejection.
+   */
+  signInWithGoogle(): Promise<void>;
+  /** Ends the session; a failure lands in state as a notice, never a rejection. */
+  signOut(): Promise<void>;
+  /** Unsubscribes from the backend; the controller publishes nothing after. */
+  destroy(): void;
+}
+
+/**
+ * The backend surface the controller drives: supabase-js's auth API, narrowed
+ * to what the app uses and shaped to carry `Contributor` instead of the
+ * library's own user object. `supabase.ts` is the only implementation.
+ */
+export interface SupabaseAuth {
+  /** The current session, or null when signed out. */
+  getSession(): Promise<Contributor | null>;
+  /** Registers a session listener (supabase-js fires the restored session first). */
+  onAuthStateChange(listener: (contributor: Contributor | null) => void): {
+    unsubscribe(): void;
+  };
+  /** Starts the Google OAuth flow (the full-page redirect). */
+  signInWithGoogle(): Promise<void>;
+  signOut(): Promise<void>;
+}
+
+/**
+ * The app's account facts from the auth provider's user — the one mapping,
+ * so the adapter stays a straight pass-through and the rule ("name or email")
+ * is testable without supabase-js.
+ */
+export function contributorFromUser(user: AuthUser): Contributor {
+  const email = user.email ?? '';
+  const metadataName = user.user_metadata?.full_name;
+  const name = typeof metadataName === 'string' && metadataName.trim() !== '' ? metadataName : email;
+  return { id: user.id, name, email };
+}
+
+/** The user shape the mapping reads — supabase-js's `User`, structurally. */
+export interface AuthUser {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+}
+
+/** The honest face of an unconfigured deployment: sign-in is off, nothing else is. */
+export const AUTH_UNAVAILABLE_REASON =
+  "Sign-in isn't configured for this deployment yet — browsing and local projects work as usual.";
+
+export function createAuthController(backend: SupabaseAuth | null): AuthController {
+  if (backend === null) {
+    // No backend means no sign-in surface at all: the state is fixed, and
+    // every operation is a no-op. The app renders the reason and moves on.
+    return {
+      getState: () => ({ kind: 'unavailable', reason: AUTH_UNAVAILABLE_REASON }),
+      subscribe: () => () => {},
+      signInWithGoogle: async () => {},
+      signOut: async () => {},
+      destroy: () => {},
+    };
+  }
+
+  let state: AuthState = { kind: 'anonymous' };
+  const listeners = new Set<(state: AuthState) => void>();
+  // A session event is always fresher than the restore's snapshot: it can
+  // fire (or already have fired) between construction and the restore's
+  // resolution, and must never be overwritten by the restore's stale answer.
+  let sessionEventSeen = false;
+
+  /** Publishes a state only when it actually changes. */
+  function emit(next: AuthState): void {
+    if (sameState(next, state)) return;
+    state = next;
+    for (const listener of listeners) listener(state);
+  }
+
+  function applySession(contributor: Contributor | null): void {
+    sessionEventSeen = true;
+    if (contributor === null) {
+      emit({ kind: 'anonymous' });
+    } else {
+      emit({ kind: 'signed-in', contributor });
+    }
+  }
+
+  // Subscribe before restoring, so a session event landing during the
+  // restore's async window is still heard.
+  const subscription = backend.onAuthStateChange(applySession);
+
+  void backend.getSession().then((contributor) => {
+    if (sessionEventSeen) return;
+    applySession(contributor);
+  }, () => {
+    // A restore that fails is a startup that starts anonymous: the
+    // degradation contract, silently — no notice to greet a returning
+    // visitor whose session simply could not be read.
+  });
+
+  return {
+    getState: () => state,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    signInWithGoogle: async () => {
+      try {
+        await backend.signInWithGoogle();
+      } catch {
+        // A failed sign-in never wipes an existing session — the notice
+        // describes the attempt that just failed, whatever it left behind.
+        emit(
+          state.kind === 'signed-in' ? { ...state, notice: SIGN_IN_FAILED } : { kind: 'anonymous', notice: SIGN_IN_FAILED },
+        );
+      }
+    },
+    signOut: async () => {
+      try {
+        await backend.signOut();
+        // The backend fires its own signed-out event, but the state must be
+        // anonymous the moment sign-out succeeded regardless — the event can
+        // be delayed, and a backend that never fires one must not leave the
+        // app claiming a session that no longer exists.
+        emit({ kind: 'anonymous' });
+      } catch {
+        // A failed sign-out has two honest endings, and which one the state
+        // shows by the time the error lands decides: supabase-js removes the
+        // local session (firing SIGNED_OUT) before reporting the API error,
+        // so the common failure lands anonymous with a partial-sign-out
+        // notice; a failure before anything changed (the local session could
+        // not even be read) keeps the signed-in state with the retry notice.
+        emit(
+          state.kind === 'signed-in'
+            ? { ...state, notice: SIGN_OUT_FAILED }
+            : { kind: 'anonymous', notice: SIGN_OUT_PARTIAL },
+        );
+      }
+    },
+    destroy: () => {
+      subscription.unsubscribe();
+    },
+  };
+}
+
+/**
+ * Whether two states describe the same situation — the dedupe key. The
+ * notice rides on anonymous and signed-in only; unavailable's reason is a
+ * constant, so it needs no comparison.
+ */
+function sameState(a: AuthState, b: AuthState): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'anonymous' && b.kind === 'anonymous') return a.notice === b.notice;
+  if (a.kind === 'signed-in' && b.kind === 'signed-in') {
+    // The identity is the state; anything else about the contributor (a
+    // refreshed display name) is not worth a repaint.
+    return a.contributor.id === b.contributor.id && a.notice === b.notice;
+  }
+  return true;
+}
+
+const SIGN_IN_FAILED =
+  "Google sign-in didn't work. You're still browsing anonymously — try again.";
+const SIGN_OUT_FAILED = "Signing out didn't work. Try again.";
+const SIGN_OUT_PARTIAL =
+  "You're signed out on this device, but the sign-out didn't reach the server.";
