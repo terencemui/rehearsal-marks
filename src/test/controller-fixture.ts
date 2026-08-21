@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { AudioController, PeakData, PlaybackState, RenderMode } from '../audio';
+import type { AudioController, PlaybackState } from '../audio';
 
 /** The mock seam plus a way for tests to publish playback state changes. */
 export interface MockController extends AudioController {
@@ -26,8 +26,7 @@ export function mockController(overrides: Partial<AudioController> = {}): MockCo
   }
 
   return {
-    extractPeaks: vi.fn(async (): Promise<PeakData> => ({ peaks: [[0, 1]], duration: 10 })),
-    load: vi.fn(async () => ({ mode: 'waveform' as RenderMode, duration: 10 })),
+    load: vi.fn(async () => ({ duration: 10 })),
     destroy: vi.fn(),
     togglePlay: vi.fn(),
     seek: vi.fn((time: number) => {

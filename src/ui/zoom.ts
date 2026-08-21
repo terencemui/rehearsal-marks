@@ -63,7 +63,7 @@ export function clampPxPerSec(
   return Math.min(upper, Math.max(lower, pxPerSec));
 }
 
-/** The content's width at a level — what the waveform, flags, and ruler span. */
+/** The content's width at a level — what the flags and ruler span. */
 export function contentWidth(pxPerSec: number, duration: number): number {
   return Math.max(0, pxPerSec * duration);
 }
@@ -115,16 +115,6 @@ export function scrollLeftForTime(
   pxPerSec: number,
 ): number {
   return clampScrollLeft(time * pxPerSec - viewportWidth / 2, viewportWidth, duration, pxPerSec);
-}
-
-/** The recording time at a client x, accounting for zoom and scroll exactly. */
-export function timeAtClientX(
-  clientX: number,
-  viewportLeft: number,
-  scrollLeft: number,
-  pxPerSec: number,
-): number {
-  return (clientX - viewportLeft + scrollLeft) / pxPerSec;
 }
 
 /**

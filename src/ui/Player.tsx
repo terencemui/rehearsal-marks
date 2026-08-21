@@ -7,7 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { AudioController, PeakData, RenderMode } from '../audio';
+import type { AudioController } from '../audio';
 import {
   addMarker,
   createMarker,
@@ -35,7 +35,6 @@ import {
   fitPxPerSec,
   minPxPerSec,
   scrollLeftForTime,
-  timeAtClientX as timeAtOffset,
   wheelNotches,
   zoomAround,
   type ZoomView,
@@ -48,8 +47,6 @@ export interface PlayerProps {
    * returning to the Projects screen, so the list never reads stale data.
    */
   autosave: Autosave;
-  /** Decoded peaks, or `null` when decoding failed (ruler-only mode). */
-  peaks: PeakData | null;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
   /** Back to the Projects screen; the shell flushes before unmounting. */
@@ -58,24 +55,22 @@ export interface PlayerProps {
 
 /** The undo toast's window — the spec's five seconds, no dialog. */
 const UNDO_WINDOW_MS = 5000;
-/** A touch held this long is a long-press: add a marker at that position. */
-const LONG_PRESS_MS = 500;
-/** Movement beyond this cancels a long-press (a drag or a scroll). */
-const LONG_PRESS_SLOP_PX = 10;
+/** Movement beyond this — a clearly horizontal drag — is a pan, not a tap. */
+const PAN_SLOP_PX = 10;
 /** A pinch with fingers closer than this has no trustworthy anchor yet. */
 const PINCH_MIN_START_PX = 20;
 
 /**
- * What a YouTube project's ruler says instead of the waveform note. The embed
- * reports its playhead on a coarse clock and lands seeks at segment
- * granularity, so a mark taken *from the player* inherits that slack — while a
- * typed time or a nudge edits the marker's own time and stays exact. Saying so
- * is the difference between a tool that feels imprecise and one that is honest
- * about which of its numbers are approximate.
+ * What a YouTube project's ruler says about its clock. The embed reports its
+ * playhead on a coarse clock and lands seeks at segment granularity, so a mark
+ * taken *from the player* inherits that slack — while a typed time or a nudge
+ * edits the marker's own time and stays exact. Saying so is the difference
+ * between a tool that feels imprecise and one that is honest about which of
+ * its numbers are approximate.
  */
 const YOUTUBE_RULER_NOTE =
-  'Playing from YouTube — no waveform, and the embed’s clock is coarse: marks taken from the ' +
-  'playhead and click-to-seek land within about a quarter second. Typed times and nudges stay exact.';
+  'Playing from YouTube — the embed’s clock is coarse: marks taken from the playhead ' +
+  'and click-to-seek land within about a quarter second. Typed times and nudges stay exact.';
 
 /**
  * What an empty Label-mode YouTube project says: no community labels arrived
@@ -109,10 +104,10 @@ interface UndoState {
 }
 
 /**
- * The player screen: waveform (or ruler-only timeline), marker flags, and the
- * selected marker's inspector. Markers are the T06 core: add at the playhead
- * (M or the button), add at a position (double-click / long-press), select,
- * delete with a five-second undo, nudge, re-time, and alias. T07 adds the
+ * The player screen: the ruler timeline (the only timeline — every project
+ * plays with it), marker flags, and the selected marker's inspector. Markers
+ * are the T06 core: add at the playhead (M or the button), select, delete
+ * with a five-second undo, nudge, re-time, and alias. T07 adds the
  * keyboard-only practice flow: ↑/↓ and A–Z jump between markers, ←/→ seek
  * ∓5s — all suppressed while typing. Jumping never selects; selection exists
  * only for nudge and delete. Everything audible goes through the `controller`;
@@ -121,31 +116,32 @@ interface UndoState {
  *
  * T08 zoom: the shell is a horizontally scrollable window over the content
  * (`pxPerSec × duration` px wide). The zoom level lives here as `pxPerSec`,
- * and the content width is applied to the controller's container — wavesurfer
- * renders to whatever width it is given, and the ruler's percentage ticks
- * stretch with it — so the audio seam never learns about zoom. Ctrl/cmd+scroll
- * and two-finger pinch adjust the level around the cursor; jumps scroll the
- * target into view.
+ * and the content width is applied to the controller's container — the ruler
+ * renders to whatever width it is given, and its percentage ticks stretch
+ * with it — so the audio seam never learns about zoom. Ctrl/cmd+scroll and
+ * two-finger pinch adjust the level around the cursor; jumps scroll the
+ * target into view. Click-to-seek lives on the ruler itself.
  *
  * T18 modes: every project has a Playback | Label posture, seeded from the
  * record's persisted `playerMode` (each source's default on first open) and
  * written back on every switch. Playback mode is navigation-only — the
- * read-only posture of a practice session — so every editing tool (M,
- * double-click and long-press adds, the Add marker button, nudges, typed
- * times, aliases, delete with undo, Esc deselect, flag-click selection) is
- * gated behind Label mode; the keyboard scheme, flag jumps, and the volume
- * slider work in both. A selection made in Label mode survives a posture
- * switch but stays hidden — and Delete cannot reach it — while practicing.
+ * read-only posture of a practice session — so every editing tool (M, the
+ * Add marker button, nudges, typed times, aliases, delete with undo, Esc
+ * deselect, flag-click selection) is gated behind Label mode; the keyboard
+ * scheme, flag jumps, and the volume slider work in both. A selection made
+ * in Label mode survives a posture switch but stays hidden — and Delete
+ * cannot reach it — while practicing.
  */
 export function Player({
   autosave,
-  peaks,
   controller,
   onExit,
 }: PlayerProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<RenderMode | null>(null);
+  /** Whether the recording's load has settled — until then the transport and
+   * shortcuts are inert, and the ruler has nothing to draw on. */
+  const [loaded, setLoaded] = useState(false);
   /**
    * Whether the load reported that the source cannot play. The audio layer
    * publishes this on `LoadResult.error`; a player that ignored it would show
@@ -181,12 +177,6 @@ export function Player({
   const editing = playerMode === 'label';
   const [undo, setUndo] = useState<UndoState | null>(null);
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const longPress = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(
-    null,
-  );
-  // After a long-press added a marker, the tap's trailing click must not
-  // reach the seek surface — the capture-phase guard below consumes it.
-  const suppressNextClick = useRef(false);
   // The playback store lives behind the seam; React subscribes to it directly.
   const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
 
@@ -328,21 +318,6 @@ export function Player({
   }
 
   /**
-   * The position under a pointer x-coordinate, in recording seconds — or
-   * null while the view has no zoom level yet, where no position is honest.
-   */
-  function timeAtClientX(clientX: number): number | null {
-    const shell = shellRef.current;
-    const view = viewRef.current;
-    if (shell === null || view === null) return null;
-    const bounds = shell.getBoundingClientRect();
-    if (bounds.width === 0) return null;
-    // The viewport is the shell's rect; the click's offset within the content
-    // adds the scroll. This stays exact at every zoom level.
-    return clampToDuration(timeAtOffset(clientX, bounds.left, shell.scrollLeft, view.pxPerSec));
-  }
-
-  /**
    * A flag click: always jump to the marker — navigation exists in both
    * postures — but select it for nudge/delete only in Label mode. Playback
    * mode's clicks never touch the (hidden) selection.
@@ -424,7 +399,7 @@ export function Player({
     if (inTextInput) return;
     // Before the recording loads there is nothing to seek, jump to, or mark —
     // the transport is disabled and the shortcuts are too.
-    if (mode === null) return;
+    if (!loaded) return;
 
     const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
     if (plain && (event.key === 'm' || event.key === 'M')) {
@@ -523,8 +498,8 @@ export function Player({
     controller
       .load(
         // The load options are source-discriminated exactly like the record:
-        // a YouTube project has only its canonical URL to play from — no
-        // blob, no peaks — and the audio layer owns everything after that.
+        // a YouTube project has only its canonical URL to play from — no blob
+        // — and the audio layer owns everything after that.
         isYouTube
           ? {
               source: 'youtube',
@@ -540,14 +515,13 @@ export function Player({
               blob: audioBlobRef.current,
               url: null,
               container,
-              peaks,
             },
       )
       .then((result) => {
         if (cancelled) return;
-        setMode(result.mode);
+        setLoaded(true);
         setLoadFailed(result.error !== undefined);
-        // Ruler mode has no decode duration; the record's 0 is a placeholder.
+        // No decode supplies a duration; the record's 0 is a placeholder.
         // The media element's metadata is the recording's true duration —
         // persisting it keeps the project list (T09) and exports honest, so
         // the one write outside the upload path earns its place. The
@@ -566,7 +540,7 @@ export function Player({
       })
       .catch(() => {
         if (!cancelled) {
-          setMode('ruler');
+          setLoaded(true);
           // A rejected YouTube load is a dead source, not a ruler fallback —
           // the card must return rather than leaving live-looking controls
           // over an embed that failed again. Uploads never set the flag (their
@@ -579,11 +553,11 @@ export function Player({
     };
     // The source and its URL are fixed for the life of a session; `loadAttempt`
     // is the failure card's retry, the one deliberate re-run of the whole load.
-  }, [autosave, controller, isYouTube, loadAttempt, peaks, update, youtubeUrl]);
+  }, [autosave, controller, isYouTube, loadAttempt, update, youtubeUrl]);
 
   /** The failure card's retry: back to loading, then a fresh load attempt. */
   function retryLoad(): void {
-    setMode(null);
+    setLoaded(false);
     setLoadFailed(false);
     setLoadAttempt((attempt) => attempt + 1);
   }
@@ -597,7 +571,6 @@ export function Player({
       autosave.dispose();
       controller.destroy();
       if (undoTimeout.current !== undefined) clearTimeout(undoTimeout.current);
-      if (longPress.current !== null) clearTimeout(longPress.current.timer);
     };
   }, [autosave, controller]);
 
@@ -607,96 +580,19 @@ export function Player({
     pxPerSec !== null && duration > 0
       ? Math.min(playback.currentTime, duration) * pxPerSec
       : 0;
-  // The content's width — the waveform, flags, and ruler all span it.
+  // The content's width — the flags and ruler span it.
   const viewWidth = pxPerSec !== null && duration > 0 ? contentWidth(pxPerSec, duration) : undefined;
-
-  /** The note under a ruler-only timeline, when the caller supplied none. */
-  function defaultRulerNote(): string {
-    // The failure card carries its own explanation; this note only ever
-    // describes working playback.
-    if (isYouTube) return YOUTUBE_RULER_NOTE;
-    return 'Waveform unavailable — the timeline still works.';
-  }
-
-  function onDoubleClick(event: React.MouseEvent): void {
-    // Flags stop their own double-clicks from reaching here (a flag
-    // double-click is just two flag clicks) — this runs only on the surface.
-    // Playback mode adds nothing: the double-click's clicks still seek
-    // through the surface, which is exactly its navigation-only meaning.
-    // A source that cannot play is muted the same way — no marks from a dead
-    // clock, while the clicks keep their seek meaning. `mode === null` also
-    // guards the retry window: after the failure card's Retry resets the
-    // load, a stale zoom view must not accept adds before the new load
-    // settles.
-    if (!editing || loadFailed || mode === null) return;
-    const time = timeAtClientX(event.clientX);
-    if (time !== null) addAt(time);
-  }
-
-  function onTouchStart(event: React.TouchEvent): void {
-    if (event.touches.length !== 1) return;
-    // Flags stop their own touches from reaching here; the surface is clear.
-    // Any stale suppression from an earlier gesture ends here — even in
-    // Playback mode, where the long-press below never arms, a lingering
-    // guard must not eat a practice session's next seek click.
-    suppressNextClick.current = false;
-    // Playback mode adds nothing; a long-press there is just a pause before
-    // the seek the trailing click performs. A dead source is muted the same
-    // way — no marks from a clock that is not playing anything — and the
-    // retry window (`mode === null`) stays muted too.
-    if (!editing || loadFailed || mode === null) return;
-    const { clientX: x, clientY: y } = event.touches[0];
-    const timer = setTimeout(() => {
-      const time = timeAtClientX(x);
-      if (time !== null) addAt(time);
-      suppressNextClick.current = true;
-      // The synthesized click normally follows within a beat; if the browser
-      // never delivers one, don't let the flag eat a later genuine click.
-      setTimeout(() => {
-        suppressNextClick.current = false;
-      }, 1000);
-    }, LONG_PRESS_MS);
-    longPress.current = { timer, x, y };
-  }
-
-  function onTouchMove(event: React.TouchEvent): void {
-    const press = longPress.current;
-    if (press === null) return;
-    const touch = event.touches[0];
-    // Dragging or scrolling is not a long-press.
-    if (
-      touch === undefined ||
-      Math.abs(touch.clientX - press.x) > LONG_PRESS_SLOP_PX ||
-      Math.abs(touch.clientY - press.y) > LONG_PRESS_SLOP_PX
-    ) {
-      clearTimeout(press.timer);
-      longPress.current = null;
-    }
-  }
-
-  const cancelLongPress = useCallback((): void => {
-    const press = longPress.current;
-    if (press === null) return;
-    clearTimeout(press.timer);
-    longPress.current = null;
-  }, []);
 
   // The seek surface plus its overlays, shared by both layouts: the
   // practice split view on a YouTube project, or the plain shell elsewhere.
   const timelineShell = (
     <div
       ref={shellRef}
-      className={isYouTube ? 'player-waveform-shell youtube-shell' : 'player-waveform-shell'}
-      onClickCapture={onClickCapture}
-      onDoubleClick={onDoubleClick}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={cancelLongPress}
-      onTouchCancel={cancelLongPress}
+      className={isYouTube ? 'player-ruler-shell youtube-shell' : 'player-ruler-shell'}
     >
       <div
         ref={containerRef}
-        className="player-waveform"
+        className="player-ruler"
         style={viewWidth !== undefined ? { width: `${viewWidth}px` } : undefined}
       />
       <MarkerFlags
@@ -714,14 +610,6 @@ export function Player({
       />
     </div>
   );
-
-  /** Capture-phase guard: a long-press's trailing click must not seek. */
-  function onClickCapture(event: React.MouseEvent): void {
-    if (!suppressNextClick.current) return;
-    suppressNextClick.current = false;
-    event.stopPropagation();
-    event.preventDefault();
-  }
 
   // Zoom gestures register as native listeners: React's root-level wheel and
   // touchmove handlers are passive, so their synthetic events cannot cancel
@@ -794,9 +682,6 @@ export function Player({
         pinchRef.current = null;
         return;
       }
-      // Two or more fingers are never a long-press: a pending marker must
-      // not fire because the gesture turned into something else.
-      cancelLongPress();
       panRef.current = null;
       // Three-plus fingers: leave any running pinch untouched and ignore the
       // extras — an accidental extra touch must not freeze the zoom.
@@ -836,15 +721,15 @@ export function Player({
       if (event.touches.length === 1) {
         // One finger pans the content (the browser keeps vertical page
         // scroll; the horizontal content scroll is ours). The pan engages on
-        // a clearly horizontal drag — the same slop that cancels a
-        // long-press — and a pan is not a tap, so no trailing click-seek.
+        // a clearly horizontal drag — the slop that separates a pan from a
+        // tap — and a pan is not a tap, so no trailing click-seek.
         const pan = panRef.current;
         if (pan === null) return;
         const touch = event.touches[0];
         const dx = touch.clientX - pan.startX;
         const dy = touch.clientY - pan.startY;
         if (!pan.active) {
-          if (Math.abs(dx) <= LONG_PRESS_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
+          if (Math.abs(dx) <= PAN_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
           pan.active = true;
         }
         event.preventDefault();
@@ -865,8 +750,7 @@ export function Player({
       }
     };
 
-    // The single-finger pan's origin — armed on every one-finger touchstart,
-    // alongside the long-press timer it can cancel.
+    // The single-finger pan's origin — armed on every one-finger touchstart.
     const onPanStart = (event: TouchEvent): void => {
       if (event.touches.length !== 1) return;
       const view = viewRef.current;
@@ -896,7 +780,7 @@ export function Player({
       shell.removeEventListener('touchend', onPinchEnd);
       shell.removeEventListener('touchcancel', onPinchEnd);
     };
-  }, [cancelLongPress, isYouTube]);
+  }, [isYouTube]);
 
   return (
     <main>
@@ -944,7 +828,7 @@ export function Player({
           aria-pressed={playback.playing}
           // A source that reported it cannot play has an inert transport;
           // leaving Play enabled would promise something no click delivers.
-          disabled={mode === null || loadFailed}
+          disabled={!loaded || loadFailed}
           onClick={() => controller.togglePlay()}
         >
           {playback.playing ? 'Pause' : 'Play'}
@@ -962,7 +846,7 @@ export function Player({
             type="button"
             // A dead source has no honest playhead to mark from — the button
             // stays visible (the mode is still Label) but promises nothing.
-            disabled={mode === null || loadFailed}
+            disabled={!loaded || loadFailed}
             title="Shortcut: M"
             onClick={() => addAtPlayhead()}
           >
@@ -1000,15 +884,16 @@ export function Player({
         <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
       )}
       {/* The failure card carries the explanation when the video cannot play;
-      a precision note about working playback would be a lie beside it. */}
-      {mode === 'ruler' && !(loadFailed && isYouTube) && (
+      a precision note about working playback would be a lie beside it. The
+      note is YouTube-only: an upload's ruler needs no qualifier. */}
+      {loaded && isYouTube && !loadFailed && (
         <p className="ruler-note">
-          {isYouTube && editing && current.markers.length === 0
+          {editing && current.markers.length === 0
             ? // One note, both truths: the missing labels and the coarse
               // clock the first mark will inherit — stacked hint paragraphs
               // would read as one warning doubled.
               `${YOUTUBE_NO_LABELS_NOTE} ${YOUTUBE_RULER_NOTE}`
-            : defaultRulerNote()}
+            : YOUTUBE_RULER_NOTE}
         </p>
       )}
     </main>

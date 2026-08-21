@@ -7,7 +7,6 @@ import {
   contentWidth,
   minPxPerSec,
   scrollLeftForTime,
-  timeAtClientX,
   wheelNotches,
   zoomAround,
 } from './zoom';
@@ -151,14 +150,6 @@ describe('scrollLeftForTime', () => {
   it('pins to the end for times near the end', () => {
     // 1500 s at 8 px/s: content end is 12000; last visible pixel is 10800.
     expect(scrollLeftForTime(1490, VIEWPORT, 1500, 8)).toBe(10_800);
-  });
-});
-
-describe('timeAtClientX', () => {
-  it('maps a click exactly under zoom and scroll', () => {
-    // Content scrolled 1000 px, cursor at viewport x 400 → content x 1400;
-    // at 8 px/s that is exactly 175 s.
-    expect(timeAtClientX(400, 0, 1000, 8)).toBe(175);
   });
 });
 

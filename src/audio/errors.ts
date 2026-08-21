@@ -1,14 +1,3 @@
-/** A failed decode pass: the recording cannot be turned into peaks. */
-export class DecodeError extends Error {
-  constructor(cause: unknown) {
-    super(
-      'This recording could not be decoded for waveform display. The timeline still works.',
-      { cause },
-    );
-    this.name = 'DecodeError';
-  }
-}
-
 /**
  * The YouTube embed's playability failure — the load result's error channel,
  * so the player can show an honest state instead of a silent dead embed.

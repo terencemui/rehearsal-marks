@@ -121,14 +121,6 @@ export function HelpTab() {
               <td>Add a marker at the playhead, without pausing</td>
             </tr>
             <tr>
-              <td>Double-click the waveform</td>
-              <td>Add a marker at that position</td>
-            </tr>
-            <tr>
-              <td>Long-press (touch)</td>
-              <td>Add a marker at that position</td>
-            </tr>
-            <tr>
               <td>Click a marker flag</td>
               <td>Jump to it and select it for editing</td>
             </tr>

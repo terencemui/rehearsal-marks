@@ -4,7 +4,7 @@
  * player (which stays visible, per the API's terms), playhead polling, the
  * 0–1 → 0–100 volume mapping, and the shared ruler. The IFrame API is
  * referenced nowhere outside this module; its unit tests drive a faked
- * `window.YT`, the same containment the wavesurfer-backed path has.
+ * `window.YT`, the same containment the rest of the audio layer gets.
  */
 
 import { parseYouTubeLink } from '../domain';
@@ -218,7 +218,7 @@ export function loadYouTubeSource({
     // false promise, and this one — an outage recovered — can.
     document.querySelectorAll(`script[src="${API_SCRIPT_URL}"]`).forEach((tag) => tag.remove());
     dead = true;
-    finish({ mode: 'ruler', duration: knownDuration, error: new YouTubePlaybackError(0) });
+    finish({ duration: knownDuration, error: new YouTubePlaybackError(0) });
   }, API_SCRIPT_TIMEOUT_MS);
 
   /** The shared ruler over the embed, driving seeks straight into it. */
@@ -241,7 +241,7 @@ export function loadYouTubeSource({
     videoId = parseYouTubeLink(url).videoId;
   } catch {
     renderTimeline(0);
-    finish({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(2) });
+    finish({ duration: 0, error: new YouTubePlaybackError(2) });
     return { ready, toggle, seek, setVolume, getCurrentTime, destroy };
   }
 
@@ -292,7 +292,7 @@ export function loadYouTubeSource({
     // The store may hold a volume from a previous session; the fresh embed
     // starts at 100 and must be brought to it, like the other backends do.
     setVolume(volume);
-    finish({ mode: 'ruler', duration: known });
+    finish({ duration: known });
   }
 
   function onReady(): void {
@@ -322,7 +322,7 @@ export function loadYouTubeSource({
         dead = true;
         renderTimeline(knownDuration);
         onState({ duration: knownDuration, currentTime: 0, playing: false });
-        finish({ mode: 'ruler', duration: knownDuration, error: new YouTubePlaybackError(0) });
+        finish({ duration: knownDuration, error: new YouTubePlaybackError(0) });
       }
     }, POLL_INTERVAL_MS);
   }
@@ -346,7 +346,6 @@ export function loadYouTubeSource({
     renderTimeline(knownDuration);
     onState({ duration: knownDuration, currentTime: 0, playing: false });
     finish({
-      mode: 'ruler',
       duration: knownDuration,
       // A payload the unwrap cannot read is still a failure — its code is
       // just unknown, like the API script that never arrived.

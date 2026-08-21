@@ -1,27 +1,20 @@
 /**
  * The AudioController seam — every bit of audio I/O in the app passes through
- * this interface: peak extraction, playback, and waveform rendering. The
- * production implementation wraps wavesurfer (referenced nowhere outside this
- * module, so it stays swappable); component tests consume mocks instead.
+ * this interface: playback and the shared ruler. The production implementation
+ * streams an HTMLAudioElement (uploads) or an iframe embed (YouTube), with no
+ * waveform and no decode anywhere; component tests consume mocks instead.
  *
- * Playback always streams through an HTMLAudioElement — wavesurfer's default
- * MediaElement backend — and never decodes a second buffer; the only decode
- * in the app is the one `extractPeaks` pass, whose AudioBuffer is discarded.
+ * Playback always streams through an HTMLAudioElement or the YouTube embed and
+ * never decodes a buffer — there is no decode pass in the app at all.
  */
 
-import WaveSurfer from 'wavesurfer.js';
 import { renderRuler } from '../playback/renderRuler';
 import { YouTubePlaybackError } from './errors';
-import { extractPeaks, type PeakData } from './peaks';
 import { loadYouTubeSource, type YouTubeSession } from './youtube';
 
-/** How the loaded recording is rendered. */
-export type RenderMode = 'waveform' | 'ruler';
-
-/** The outcome of `load`: how the view rendered, and the known duration. */
+/** The outcome of `load`: the known duration, and any load failure. */
 export interface LoadResult {
-  mode: RenderMode;
-  /** Seconds. The decode pass's duration in waveform mode; the media element's in ruler mode. */
+  /** Seconds. The media element's duration; 0 when the source reports none. */
   duration: number;
   /**
    * The load failure, when the source could not play — the player acts on it
@@ -32,8 +25,8 @@ export interface LoadResult {
 
 /**
  * What `load` is asked to play, discriminated by source exactly like the
- * stored record: an upload carries bytes (or a streaming URL) and decoded
- * peaks; a YouTube project carries only its canonical URL.
+ * stored record: an upload carries bytes (or a streaming URL); a YouTube
+ * project carries only its canonical URL.
  */
 export type LoadOptions =
   | {
@@ -42,10 +35,8 @@ export type LoadOptions =
       blob: Blob | null;
       /** The remote recording URL; `null` when playing a local blob. */
       url: string | null;
-      /** The element the waveform (or ruler) renders into. */
+      /** The element the ruler renders into. */
       container: HTMLElement;
-      /** Decoded peaks; `null` means the decode failed — render a ruler-only timeline. */
-      peaks: PeakData | null;
     }
   | {
       source: 'youtube';
@@ -78,14 +69,10 @@ export interface PlaybackState {
 }
 
 export interface AudioController {
-  /** One full decode pass → bucketed peaks. Rejects with `DecodeError`. */
-  extractPeaks(blob: Blob): Promise<PeakData>;
   /**
-   * Streams the recording into `container` and renders the waveform from the
-   * pre-decoded peaks, or a ruler-only timeline when peaks are unavailable.
-   * Exactly one of `blob` and `url` is set: a blob plays locally (waveform
-   * when peaks exist), a url streams from the network. Never decodes: the
-   * single decode pass is the caller's `extractPeaks`.
+   * Streams the recording into `container` and renders the ruler. Exactly one
+   * of `blob` and `url` is set: a blob plays locally, a url streams from the
+   * network. Never decodes — there is no waveform, so no decode pass exists.
    */
   load(options: LoadOptions): Promise<LoadResult>;
   /** Toggles between playing and paused. A no-op before `load` resolves. */
@@ -128,9 +115,8 @@ interface PlaybackTarget {
   setVolume(volume: number): void;
 }
 
-/** The wavesurfer-backed production controller. */
+/** The production controller: HTMLAudioElement uploads, iframe embeds for YouTube. */
 export function createAudioController(): AudioController {
-  let wavesurfer: WaveSurfer | null = null;
   let audio: HTMLAudioElement | null = null;
   let youtube: YouTubeSession | null = null;
   let objectUrl: string | null = null;
@@ -165,10 +151,6 @@ export function createAudioController(): AudioController {
 
   /** Releases everything; safe to call repeatedly and before any load. */
   function teardown(): void {
-    if (wavesurfer !== null) {
-      wavesurfer.destroy();
-      wavesurfer = null;
-    }
     if (audio !== null) {
       // Fires a `pause` event, which publishes playing=false — honest state.
       audio.pause();
@@ -186,62 +168,11 @@ export function createAudioController(): AudioController {
     target = null;
   }
 
-  function loadWaveform(blob: Blob, container: HTMLElement, peaks: PeakData): Promise<LoadResult> {
-    container.replaceChildren();
-    // No `audioContext` and no `backend: 'WebAudio'` on purpose: the default
-    // MediaElement backend streams an HTMLAudioElement and keeps no decoded
-    // buffer. WebAudio would decode again and retain the buffer — forbidden.
-    wavesurfer = WaveSurfer.create({
-      container,
-      height: 96,
-      waveColor: '#94a3b8',
-      progressColor: '#0f766e',
-      cursorColor: '#0f766e',
-      barWidth: 1,
-      barGap: 0,
-      // Peaks are drawn at their decoded amplitude; no amplification.
-      normalize: false,
-      interact: true,
-    });
-    const ws = wavesurfer;
-
-    // Forward media events into the playback store. Wavesurfer's emissions
-    // normally carry the time, but some paths (the WebAudio backend's seek)
-    // fire bare events — drop anything that isn't a finite number so the
-    // store's `currentTime: number` contract never leaks `undefined`.
-    const forwardTime = (currentTime: unknown) => {
-      if (typeof currentTime === 'number' && Number.isFinite(currentTime)) {
-        emit({ currentTime });
-      }
-    };
-    ws.on('play', () => emit({ playing: true }));
-    ws.on('pause', () => emit({ playing: false }));
-    ws.on('finish', () => emit({ playing: false }));
-    ws.on('timeupdate', forwardTime);
-    ws.on('seeking', forwardTime);
-
-    target = {
-      toggle: () => void ws.playPause().catch(() => {}),
-      seek: (time) => ws.setTime(time),
-      setVolume: (volume) => ws.setVolume(volume),
-    };
-
-    return new Promise<LoadResult>((resolve, reject) => {
-      ws.once('ready', () => {
-        ws.setVolume(state.volume);
-        resetPlayback(peaks.duration);
-        resolve({ mode: 'waveform', duration: peaks.duration });
-      });
-      ws.once('error', reject);
-      void ws.loadBlob(blob, peaks.peaks, peaks.duration);
-    });
-  }
-
   function loadRuler(blob: Blob | null, url: string | null, container: HTMLElement): Promise<LoadResult> {
-    // Ruler-only mode: no wavesurfer, no decode. An HTMLAudioElement streams
-    // playback — from the URL directly when one is given (the library's
-    // first load: playback starts before the download finishes), or from a
-    // local blob — and the container gets a DOM timeline with click-to-seek.
+    // No decode and no waveform — the ruler is the only timeline. An
+    // HTMLAudioElement streams playback — from the URL directly when one is
+    // given, or from a local blob — and the container gets a DOM timeline
+    // with click-to-seek.
     container.replaceChildren();
     const element = new Audio();
     element.preload = 'metadata';
@@ -294,7 +225,7 @@ export function createAudioController(): AudioController {
         () => {
           renderTimeline(element.duration);
           resetPlayback(element.duration);
-          resolve({ mode: 'ruler', duration: element.duration });
+          resolve({ duration: element.duration });
         },
         { once: true },
       );
@@ -304,7 +235,7 @@ export function createAudioController(): AudioController {
         () => {
           renderTimeline(0);
           resetPlayback(0);
-          resolve({ mode: 'ruler', duration: 0 });
+          resolve({ duration: 0 });
         },
         { once: true },
       );
@@ -312,8 +243,6 @@ export function createAudioController(): AudioController {
   }
 
   return {
-    extractPeaks,
-
     async load(options: LoadOptions) {
       teardown();
       if (options.source === 'youtube') {
@@ -331,19 +260,7 @@ export function createAudioController(): AudioController {
         target = { toggle: session.toggle, seek: session.seek, setVolume: session.setVolume };
         return await session.ready;
       }
-      const { blob, url, peaks, container } = options;
-      // The waveform needs decoded peaks, and peaks exist only after the one
-      // decode pass over the full blob — so a URL stream (the library's
-      // first load) is always a ruler until its blob lands and a later
-      // session opens it from cache.
-      if (blob !== null && peaks !== null) {
-        try {
-          return await loadWaveform(blob, container, peaks);
-        } catch {
-          // The media path failed too — fall through to the ruler.
-          teardown();
-        }
-      }
+      const { blob, url, container } = options;
       return await loadRuler(blob, url, container);
     },
 
@@ -360,10 +277,6 @@ export function createAudioController(): AudioController {
     },
 
     getCurrentTime() {
-      if (wavesurfer !== null) {
-        const time = wavesurfer.getCurrentTime();
-        if (typeof time === 'number' && Number.isFinite(time)) return time;
-      }
       if (audio !== null && Number.isFinite(audio.currentTime)) {
         return audio.currentTime;
       }

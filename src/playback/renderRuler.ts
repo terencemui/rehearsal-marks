@@ -1,18 +1,17 @@
 /**
- * Shared ruler rendering — the degraded timeline any playback backend draws
- * when no waveform is available. DOM, not canvas, and backend-agnostic: the
- * caller supplies the duration and a seek callback, and nothing here touches
- * a media element. `onSeek` receives each click-driven seek and returns the
- * position actually applied, so the backend moves its own playhead and the
- * slider value tracks what really happened.
+ * Shared ruler rendering — the timeline every playback backend draws. DOM, not
+ * canvas, and backend-agnostic: the caller supplies the duration and a seek
+ * callback, and nothing here touches a media element. `onSeek` receives each
+ * click-driven seek and returns the position actually applied, so the backend
+ * moves its own playhead and the slider value tracks what really happened.
  */
 
 import { rulerTicks } from './ruler';
 import './ruler.css';
 
 /**
- * Draws a ruler-only timeline into `container`: labeled tick lines over a
- * clickable surface. A click seeks to the clicked position through `onSeek`,
+ * Draws the timeline into `container`: labeled tick lines over a clickable
+ * surface. A click seeks to the clicked position through `onSeek`,
  * which returns the position the backend actually applied — a media element
  * may clamp the assignment — so the slider value stays honest. A missing or
  * unknown duration renders a single zero tick and ignores clicks. Replaces

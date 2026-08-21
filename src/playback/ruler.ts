@@ -1,5 +1,5 @@
 /**
- * The ruler-only timeline's math, shared by every playback backend. Kept pure
+ * The timeline's math, shared by every playback backend. Kept pure
  * so each backend adapter stays a thin one: tick spacing and label format are
  * settled here, and the renderer below only has to draw the result.
  */
