@@ -23,7 +23,7 @@ import {
 } from '../domain';
 import type { Marker, ProjectFileData } from '../domain';
 
-export const PUBLICATION_STATUSES = ['pending', 'published'] as const;
+export const PUBLICATION_STATUSES = ['pending', 'published', 'rejected'] as const;
 export type PublicationStatus = (typeof PUBLICATION_STATUSES)[number];
 
 /** One `label_sets` row as the Commons returns it. */
@@ -52,6 +52,13 @@ export interface LabelSetValues {
   duration: number;
   markers: Marker[];
 }
+
+/**
+ * The values a contributor's update may change. Identity (id, video_id),
+ * ownership, and publication status are all out of reach — the update grant
+ * and the row's round-trip key make re-submission an UPDATE of the same row.
+ */
+export type LabelSetUpdate = Pick<LabelSetValues, 'title' | 'duration' | 'markers'>;
 
 /**
  * The read projection of a `label_sets` row — the three facts an anonymous
@@ -273,7 +280,7 @@ function readVideoId(value: unknown): string {
 function readStatus(value: unknown): PublicationStatus {
   const status = assertNonEmptyString(value, '"publication_status"');
   if (!PUBLICATION_STATUSES.includes(status as PublicationStatus)) {
-    throw invalidRow('"publication_status" must be "pending" or "published".');
+    throw invalidRow('"publication_status" must be "pending", "published", or "rejected".');
   }
   return status as PublicationStatus;
 }

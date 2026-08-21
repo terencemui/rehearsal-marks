@@ -12,6 +12,8 @@ export { AUTH_UNAVAILABLE_REASON, createAuthController, contributorFromUser } fr
 export type { AuthController, AuthState, Contributor, SupabaseAuth } from './controller';
 export { createSupabaseAuth, readAuthEnv } from './supabase';
 export type { AuthEnv } from './supabase';
+export { BANNED_PREFIX, createSupabaseCommonsWrite, RATE_LIMITED_PREFIX } from './write';
+export type { SupabaseCommonsWrite } from './write';
 
 /**
  * The default controller for the real app: built from the deployment env, or

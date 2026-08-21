@@ -235,6 +235,8 @@ export function HelpTab() {
             yet to anyone else — until a maintainer reviews it.
           </li>
           <li>
+            A rejected set comes back to you: the row shows <strong>Rejected</strong>, your
+            marks were never public, and submitting the edited set again returns it to review.
             Once <strong>published</strong>, anyone who opens this video gets your marks, and
             you can update them any time — updates return the set to pending and go through
             review again.
@@ -242,7 +244,7 @@ export function HelpTab() {
         </ol>
         <p>
           Publishing makes your marks public — publish only marks you placed yourself on this
-          exact performance.
+          exact performance. Submissions are limited to three label sets in any 7 days.
         </p>
 
         <h4>The CC0 Library — through the repo</h4>
