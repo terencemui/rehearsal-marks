@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import type { PublicationStatus } from '../commons/labelSet';
+import type { LabelSetRow } from '../commons/labelSet';
 import {
   formatBytes,
   formatDuration,
@@ -9,6 +11,25 @@ import {
 import type { SaveStatus, ProjectSummary } from '../storage';
 import { STATUS_TEXT } from './status';
 import './projects.css';
+
+/** The sign-in posture the row's Commons action reacts to. */
+export type CommonsAuthKind = 'anonymous' | 'signed-in' | 'unavailable';
+
+/** The row badge for each publication status the moderation gate can hold. */
+const COMMONS_STATUS: Record<PublicationStatus, { text: string; title: string }> = {
+  pending: {
+    text: 'Pending review',
+    title: 'Submitted — visible to you, not yet to anyone else, until a maintainer reviews it',
+  },
+  published: {
+    text: 'Published',
+    title: 'Public — anyone who opens this video gets your marks',
+  },
+  rejected: {
+    text: 'Rejected',
+    title: 'Not published — edit the set and submit again to return it to review',
+  },
+};
 
 export interface ProjectsScreenProps {
   /** The workspace's rows, newest first — the caller owns the list. */
@@ -33,6 +54,22 @@ export interface ProjectsScreenProps {
   onImportLabels: (id: string, file: File) => void;
   /** The row whose label-set import is running, if any. */
   importingLabelsId?: string | null;
+  /**
+   * The sign-in posture — a signed-out row offers sign-in as its Commons
+   * action, an unconfigured deployment disables it with an explanation.
+   */
+  authKind: CommonsAuthKind;
+  /**
+   * The signed-in contributor's Commons rows, keyed by project id — the
+   * publication-status badges. Null when signed out, so rows show none.
+   */
+  commonsRows: Record<string, LabelSetRow> | null;
+  /** The row whose Commons submission runs, if any — rows are inert then. */
+  submittingId?: string | null;
+  /** Submits or re-submits the project's label set to the Commons. */
+  onSubmitToCommons: (id: string) => void;
+  /** Starts the Google OAuth flow — a signed-out contributor's submit. */
+  onSignIn: () => void;
   onBrowseLibrary: () => void;
 }
 
@@ -56,6 +93,11 @@ export function ProjectsScreen({
   onExportLabels,
   onImportLabels,
   importingLabelsId = null,
+  authKind,
+  commonsRows,
+  submittingId = null,
+  onSubmitToCommons,
+  onSignIn,
   onBrowseLibrary,
 }: ProjectsScreenProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -136,7 +178,9 @@ export function ProjectsScreen({
             Total used: {formatBytes(totalUsageBytes(projects))}
           </p>
           <ul className="projects-list">
-            {projects.map((project) => (
+            {projects.map((project) => {
+              const commonsRow = commonsRows?.[project.id];
+              return (
               <li key={project.id} className="projects-row">
                 <button
                   type="button"
@@ -152,6 +196,14 @@ export function ProjectsScreen({
                     {project.source === 'youtube' && (
                       <span className="projects-badge" title="Plays from YouTube — no audio stored in this browser">
                         YouTube
+                      </span>
+                    )}
+                    {commonsRow !== undefined && (
+                      <span
+                        className={`projects-badge projects-badge-${commonsRow.publication_status}`}
+                        title={COMMONS_STATUS[commonsRow.publication_status].title}
+                      >
+                        {COMMONS_STATUS[commonsRow.publication_status].text}
                       </span>
                     )}
                   </span>
@@ -260,8 +312,31 @@ export function ProjectsScreen({
                     Import labels
                   </button>
                 )}
+                {project.source === 'youtube' && (
+                  <button
+                    type="button"
+                    disabled={busy || submittingId !== null || authKind === 'unavailable'}
+                    title={
+                      authKind === 'unavailable'
+                        ? "Contributing isn't set up for this deployment yet"
+                        : undefined
+                    }
+                    onClick={() =>
+                      authKind === 'signed-in' ? onSubmitToCommons(project.id) : onSignIn()
+                    }
+                  >
+                    {submittingId === project.id
+                      ? 'Submitting…'
+                      : commonsRow !== undefined
+                        ? 'Update submission'
+                        : authKind === 'signed-in'
+                          ? 'Submit to Commons'
+                          : 'Sign in to submit'}
+                  </button>
+                )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </>
       )}

@@ -6,7 +6,13 @@
  * imports gated on recording identity. Built on the domain's versioned
  * project-file format.
  */
-export { exportLabelSetJson, exportProjectJson, exportProjectZip, sanitizeDownloadName } from './export';
+export {
+  exportLabelSetJson,
+  exportProjectJson,
+  exportProjectZip,
+  projectFileFromRecord,
+  sanitizeDownloadName,
+} from './export';
 export { importLabelSet, importProjectJson, importProjectZip, uniqueProjectName } from './import';
 export type {
   LabelSetImportOutcome,

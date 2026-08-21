@@ -16,10 +16,6 @@ You marked a public performance on YouTube and want every student to start
 from your marks. The whole path is inside the app — there is nothing to
 download or set up.
 
-> **Status:** the in-app submit step is documented here in full so the path
-> is in place from day one; it becomes usable when the Commons query (T21)
-> and sign-in (T24) land. The flow below is the target.
-
 1. **Open the performance.** Create a project from its YouTube link and
    place your marks while listening (press `M` as each rehearsal mark goes
    by). Labels come out A, B, C… in time order automatically; correct any
@@ -28,12 +24,16 @@ download or set up.
    label sets never requires one; publishing does.
 3. **Submit your label set.** One step in the app. Your marks for this
    video go to the Commons as a **pending** submission — visible to you,
-   not yet to anyone else.
+   not yet to anyone else. Submissions are limited to three per 7 days,
+   resubmissions included.
 4. **Await review.** A maintainer listens and checks the marks, exactly as
-   they would check any contribution. Submissions are usually quick.
+   they would check any contribution. A set the maintainer denies comes
+   back to you with its row marked **Rejected** — edit it and submit again,
+   and it returns to review.
 5. **Published.** Your label set loads for every student who opens the
-   video. You can update it any time — edits return it to pending and go
-   through review again.
+   video. You can update it any time — updates return the set to pending
+   and go through review again (a contributor whose past sets were accepted
+   publishes updates immediately).
 
 A label set is facts about a recording (like a table of contents), not
 copyrightable expression — sharing your own marks is unproblematic. Publish
