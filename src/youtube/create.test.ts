@@ -25,34 +25,30 @@ async function dependencies(overrides: Partial<YouTubeDependencies> = {}) {
 }
 
 describe('createProjectFromYouTubeLink', () => {
-  it('creates a YouTube project that stores no audio', async () => {
+  it('creates a YouTube project whose identity is the video ID', async () => {
     const { deps, storage } = await dependencies();
 
     const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.project.source).toBe('youtube');
-    // The app never holds YouTube audio — the null is the discriminator the
-    // record type and the size estimate both rest on.
-    expect(outcome.project.audio).toBeNull();
-    expect(outcome.project.audioMeta.sizeBytes).toBe(0);
-    expect(outcome.project.audioMeta.sha256).toBe('');
+    // The video ID is the recording's identity — no upload facts exist on the
+    // record at all.
+    expect(outcome.project.videoId).toBe(ID);
     expect(outcome.project.markers).toEqual([]);
 
     const stored = await storage.projects.get(outcome.project.id);
-    expect(stored?.audio).toBeNull();
-    expect(stored?.source).toBe('youtube');
+    expect(stored?.videoId).toBe(ID);
   });
 
-  it('records the canonical URL as the recording identity, whatever form was pasted', async () => {
+  it('records the video ID as the recording identity, whatever form was pasted', async () => {
     const { deps } = await dependencies();
 
     const outcome = await createProjectFromYouTubeLink(`https://youtu.be/${ID}?t=42`, deps);
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.project.audioMeta.source).toBe(CANONICAL);
+    expect(outcome.project.videoId).toBe(ID);
     // The title lookup asks about the canonical form, not the pasted one.
     expect(deps.fetchTitle).toHaveBeenCalledWith(CANONICAL);
   });
@@ -65,7 +61,6 @@ describe('createProjectFromYouTubeLink', () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.project.name).toBe(TITLE);
-    expect(outcome.project.audioMeta.filename).toBe(TITLE);
   });
 
   it.each([
@@ -85,7 +80,7 @@ describe('createProjectFromYouTubeLink', () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.project.name).toContain(ID);
-    expect(outcome.project.audioMeta.source).toBe(CANONICAL);
+    expect(outcome.project.videoId).toBe(ID);
   });
 
   it('trims a title that arrives padded', async () => {
@@ -168,7 +163,7 @@ describe('createProjectFromYouTubeLink', () => {
     expect(outcome.project.markers).toEqual(community.markers);
     // The set's duration seeds the record, so a project with marks has an
     // honest timeline before the embed reports its own.
-    expect(outcome.project.audioMeta.duration).toBe(604.2);
+    expect(outcome.project.duration).toBe(604.2);
     // Marks in hand means immediately practiceable: the source's own default.
     expect(outcome.project.playerMode).toBe('playback');
     // The loader is asked about the video's identity, not the pasted text.

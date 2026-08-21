@@ -7,9 +7,10 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { AudioController, PeakData, RenderMode } from '../audio';
+import type { AudioController, RenderMode } from '../audio';
 import {
   addMarker,
+  canonicalYouTubeUrl,
   createMarker,
   deriveLabels,
   errorMessage,
@@ -29,16 +30,10 @@ import { PracticeReadout } from './PracticeReadout';
 import { STATUS_TEXT } from './status';
 import { UndoToast } from './UndoToast';
 import {
-  ZOOM_STEP,
-  clampScrollLeft,
   contentWidth,
   fitPxPerSec,
-  minPxPerSec,
   scrollLeftForTime,
   timeAtClientX as timeAtOffset,
-  wheelNotches,
-  zoomAround,
-  type ZoomView,
 } from './zoom';
 import './player.css';
 
@@ -48,8 +43,6 @@ export interface PlayerProps {
    * returning to the Projects screen, so the list never reads stale data.
    */
   autosave: Autosave;
-  /** Decoded peaks, or `null` when decoding failed (ruler-only mode). */
-  peaks: PeakData | null;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
   /** Back to the Projects screen; the shell flushes before unmounting. */
@@ -62,9 +55,6 @@ const UNDO_WINDOW_MS = 5000;
 const LONG_PRESS_MS = 500;
 /** Movement beyond this cancels a long-press (a drag or a scroll). */
 const LONG_PRESS_SLOP_PX = 10;
-/** A pinch with fingers closer than this has no trustworthy anchor yet. */
-const PINCH_MIN_START_PX = 20;
-
 /**
  * What a YouTube project's ruler says instead of the waveform note. The embed
  * reports its playhead on a coarse clock and lands seeks at segment
@@ -139,7 +129,6 @@ interface UndoState {
  */
 export function Player({
   autosave,
-  peaks,
   controller,
   onExit,
 }: PlayerProps) {
@@ -155,16 +144,16 @@ export function Player({
   /** Bumped by the failure card's Retry — re-runs the load effect. */
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
-  // The record's identity — name, source, and audio — never changes in the player.
+  // The record's identity — name and recording — never changes in the player.
   const record = autosave.get();
   /**
-   * A YouTube project: the video is the main item and the ruler sits under it,
-   * so the timeline is always fitted to the viewport — never zoomed, which
-   * would stretch the embed off-screen. Its canonical URL is the recording
-   * identity the audio layer plays from.
+   * Every project is a YouTube project: the video is the main item and the
+   * ruler sits under it, so the timeline is always fitted to the viewport —
+   * never zoomed, which would stretch the embed off-screen. The canonical URL
+   * derived from the stored video ID is the recording identity the audio layer
+   * plays from.
    */
-  const isYouTube = record.source === 'youtube';
-  const youtubeUrl = record.audioMeta.source;
+  const youtubeUrl = canonicalYouTubeUrl(record.videoId);
   // The record as React state. Every mutation goes through `update`, which
   // applies it to the autosave and mirrors the result back here, so flags,
   // labels, and the inspector render from the same record that persists.
@@ -176,7 +165,7 @@ export function Player({
   // creation stamps it. `editing` is the one gate every editing tool reads;
   // navigation never does.
   const [playerMode, setPlayerMode] = useState<PlayerMode>(
-    record.playerMode ?? defaultPlayerMode(record.source, record.markers.length),
+    record.playerMode ?? defaultPlayerMode(record.markers.length),
   );
   const editing = playerMode === 'label';
   const [undo, setUndo] = useState<UndoState | null>(null);
@@ -191,7 +180,7 @@ export function Player({
   const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
 
   const labeled = useMemo(() => deriveLabels(current.markers), [current.markers]);
-  const duration = playback.duration > 0 ? playback.duration : current.audioMeta.duration;
+  const duration = playback.duration > 0 ? playback.duration : current.duration;
   const selected = labeled.find((marker) => marker.id === selectedId) ?? null;
 
   // T08 zoom. `pxPerSec` is null until the duration is known, then settles at
@@ -205,25 +194,10 @@ export function Player({
   const viewRef = useRef<{ pxPerSec: number; duration: number } | null>(null);
   viewRef.current =
     pxPerSec !== null && duration > 0 ? { pxPerSec, duration } : null;
-  const pinchRef = useRef<{
-    startView: ZoomView;
-    startDistance: number;
-    cursorOffset: number;
-  } | null>(null);
   // A zoom's scroll, held until the new width has committed (see the layout
   // effect below) — the CSSOM clamps scrollLeft against the current content
   // width at assignment time, so writing it early would drop the anchor.
   const pendingScrollRef = useRef<number | null>(null);
-  // A one-finger horizontal pan: the browser keeps vertical page scroll
-  // (`touch-action: pan-y`), this content scroll is ours.
-  const panRef = useRef<{
-    startX: number;
-    startY: number;
-    startScrollLeft: number;
-    pxPerSec: number;
-    duration: number;
-    active: boolean;
-  } | null>(null);
 
   // A layout effect, not a passive one: the initial level must be set before
   // the first painted frame, or that frame shows the flags overlay collapsed
@@ -233,8 +207,8 @@ export function Player({
     const shell = shellRef.current;
     if (shell === null || duration <= 0) return;
     const width = shell.getBoundingClientRect().width;
-    setPxPerSec(isYouTube ? fitPxPerSec(width, duration) : minPxPerSec(width, duration));
-  }, [duration, isYouTube, pxPerSec]);
+    setPxPerSec(fitPxPerSec(width, duration));
+  }, [duration, pxPerSec]);
 
   // Applies the zoom's scroll once the content width for the committed level
   // is in the DOM. Also re-fits when the window widens past the current
@@ -254,18 +228,13 @@ export function Player({
     const observer = new ResizeObserver(() => {
       setPxPerSec((level) => {
         if (level === null || duration <= 0) return level;
-        const width = shell.getBoundingClientRect().width;
-        // A YouTube timeline is always exactly the viewport, so a resize
-        // re-fits in both directions; a zoomable one only ever rises to the
-        // new minimum, leaving the user's chosen level alone.
-        if (isYouTube) return fitPxPerSec(width, duration);
-        const min = minPxPerSec(width, duration);
-        return level < min ? min : level;
+        // The timeline is always exactly the viewport, so a resize re-fits.
+        return fitPxPerSec(shell.getBoundingClientRect().width, duration);
       });
     });
     observer.observe(shell);
     return () => observer.disconnect();
-  }, [duration, isYouTube]);
+  }, [duration]);
 
   /** Applies a mutation: the autosave gets it, React mirrors it back. */
   const update = useCallback(
@@ -509,40 +478,22 @@ export function Player({
     return () => window.removeEventListener('keydown', listener);
   }, []);
 
-  // The record's blob, read through a ref so the load effect's dependencies
-  // don't include the record object (which changes on every marker edit):
-  // the audio is fixed for the life of a session, so a fresh record identity
-  // must never re-run the load and restart playback.
-  const audioBlobRef = useRef(record.audio);
-  audioBlobRef.current = record.audio;
-
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) return;
     let cancelled = false;
     controller
-      .load(
-        // The load options are source-discriminated exactly like the record:
-        // a YouTube project has only its canonical URL to play from — no
-        // blob, no peaks — and the audio layer owns everything after that.
-        isYouTube
-          ? {
-              source: 'youtube',
-              url: youtubeUrl,
-              container,
-              // The stored duration is the failure state's timeline: a dead
-              // embed reports nothing, so the ruler and the marks that ride
-              // on it render from the last honest length the record has.
-              duration: autosave.get().audioMeta.duration,
-            }
-          : {
-              source: 'upload',
-              blob: audioBlobRef.current,
-              url: null,
-              container,
-              peaks,
-            },
-      )
+      .load({
+        // A project has only its canonical URL to play from — no blob, no
+        // peaks — and the audio layer owns everything after that.
+        source: 'youtube',
+        url: youtubeUrl,
+        container,
+        // The stored duration is the failure state's timeline: a dead
+        // embed reports nothing, so the ruler and the marks that ride on it
+        // render from the last honest length the record has.
+        duration: autosave.get().duration,
+      })
       .then((result) => {
         if (cancelled) return;
         setMode(result.mode);
@@ -550,36 +501,29 @@ export function Player({
         // Ruler mode has no decode duration; the record's 0 is a placeholder.
         // The media element's metadata is the recording's true duration —
         // persisting it keeps the project list (T09) and exports honest, so
-        // the one write outside the upload path earns its place. The
-        // epsilon keeps media-element measurement noise from dirtying the
-        // record — a no-op rewrite would re-stamp updatedAt and reorder the
-        // list for a change no one made.
-        if (
-          result.duration > 0 &&
-          Math.abs(result.duration - autosave.get().audioMeta.duration) > 0.001
-        ) {
-          update((current) => ({
-            ...current,
-            audioMeta: { ...current.audioMeta, duration: result.duration },
-          }));
+        // the one write outside the create path earns its place. The epsilon
+        // keeps media-element measurement noise from dirtying the record — a
+        // no-op rewrite would re-stamp updatedAt and reorder the list for a
+        // change no one made.
+        if (result.duration > 0 && Math.abs(result.duration - autosave.get().duration) > 0.001) {
+          update((current) => ({ ...current, duration: result.duration }));
         }
       })
       .catch(() => {
         if (!cancelled) {
           setMode('ruler');
-          // A rejected YouTube load is a dead source, not a ruler fallback —
-          // the card must return rather than leaving live-looking controls
-          // over an embed that failed again. Uploads never set the flag (their
-          // rejection path falls back to a playing ruler).
-          if (isYouTube) setLoadFailed(true);
+          // A rejected load is a dead source, not a ruler fallback — the card
+          // must return rather than leaving live-looking controls over an
+          // embed that failed again.
+          setLoadFailed(true);
         }
       });
     return () => {
       cancelled = true;
     };
-    // The source and its URL are fixed for the life of a session; `loadAttempt`
-    // is the failure card's retry, the one deliberate re-run of the whole load.
-  }, [autosave, controller, isYouTube, loadAttempt, peaks, update, youtubeUrl]);
+    // The URL is fixed for the life of a session; `loadAttempt` is the failure
+    // card's retry, the one deliberate re-run of the whole load.
+  }, [autosave, controller, loadAttempt, update, youtubeUrl]);
 
   /** The failure card's retry: back to loading, then a fresh load attempt. */
   function retryLoad(): void {
@@ -613,9 +557,9 @@ export function Player({
   /** The note under a ruler-only timeline, when the caller supplied none. */
   function defaultRulerNote(): string {
     // The failure card carries its own explanation; this note only ever
-    // describes working playback.
-    if (isYouTube) return YOUTUBE_RULER_NOTE;
-    return 'Waveform unavailable — the timeline still works.';
+    // describes working playback. Every project is a YouTube project, so the
+    // note is the YouTube one unconditionally.
+    return YOUTUBE_RULER_NOTE;
   }
 
   function onDoubleClick(event: React.MouseEvent): void {
@@ -686,7 +630,7 @@ export function Player({
   const timelineShell = (
     <div
       ref={shellRef}
-      className={isYouTube ? 'player-waveform-shell youtube-shell' : 'player-waveform-shell'}
+      className="player-waveform-shell youtube-shell"
       onClickCapture={onClickCapture}
       onDoubleClick={onDoubleClick}
       onTouchStart={onTouchStart}
@@ -723,180 +667,6 @@ export function Player({
     event.preventDefault();
   }
 
-  // Zoom gestures register as native listeners: React's root-level wheel and
-  // touchmove handlers are passive, so their synthetic events cannot cancel
-  // the browser's scroll/pinch. The handlers read fresh zoom state through
-  // `viewRef` (reassigned every render) and stay registered once.
-  useEffect(() => {
-    const shell = shellRef.current;
-    if (shell === null) return;
-    // A YouTube timeline has no zoom to gesture at — it is always exactly the
-    // viewport — so the listeners are never registered and the browser keeps
-    // its own pinch and scroll over the embed.
-    if (isYouTube) return;
-
-    /**
-     * Commits a zoom: the level through React, the scroll through the DOM —
-     * but only after the new width commits, since the CSSOM clamps scrollLeft
-     * against the *current* content width at assignment time and never
-     * re-expands the clamp. A level that did not change needs no commit and
-     * can apply its scroll directly.
-     */
-    const applyZoom = (next: ZoomView, current: number): void => {
-      if (next.pxPerSec !== current) {
-        setPxPerSec(next.pxPerSec);
-        pendingScrollRef.current = next.scrollLeft;
-      } else {
-        shell.scrollLeft = next.scrollLeft;
-      }
-    };
-
-    const onWheel = (event: WheelEvent): void => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-      // Ctrl/cmd+scroll is this app's zoom — never the page's, even while
-      // the recording is still loading.
-      event.preventDefault();
-      const view = viewRef.current;
-      if (view === null) return;
-      const rect = shell.getBoundingClientRect();
-      const factor = Math.pow(ZOOM_STEP, -wheelNotches(event.deltaY, event.deltaMode));
-      applyZoom(
-        zoomAround(
-          { pxPerSec: view.pxPerSec, scrollLeft: shell.scrollLeft },
-          factor,
-          event.clientX - rect.left,
-          rect.width,
-          view.duration,
-        ),
-        view.pxPerSec,
-      );
-    };
-
-    /** Begins a pinch anchored at the current midpoint, once the fingers are
-     * far enough apart that the anchor means something. */
-    const beginPinch = (touches: TouchList): void => {
-      const view = viewRef.current;
-      if (view === null) return;
-      const rect = shell.getBoundingClientRect();
-      const [a, b] = [touches[0], touches[1]];
-      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      if (distance < PINCH_MIN_START_PX) return;
-      const midX = (a.clientX + b.clientX) / 2;
-      pinchRef.current = {
-        startView: { pxPerSec: view.pxPerSec, scrollLeft: shell.scrollLeft },
-        startDistance: distance,
-        cursorOffset: midX - rect.left,
-      };
-    };
-
-    const onPinchStart = (event: TouchEvent): void => {
-      if (event.touches.length < 2) {
-        pinchRef.current = null;
-        return;
-      }
-      // Two or more fingers are never a long-press: a pending marker must
-      // not fire because the gesture turned into something else.
-      cancelLongPress();
-      panRef.current = null;
-      // Three-plus fingers: leave any running pinch untouched and ignore the
-      // extras — an accidental extra touch must not freeze the zoom.
-      if (event.touches.length === 2) beginPinch(event.touches);
-    };
-
-    const onPinchMove = (event: TouchEvent): void => {
-      if (event.touches.length === 2) {
-        // Two fingers belong to the pinch, whatever the browser was about to
-        // do with them (page zoom included).
-        event.preventDefault();
-        if (pinchRef.current === null) {
-          // Fingers that landed too close to anchor now have room — restart
-          // from here instead of slamming the level from a 5 px base.
-          beginPinch(event.touches);
-        }
-        const pinch = pinchRef.current;
-        const view = viewRef.current;
-        if (pinch === null || view === null) return;
-        const rect = shell.getBoundingClientRect();
-        const [a, b] = [event.touches[0], event.touches[1]];
-        const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-        // Recompute from the gesture's start each move, so the level follows
-        // the finger spread absolutely — no per-event drift.
-        applyZoom(
-          zoomAround(
-            pinch.startView,
-            distance / pinch.startDistance,
-            pinch.cursorOffset,
-            rect.width,
-            view.duration,
-          ),
-          view.pxPerSec,
-        );
-        return;
-      }
-      if (event.touches.length === 1) {
-        // One finger pans the content (the browser keeps vertical page
-        // scroll; the horizontal content scroll is ours). The pan engages on
-        // a clearly horizontal drag — the same slop that cancels a
-        // long-press — and a pan is not a tap, so no trailing click-seek.
-        const pan = panRef.current;
-        if (pan === null) return;
-        const touch = event.touches[0];
-        const dx = touch.clientX - pan.startX;
-        const dy = touch.clientY - pan.startY;
-        if (!pan.active) {
-          if (Math.abs(dx) <= LONG_PRESS_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
-          pan.active = true;
-        }
-        event.preventDefault();
-        shell.scrollLeft = clampScrollLeft(
-          pan.startScrollLeft - dx,
-          shell.getBoundingClientRect().width,
-          pan.duration,
-          pan.pxPerSec,
-        );
-      }
-      // Three-plus fingers: keep the running gesture; nothing to do.
-    };
-
-    const onPinchEnd = (event: TouchEvent): void => {
-      if (event.touches.length < 2) {
-        pinchRef.current = null;
-        panRef.current = null;
-      }
-    };
-
-    // The single-finger pan's origin — armed on every one-finger touchstart,
-    // alongside the long-press timer it can cancel.
-    const onPanStart = (event: TouchEvent): void => {
-      if (event.touches.length !== 1) return;
-      const view = viewRef.current;
-      if (view === null) return;
-      const touch = event.touches[0];
-      panRef.current = {
-        startX: touch.clientX,
-        startY: touch.clientY,
-        startScrollLeft: shell.scrollLeft,
-        pxPerSec: view.pxPerSec,
-        duration: view.duration,
-        active: false,
-      };
-    };
-
-    shell.addEventListener('wheel', onWheel, { passive: false });
-    shell.addEventListener('touchstart', onPinchStart, { passive: false });
-    shell.addEventListener('touchstart', onPanStart);
-    shell.addEventListener('touchmove', onPinchMove, { passive: false });
-    shell.addEventListener('touchend', onPinchEnd);
-    shell.addEventListener('touchcancel', onPinchEnd);
-    return () => {
-      shell.removeEventListener('wheel', onWheel);
-      shell.removeEventListener('touchstart', onPinchStart);
-      shell.removeEventListener('touchstart', onPanStart);
-      shell.removeEventListener('touchmove', onPinchMove);
-      shell.removeEventListener('touchend', onPinchEnd);
-      shell.removeEventListener('touchcancel', onPinchEnd);
-    };
-  }, [cancelLongPress, isYouTube]);
 
   return (
     <main>
@@ -909,7 +679,7 @@ export function Player({
           {STATUS_TEXT[status]}
         </p>
       </header>
-      {loadFailed && isYouTube && (
+      {loadFailed && (
         <div role="alert" className="player-youtube-error">
           <p>{YOUTUBE_FAILED_EXPLANATION}</p>
           <p>
@@ -922,22 +692,19 @@ export function Player({
           </button>
         </div>
       )}
-      {isYouTube ? (
-        // T27: the practice split view — the video (with its ruler and
-        // markers below, and the `youtube-shell` class confining flags and
-        // playhead to the ruler band) in roughly the left half, the practice
-        // readout following the live playhead beside it.
-        <div className="player-practice-split">
-          {timelineShell}
-          <PracticeReadout
-            markers={labeled}
-            currentTime={playback.currentTime}
-            duration={duration}
-          />
-        </div>
-      ) : (
-        timelineShell
-      )}
+      {/* T27: the practice split view — the video (with its ruler and markers
+          below, and the `youtube-shell` class confining flags and playhead to
+          the ruler band) in roughly the left half, the practice readout
+          following the live playhead beside it. Every project is a YouTube
+          project, so the split view is unconditional. */}
+      <div className="player-practice-split">
+        {timelineShell}
+        <PracticeReadout
+          markers={labeled}
+          currentTime={playback.currentTime}
+          duration={duration}
+        />
+      </div>
       <div className="player-transport">
         <button
           type="button"
@@ -1001,9 +768,9 @@ export function Player({
       )}
       {/* The failure card carries the explanation when the video cannot play;
       a precision note about working playback would be a lie beside it. */}
-      {mode === 'ruler' && !(loadFailed && isYouTube) && (
+      {mode === 'ruler' && !loadFailed && (
         <p className="ruler-note">
-          {isYouTube && editing && current.markers.length === 0
+          {editing && current.markers.length === 0
             ? // One note, both truths: the missing labels and the coarse
               // clock the first mark will inherit — stacked hint paragraphs
               // would read as one warning doubled.

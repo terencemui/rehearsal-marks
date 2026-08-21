@@ -1,18 +1,18 @@
-import type { AudioMeta, Marker, ProjectSource } from '../domain';
-
-export type { ProjectSource };
+import type { Marker } from '../domain';
+import { parseYouTubeLink } from '../domain';
 
 /** The player posture persisted per project: Playback (read-only) or Label (editing). */
 export type PlayerMode = 'playback' | 'label';
 
 /**
- * A self-contained user project as stored: the export schema's data plus its
- * audio Blob. IndexedDB is the source of truth; `project.json` is derived.
+ * A self-contained user project as stored. IndexedDB is the source of truth;
+ * `project.json` (the Commons format) is derived.
  *
- * `source` discriminates the two shapes: uploads carry their recording as an
- * audio Blob, YouTube projects stream it instead and store none — `audio` is
- * null exactly for those. `playerMode` is the last-used Playback | Label
- * posture, persisted so reopening lands where the user left off.
+ * Every project is YouTube-only: uploads are retired, so there is no audio
+ * blob, no source discriminator, and no upload audio facts — the record holds
+ * recording identity (the video ID plus duration) and nothing else. `playerMode`
+ * is the last-used Playback | Label posture, persisted so reopening lands where
+ * the user left off.
  */
 export interface ProjectRecord {
   id: string;
@@ -21,80 +21,100 @@ export interface ProjectRecord {
   createdAt: number;
   /** Epoch ms. */
   updatedAt: number;
-  /** Where the recording comes from; discriminates the audio shape. */
-  source: ProjectSource;
-  /** The recording, copied into IndexedDB at import; null for YouTube projects. */
-  audio: Blob | null;
-  audioMeta: AudioMeta;
+  /** The 11-character YouTube video ID — the recording's identity. */
+  videoId: string;
+  /** Seconds, float — the soft check of recording identity. */
+  duration: number;
   markers: Marker[];
-  /** The last-used player mode; each source's default on first open. */
+  /** The last-used player mode; the project's default on first open. */
   playerMode: PlayerMode;
 }
 
 /**
- * Records saved before these fields existed read back without them. Every
- * pre-existing project is an upload, so consumers treat a missing
- * discriminator as `source: 'upload'` — and a missing mode as never opened:
- * the player applies the source-dependent default (`defaultPlayerMode`) on
+ * Records saved before `playerMode` existed read back without it. The player
+ * treats a missing mode as never opened and applies `defaultPlayerMode` on
  * first open, exactly as the creation paths stamp it.
  */
 
 /**
- * A project's first-open posture. Uploads (including legacy records, whose
- * missing source always means upload) open in Label mode, ready to mark.
+ * A project's first-open posture — decided by what the project carries, since
+ * every project is a YouTube project now.
  *
- * A YouTube project turns on whether it arrived with marks: a video whose
- * community label set loaded is immediately practiceable, so it opens in
- * Playback; a bare pasted link has an empty timeline and nothing to practise
- * against, so it opens in Label with the marking tools in reach. Opening an
- * empty project read-only would hide the only thing there is to do with it.
+ * A project turns on whether it arrived with marks: a video whose community
+ * label set loaded is immediately practiceable, so it opens in Playback; a
+ * bare pasted link has an empty timeline and nothing to practise against, so
+ * it opens in Label with the marking tools in reach. Opening an empty project
+ * read-only would hide the only thing there is to do with it.
  *
  * Creation paths stamp this into new records; the player applies it when the
  * persisted mode is missing.
  */
-export function defaultPlayerMode(
-  source: ProjectSource | undefined,
-  markerCount: number,
-): PlayerMode {
-  return source === 'youtube' && markerCount > 0 ? 'playback' : 'label';
+export function defaultPlayerMode(markerCount: number): PlayerMode {
+  return markerCount > 0 ? 'playback' : 'label';
 }
 
 /** One row of the Projects screen: what story #4 asks the list to show. */
 export interface ProjectSummary {
   id: string;
   name: string;
-  /** Seconds, from audioMeta — the recording's known duration. */
+  /** Seconds — the recording's known duration. */
   duration: number;
   markerCount: number;
-  /** Estimated bytes stored: audio blob plus the serialized data fields. */
-  sizeBytes: number;
   /** Epoch ms. */
   updatedAt: number;
-  /** Where the recording comes from — drives the row's YouTube badge. */
-  source: ProjectSource;
-  /** The recording's origin — a YouTube URL for YouTube projects, or empty for uploads. */
-  audioUrl: string;
-  /**
-   * The recording's sha256 — the stable identity the "Loaded" join matches
-   * on, so a catalog redeploy that moves the audio URL still finds the
-   * seeded project.
-   */
-  sha256: string;
 }
 
-const encoder = new TextEncoder();
+/** The pre-v2 stored shape the migration reads; only these fields matter. */
+interface LegacyRecord {
+  id?: unknown;
+  name?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  source?: unknown;
+  audioMeta?: { source?: unknown; duration?: unknown };
+  markers?: unknown;
+  playerMode?: unknown;
+}
 
 /**
- * A project's honest stored size: the audio blob's bytes plus the serialized
- * record data. An estimate, not an exact IndexedDB footprint — exact enough
- * for the storage-full message to rank projects by what freeing each saves.
- * A YouTube project stores no recording, so its null audio counts as zero.
+ * The v2 migration's per-record decision: a stored record becomes its slim
+ * YouTube-only form, or null when it must be deleted. Every record written
+ * before v2 is upload-shaped — a missing source always meant upload — or
+ * YouTube-shaped; only the latter survives, rewritten to carry its video ID
+ * and duration — the recording identity — and nothing else.
  */
-export function estimateStoredSize(record: ProjectRecord): number {
-  const serialized = JSON.stringify({
-    name: record.name,
-    audioMeta: record.audioMeta,
-    markers: record.markers,
-  });
-  return (record.audio?.size ?? 0) + encoder.encode(serialized).byteLength;
+export function slimRecordFromStored(value: unknown): ProjectRecord | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as LegacyRecord;
+  // The discriminator decides: absent or 'upload' is an upload record — the
+  // migration's one-time cut. YouTube records keep their id and marks.
+  if (raw.source !== 'youtube') return null;
+  if (typeof raw.audioMeta?.source !== 'string') return null;
+
+  // A YouTube record's identity is its canonical URL; a stored URL that names
+  // no video cannot play, so it is deleted with the uploads rather than kept
+  // as a broken project.
+  let videoId: string;
+  try {
+    videoId = parseYouTubeLink(raw.audioMeta.source).videoId;
+  } catch {
+    return null;
+  }
+
+  const markers = Array.isArray(raw.markers) ? (raw.markers as Marker[]) : [];
+  return {
+    id: typeof raw.id === 'string' ? raw.id : '',
+    name: typeof raw.name === 'string' ? raw.name : '',
+    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : 0,
+    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : 0,
+    videoId,
+    duration: typeof raw.audioMeta.duration === 'number' ? raw.audioMeta.duration : 0,
+    markers,
+    // A legacy record without a stored mode gets the same default the player
+    // would have applied, so migrated records are canonical.
+    playerMode:
+      raw.playerMode === 'playback' || raw.playerMode === 'label'
+        ? raw.playerMode
+        : defaultPlayerMode(markers.length),
+  };
 }

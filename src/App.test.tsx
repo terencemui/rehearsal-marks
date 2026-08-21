@@ -1,7 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { PeakData } from './audio';
 import { labelSetRow } from './test/commons-fixture';
 import { createStorage, StorageError } from './storage';
 import type { Storage } from './storage';
@@ -9,8 +8,8 @@ import { createAuthController } from './auth';
 import { mockAuth } from './test/auth-fixture';
 import { mockCommonsWrite } from './test/commons-write-fixture';
 import { mockController } from './test/controller-fixture';
-import { uploadLoad, youtubeLoad } from './test/load-fixture';
-import { projectRecord, youtubeProjectRecord } from './test/project-fixture';
+import { youtubeLoad } from './test/load-fixture';
+import { projectRecord } from './test/project-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
 import type { CommunityLabelSet } from './youtube/community';
 import App from './App';
@@ -116,7 +115,7 @@ describe('App create from a YouTube link', () => {
     const stored = (await storage.projects.get(summary.id))!;
     expect(stored.markers).toEqual(community.markers);
     expect(stored.playerMode).toBe('playback');
-    expect(stored.audioMeta.duration).toBe(604.2);
+    expect(stored.duration).toBe(604.2);
   });
 
   it('consults the hosted Commons by default and copies a published set in', async () => {
@@ -220,10 +219,10 @@ describe('App create from a YouTube link', () => {
     expect(controller.extractPeaks).not.toHaveBeenCalled();
     const [stored] = await storage.projects.list();
     expect(stored.name).toBe(VIDEO_TITLE);
-    expect((await storage.projects.get(stored.id))!.audio).toBeNull();
+    expect((await storage.projects.get(stored.id))!.videoId).toBe(VIDEO_ID);
   });
 
-  it('records the canonical URL as identity whatever form was pasted', async () => {
+  it('records the video ID as identity whatever form was pasted', async () => {
     const user = userEvent.setup();
     const { storage } = await renderApp();
 
@@ -231,8 +230,7 @@ describe('App create from a YouTube link', () => {
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     const [stored] = await storage.projects.list();
-    expect(stored.audioUrl).toBe(YOUTUBE_CANONICAL);
-    expect(stored.sizeBytes).toBeLessThan(1000); // no audio bytes stored
+    expect((await storage.projects.get(stored.id))!.videoId).toBe(VIDEO_ID);
   });
 
   it.each([
@@ -290,10 +288,7 @@ describe('App create from a YouTube link', () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(
-      youtubeProjectRecord({
-        name: 'Brahms on YouTube',
-        audioMeta: { ...projectRecord().audioMeta, sizeBytes: 0, source: YOUTUBE_CANONICAL },
-      }),
+      projectRecord({ name: 'Brahms on YouTube', videoId: VIDEO_ID, duration: 372 }),
     );
     const controller = mockController({
       load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
@@ -321,15 +316,17 @@ describe('App create from a YouTube link', () => {
 });
 
 describe('App Projects workspace', () => {
-  it('lists stored projects with name, duration, marker count, and size on start', async () => {
+  it('lists stored projects with name, duration, marker count, and last-modified on start', async () => {
     const storage = await testStorage();
     await storage.projects.save(projectRecord());
     await renderApp(mockController(), storage);
 
     expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
-    // The stored-size estimate for the fixture: 4-byte audio + 296 serialized.
-    expect(screen.getByText(/2:03\.456 · 2 markers · 300 B/)).toBeInTheDocument();
-    expect(screen.getByText(/Total used: 300 B/)).toBeInTheDocument();
+    // The row's meta: duration · marker count · last-modified. The fixture's
+    // updatedAt is more than eight weeks old — the date fallback.
+    expect(screen.getByText(/2:03\.456 · 2 markers · 2023-11-14/)).toBeInTheDocument();
+    // Byte size left the record shape, and the total line with it.
+    expect(screen.queryByText(/Total used/)).not.toBeInTheDocument();
   });
 
   it('shows the empty state pointing at pasting a YouTube link, and no library surface', async () => {
@@ -346,27 +343,25 @@ describe('App Projects workspace', () => {
     storage.close();
   });
 
-  it('reopens a project with its audio and markers intact', async () => {
+  it('reopens a project and plays it from its canonical URL, markers intact', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     const record = projectRecord();
     await storage.projects.save(record);
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 123.456 })),
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 123.456 })),
     });
     await renderApp(controller, storage);
 
     await user.click(await screen.findByRole('button', { name: /Brahms/ }));
 
-    // The player opened on the stored record: the same audio bytes re-decode
-    // to peaks, and the stored markers come with the record.
+    // The player opened on the stored record: no decode (there is no audio),
+    // the load is the YouTube arm's canonical URL, and the stored markers
+    // come with the record.
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
-    const extractOptions = vi.mocked(controller.extractPeaks).mock.calls[0][0];
-    expect(new Uint8Array(await extractOptions.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
-    const loadOptions = uploadLoad(vi.mocked(controller.load).mock.calls[0][0]);
-    expect(new Uint8Array(await loadOptions.blob!.arrayBuffer())).toEqual(
-      new Uint8Array([1, 2, 3, 4]),
-    );
+    expect(controller.extractPeaks).not.toHaveBeenCalled();
+    const loadOptions = youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]);
+    expect(loadOptions.url).toBe(`https://www.youtube.com/watch?v=${record.videoId}`);
     expect(await storage.projects.get(record.id)).toEqual(
       expect.objectContaining({ markers: record.markers }),
     );
@@ -484,53 +479,41 @@ describe('App Projects workspace', () => {
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
   });
 
-  it('drops an in-flight open when the user switches tabs, releasing the controller', async () => {
+  it('drops an in-flight open when the user switches tabs', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(projectRecord());
-    let resolvePeaks!: (peaks: PeakData) => void;
-    const controller = mockController({
-      extractPeaks: vi.fn(
-        () =>
-          new Promise<PeakData>((resolve) => {
-            resolvePeaks = resolve;
-          }),
-      ),
-      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 123.456 })),
+    let releaseRead!: () => void;
+    const pendingGet = new Promise<void>((resolve) => {
+      releaseRead = resolve;
     });
-    await renderApp(controller, storage);
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 123.456 })),
+    });
+    const slowStorage: Storage = {
+      ...storage,
+      projects: {
+        ...storage.projects,
+        get: async (id) => {
+          await pendingGet;
+          return storage.projects.get(id);
+        },
+      },
+    };
+    await renderApp(controller, slowStorage);
     await screen.findByText('Brahms Op. 118 No. 2');
 
     await user.click(screen.getByRole('button', { name: /Brahms/ }));
     await user.click(screen.getByRole('tab', { name: 'Help' }));
     await act(async () => {
-      resolvePeaks({ peaks: [[0, 1]], duration: 10 });
+      releaseRead();
     });
 
-    // The player must not yank the user off the tab they navigated to.
+    // The player must not yank the user off the tab they navigated to. The
+    // session never commits, so the controller it would have owned is never
+    // created in the first place — nothing leaks.
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Brahms Op. 118 No. 2' })).not.toBeInTheDocument();
-    expect(controller.destroy).toHaveBeenCalled();
-  });
-
-  it('reuses decoded peaks when reopening the same project', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
-    const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'waveform' as const, duration: 123.456 })),
-    });
-    await renderApp(controller, storage);
-    await screen.findByText('Brahms Op. 118 No. 2');
-
-    await user.click(screen.getByRole('button', { name: /Brahms/ }));
-    await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByRole('tablist');
-    await user.click(screen.getByRole('button', { name: /Brahms/ }));
-    await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
-
-    expect(controller.extractPeaks).toHaveBeenCalledTimes(1);
   });
 
   it('surfaces a failed final save on exit instead of claiming Saved', async () => {

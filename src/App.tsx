@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { createAudioController, decodePeaksOrNull } from './audio';
-import type { AudioController, PeakData } from './audio';
+import { createAudioController } from './audio';
+import type { AudioController } from './audio';
 import { createDefaultAuthController } from './auth';
 import type { AuthController, AuthState } from './auth';
 import { CommonsError } from './commons/errors';
@@ -50,10 +50,9 @@ export interface AppProps {
   commonsWriteFactory?: () => CommonsWriteController;
 }
 
-/** One open project session: the autosave, its peaks, and its controller. */
+/** One open project session: the autosave and its controller. */
 interface Session {
   autosave: Autosave;
-  peaks: PeakData | null;
   controller: AudioController;
 }
 
@@ -94,19 +93,6 @@ function commonsFailure(): CommonsError {
     "The Commons couldn't be reached. Check your connection and try again.",
     'fetch-failed',
   );
-}
-
-/**
- * Decodes a record's peaks, or null when there is nothing to decode: a
- * YouTube project stores no audio, and a decode failure also lands here —
- * both render the ruler-only player.
- */
-async function decodePeaksFor(
-  record: ProjectRecord,
-  controller: AudioController,
-): Promise<PeakData | null> {
-  if (record.audio === null) return null;
-  return decodePeaksOrNull((blob) => controller.extractPeaks(blob), record.audio);
 }
 
 /** The submissions list as a lookup by project id — the badges' source. */
@@ -185,8 +171,6 @@ function App({
   const commonsWriteRef = useRef<CommonsWriteController | null>(null);
   /** Bumped whenever the tab changes; an in-flight open checks it before committing. */
   const openTokenRef = useRef(0);
-  /** Decoded peaks per project, so reopening never re-decodes an unchanged blob. */
-  const peaksCacheRef = useRef(new Map<string, PeakData | null>());
 
   /** Re-reads the workspace list; a failed read surfaces as a notice, never a rejection. */
   async function refreshProjects(source: Storage): Promise<void> {
@@ -371,9 +355,6 @@ function App({
         setLinkError(outcome.guidance);
         return;
       }
-      // A YouTube project has no waveform to decode, ever; the cache entry
-      // says so up front, so reopening never tries.
-      peaksCacheRef.current.set(outcome.project.id, null);
       if (token !== openTokenRef.current) {
         // The user switched tabs while the title lookup ran (up to ten
         // seconds) — the project is saved and waiting in the list, but
@@ -387,7 +368,6 @@ function App({
         autosave: createAutosave(outcome.project, {
           save: (record) => storage.projects.save(record),
         }),
-        peaks: null,
         controller,
       });
     } catch (error) {
@@ -403,7 +383,7 @@ function App({
     }
   }
 
-  /** Reopens a stored project: peaks re-decode, a decode failure means ruler-only. */
+  /** Reopens a stored project straight into the player — no decode, no hash. */
   async function openProject(id: string): Promise<void> {
     if (storage === null || session !== null || workingRef.current) return;
     workingRef.current = true;
@@ -417,26 +397,13 @@ function App({
         await refreshProjects(storage);
         return;
       }
-      const controller = controllerFactory();
-      let peaks = peaksCacheRef.current.get(id);
-      if (peaks === undefined) {
-        try {
-          peaks = await decodePeaksFor(record, controller);
-          peaksCacheRef.current.set(id, peaks);
-        } catch (error) {
-          controller.destroy();
-          throw error;
-        }
-      }
       if (token !== openTokenRef.current) {
-        // The user switched tabs while the decode ran — drop the open.
-        controller.destroy();
+        // The user switched tabs while the read ran — drop the open.
         return;
       }
       setSession({
         autosave: createAutosave(record, { save: (next) => storage.projects.save(next) }),
-        peaks,
-        controller,
+        controller: controllerFactory(),
       });
     } catch {
       setNotice("Couldn't open that project. Try again.");
@@ -502,7 +469,6 @@ function App({
       try {
         await storage.projects.remove(id);
         setStatus('saved');
-        peaksCacheRef.current.delete(id);
       } catch {
         // A delete is not a save — report it as its own thing rather than
         // through the save vocabulary (whose storage-full branch can never
@@ -529,7 +495,6 @@ function App({
       <Player
         key={session.autosave.get().id}
         autosave={session.autosave}
-        peaks={session.peaks}
         controller={session.controller}
         onExit={() => void closeSession()}
       />
