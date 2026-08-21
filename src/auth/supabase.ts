@@ -111,5 +111,26 @@ export function createSupabaseAuth(env: AuthEnv): SupabaseAuth {
       const { error } = await client.auth.signOut();
       if (error) throw error;
     },
+    async deleteAccount() {
+      // The self-service deletion path (T26): supabase-js's deleteUser is
+      // admin-only, so the account is removed through the
+      // `delete_my_account` RPC — a security-definer function that deletes
+      // the caller's own auth.users row, with the label_sets FK cascade
+      // (migration 20260820120000) taking the contributor's label sets with
+      // it.
+      const { error } = await client.rpc('delete_my_account');
+      if (error) throw error;
+      // The account is gone; the stored session is dead. Clear it locally so
+      // the next load restores anonymous instead of painting a ghost session
+      // that no longer exists server-side. A failure here must not fail the
+      // deletion: the account is already gone, and the controller lands
+      // anonymous from its own success path — the stale session just gets
+      // dropped by the next failed refresh instead.
+      try {
+        await client.auth.signOut({ scope: 'local' });
+      } catch {
+        // The deletion succeeded; a dead local session is cosmetic.
+      }
+    },
   };
 }

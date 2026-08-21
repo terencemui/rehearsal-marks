@@ -34,6 +34,12 @@ The two consumers of that wiring:
 - **Contributor sign-in (T24)** — Google OAuth through supabase-js's auth
   client; the signed-in contributor is the `contributor_id` behind every
   `label_sets` row.
+- **Account deletion (T26)** — a signed-in contributor deletes their account
+  through the `delete_my_account` RPC (migration
+  `20260820210000_delete_my_account.sql`): a security-definer function that
+  removes the caller's own `auth.users` row, with the `label_sets` FK cascade
+  taking their label sets with it. supabase-js's `deleteUser` is admin-only,
+  so the RPC is the self-service path.
 
 ## Google sign-in setup
 

@@ -419,6 +419,11 @@ function App({
     void authRef.current?.signOut();
   }
 
+  /** Deletes the contributor's account and its label sets (T26). */
+  function handleDeleteAccount(): void {
+    void authRef.current?.deleteAccount();
+  }
+
   /**
    * Submits (or re-submits) a YouTube project's label set to the Commons —
    * the moderation gate's intake. A signed-out contributor is routed to
@@ -1006,6 +1011,7 @@ function App({
           state={authState}
           onSignIn={handleSignIn}
           onSignOut={handleSignOut}
+          onDeleteAccount={handleDeleteAccount}
         />
       </header>
       <div role="tablist" aria-label="Workspace" className="tabs">

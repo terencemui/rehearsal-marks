@@ -45,6 +45,12 @@ export interface AuthController {
   signInWithGoogle(): Promise<void>;
   /** Ends the session; a failure lands in state as a notice, never a rejection. */
   signOut(): Promise<void>;
+  /**
+   * Permanently deletes the signed-in contributor's account and the label
+   * sets it owns (T26). A success lands the app anonymous; a failure keeps
+   * the signed-in state with the reason, never a rejection.
+   */
+  deleteAccount(): Promise<void>;
   /** Unsubscribes from the backend; the controller publishes nothing after. */
   destroy(): void;
 }
@@ -64,6 +70,8 @@ export interface SupabaseAuth {
   /** Starts the Google OAuth flow (the full-page redirect). */
   signInWithGoogle(): Promise<void>;
   signOut(): Promise<void>;
+  /** Deletes the signed-in account and, by cascade, its label sets. */
+  deleteAccount(): Promise<void>;
 }
 
 /**
@@ -98,6 +106,7 @@ export function createAuthController(backend: SupabaseAuth | null): AuthControll
       subscribe: () => () => {},
       signInWithGoogle: async () => {},
       signOut: async () => {},
+      deleteAccount: async () => {},
       destroy: () => {},
     };
   }
@@ -179,6 +188,25 @@ export function createAuthController(backend: SupabaseAuth | null): AuthControll
         );
       }
     },
+    deleteAccount: async () => {
+      if (state.kind !== 'signed-in') return;
+      try {
+        await backend.deleteAccount();
+        // The account is gone — the state must be anonymous the moment the
+        // backend confirms it, exactly as sign-out lands on its own success.
+        emit({ kind: 'anonymous' });
+      } catch {
+        // A failed delete changes nothing: the contributor stays signed in,
+        // with the reason next to the control that caused it. (A racing
+        // success — the state already anonymous — changes nothing either;
+        // the failure is not a reason to re-claim a deleted account.)
+        emit(
+          state.kind === 'signed-in'
+            ? { ...state, notice: ACCOUNT_DELETE_FAILED }
+            : state,
+        );
+      }
+    },
     destroy: () => {
       subscription.unsubscribe();
     },
@@ -203,6 +231,7 @@ function sameState(a: AuthState, b: AuthState): boolean {
 
 const SIGN_IN_FAILED =
   "Google sign-in didn't work. You're still browsing anonymously — try again.";
+const ACCOUNT_DELETE_FAILED = "Deleting your account didn't work. Try again.";
 const SIGN_OUT_FAILED = "Signing out didn't work. Try again.";
 const SIGN_OUT_PARTIAL =
   "You're signed out on this device, but the sign-out didn't reach the server.";

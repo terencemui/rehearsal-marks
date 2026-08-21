@@ -1398,6 +1398,62 @@ describe('App contributor sign-in', () => {
     expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
   });
 
+  it('a signed-in contributor can delete their account, confirming the one-way door first', async () => {
+    const { auth } = await renderApp();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await screen.findByText('Signed in as Ava Cellist');
+
+    // The destructive action hides behind an explicit confirmation that
+    // says what the account deletion removes — it never fires by accident.
+    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+    expect(screen.getByText(/every label set you've contributed/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete forever' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Delete forever' }));
+
+    expect(auth.deleteAccount).toHaveBeenCalledOnce();
+    // The deletion lands anonymous: the sign-in prompt is back.
+    expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+  });
+
+  it('cancelling the confirmation leaves the contributor signed in and does not delete', async () => {
+    const { auth } = await renderApp();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await screen.findByText('Signed in as Ava Cellist');
+
+    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(auth.deleteAccount).not.toHaveBeenCalled();
+    expect(screen.getByText('Signed in as Ava Cellist')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument();
+  });
+
+  it('a failed account deletion keeps the contributor signed in with an honest notice', async () => {
+    const { auth } = await renderApp();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await screen.findByText('Signed in as Ava Cellist');
+
+    auth.failNextAccountDelete();
+    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+    await user.click(screen.getByRole('button', { name: 'Delete forever' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/didn't work/i);
+    // Nothing was deleted: the contributor is still signed in and the
+    // confirmation stays, so they can see the reason and retry or cancel.
+    expect(screen.getByText('Signed in as Ava Cellist')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete forever' })).toBeInTheDocument();
+  });
+
   it('an unconfigured deployment says sign-in is unavailable and keeps browsing', async () => {
     const storage = await testStorage();
     render(
