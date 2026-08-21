@@ -6,7 +6,6 @@ import { parseProjectFile, serializeProjectFile } from './domain';
 import { labelSetRow } from './test/commons-fixture';
 import type { ProjectFileData } from './domain';
 import type { CatalogEntry } from './library/catalog';
-import { exportProjectZip } from './portability';
 import { createStorage, sha256, StorageError } from './storage';
 import type { Storage } from './storage';
 import { createAuthController } from './auth';
@@ -14,7 +13,7 @@ import { mockAuth } from './test/auth-fixture';
 import { mockCommonsWrite } from './test/commons-write-fixture';
 import { mockController } from './test/controller-fixture';
 import { uploadLoad, youtubeLoad } from './test/load-fixture';
-import { projectRecord, uploadAudio, youtubeProjectRecord } from './test/project-fixture';
+import { projectRecord, youtubeProjectRecord } from './test/project-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
 import type { CommunityLabelSet } from './youtube/community';
 import App from './App';
@@ -23,7 +22,6 @@ import App from './App';
 async function renderApp(
   controller = mockController(),
   storage?: Storage,
-  download?: (blob: Blob, filename: string) => void,
   fetchTitle: (canonicalUrl: string) => Promise<string | null> = async () => VIDEO_TITLE,
   loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null> = async () => null,
   commons = mockCommonsWrite(),
@@ -34,7 +32,6 @@ async function renderApp(
     <App
       controllerFactory={() => controller}
       storage={opened}
-      download={download}
       // Stubbed by default so no test reaches YouTube's oEmbed endpoint or
       // the community index, and no test constructs a supabase-js client.
       fetchTitle={fetchTitle}
@@ -191,7 +188,6 @@ describe('App create from a YouTube link', () => {
     const { storage } = await renderApp(
       controller,
       undefined,
-      undefined,
       async () => VIDEO_TITLE,
       async () => community,
     );
@@ -347,7 +343,7 @@ describe('App create from a YouTube link', () => {
 
   it('still creates the project when the title cannot be read', async () => {
     const user = userEvent.setup();
-    const { storage } = await renderApp(mockController(), undefined, undefined, async () => null);
+    const { storage } = await renderApp(mockController(), undefined, async () => null);
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -1007,226 +1003,6 @@ describe('App Library tab', () => {
   });
 });
 
-describe('App export and import', () => {
-  /** The app's two file inputs, in document order: zip import, label import. */
-  function fileInputs(container: HTMLElement): HTMLInputElement[] {
-    return [...container.querySelectorAll('input[type="file"]')] as HTMLInputElement[];
-  }
-
-  /** Captures downloads instead of handing them to the browser. */
-  function captureDownloads() {
-    const downloads: Array<{ blob: Blob; filename: string }> = [];
-    return {
-      downloads,
-      download: vi.fn((blob: Blob, filename: string) => downloads.push({ blob, filename })),
-    };
-  }
-
-  it('round-trips a project end-to-end: export the zip, import it back as a new project', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    // The stored sha256 must be the audio's real hash for the import's
-    // integrity check to pass — exactly what the upload path computes.
-    const record = projectRecord();
-    record.audioMeta.sha256 = await sha256(uploadAudio(record));
-    await storage.projects.save(record);
-    const { downloads, download } = captureDownloads();
-    const { container } = await renderApp(mockController(), storage, download);
-    await screen.findByText('Brahms Op. 118 No. 2');
-
-    await user.click(screen.getByRole('button', { name: 'Export' }));
-    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
-    expect(downloads[0].filename).toBe('Brahms Op. 118 No. 2.zip');
-
-    // Import the very zip that was just exported.
-    const zip = new File(
-      [await downloads[0].blob.arrayBuffer()],
-      'Brahms Op. 118 No. 2.zip',
-      { type: 'application/zip' },
-    );
-    await user.upload(fileInputs(container)[0], zip);
-
-    // The workspace now holds both: the original and a fresh import with a
-    // suffixed name — import created, it never overwrote.
-    await screen.findByText('Brahms Op. 118 No. 2 (2)');
-    const projects = await storage.projects.list();
-    expect(projects).toHaveLength(2);
-    const importedSummary = projects.find((p) => p.id !== record.id)!;
-    expect(importedSummary.name).toBe('Brahms Op. 118 No. 2 (2)');
-    const stored = await storage.projects.get(importedSummary.id);
-    expect(stored!.audioMeta.sha256).toBe(record.audioMeta.sha256);
-    expect(stored!.markers).toEqual(record.markers);
-    expect(new Uint8Array(await uploadAudio(stored!).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
-  });
-
-  it('clears a stale failure line when a later zip import succeeds', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    const record = projectRecord();
-    record.audioMeta.sha256 = await sha256(uploadAudio(record));
-    await storage.projects.save(record);
-    let saves = 0;
-    // The rename's save fails; the zip import's save (the next one) succeeds.
-    const flaky: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        save: async (next) => {
-          saves += 1;
-          if (saves === 1) throw new StorageError('Browser storage is full.', 'storage-full');
-          await storage.projects.save(next);
-        },
-      },
-    };
-    const { container } = await renderApp(mockController(), flaky);
-    await screen.findByText('Brahms Op. 118 No. 2');
-
-    // A rename hits the full store and leaves the failure line up.
-    const row = screen.getByRole('listitem');
-    await user.click(within(row).getByRole('button', { name: 'Rename' }));
-    const input = screen.getByRole('textbox', { name: 'Project name' });
-    await user.clear(input);
-    await user.type(input, 'New Name{enter}');
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Storage full — free up space to keep saving.',
-    );
-
-    // A zip import then succeeds — the failure line must clear.
-    const zip = await exportProjectZip(record);
-    const file = new File([await zip.arrayBuffer()], 'brahms.zip', { type: 'application/zip' });
-    await user.upload(fileInputs(container)[0], file);
-
-    await screen.findByText('Brahms Op. 118 No. 2 (2)');
-    expect(screen.getByRole('status')).toHaveTextContent('Saved');
-  });
-
-  it('exports a label set that applies to its own recording and is refused by another', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    const brahms = projectRecord();
-    brahms.audioMeta.sha256 = await sha256(uploadAudio(brahms));
-    const mozart = projectRecord({
-      id: 'mozart',
-      name: 'Mozart K. 466',
-      audio: new Blob([new Uint8Array([9, 9, 9])], { type: 'audio/mpeg' }),
-    });
-    mozart.audioMeta = { ...mozart.audioMeta, sha256: await sha256(uploadAudio(mozart)) };
-    await storage.projects.save(brahms);
-    await storage.projects.save(mozart);
-    const { downloads, download } = captureDownloads();
-    const { container } = await renderApp(mockController(), storage, download);
-    await screen.findByText('Brahms Op. 118 No. 2');
-
-    const brahmsRow = screen.getByText('Brahms Op. 118 No. 2').closest('li')!;
-    await user.click(within(brahmsRow).getByRole('button', { name: 'Export labels' }));
-    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
-    expect(downloads[0].filename).toBe('Brahms Op. 118 No. 2.labels.json');
-    const labelsFile = new File(
-      [await downloads[0].blob.arrayBuffer()],
-      'labels.json',
-      { type: 'application/json' },
-    );
-
-    // Applying it to a project on a different recording is refused, with the
-    // explanation — and the project is left untouched.
-    const mozartRow = screen.getByText('Mozart K. 466').closest('li')!;
-    await user.click(within(mozartRow).getByRole('button', { name: 'Import labels' }));
-    await user.click(within(mozartRow).getByRole('button', { name: 'Replace' }));
-    await user.upload(fileInputs(container)[1], labelsFile);
-    expect(await screen.findByRole('alert')).toHaveTextContent('made for a different recording');
-    expect((await storage.projects.get('mozart'))!.markers).toEqual(mozart.markers);
-
-    // On its own recording it applies: the alert clears and the markers land.
-    await user.click(within(brahmsRow).getByRole('button', { name: 'Import labels' }));
-    await user.click(within(brahmsRow).getByRole('button', { name: 'Replace' }));
-    await user.upload(fileInputs(container)[1], labelsFile);
-    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
-    expect((await storage.projects.get('project-1'))!.markers).toEqual(brahms.markers);
-  });
-
-  it('explains when the imported file is not a project file at all', async () => {
-    const user = userEvent.setup();
-    const { container } = await renderApp();
-
-    // Not a zip (no PK magic) and not JSON — the content, not the name,
-    // decides the pipeline, and the JSON parser explains itself.
-    await user.upload(
-      fileInputs(container)[0],
-      new File(['not a zip'], 'fake.zip', { type: 'application/zip' }),
-    );
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('not valid JSON');
-  });
-
-  it('exports a YouTube project as a bare project JSON carrying the video identity', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(
-      youtubeProjectRecord({
-        name: 'Brahms on YouTube',
-        audioMeta: { ...projectRecord().audioMeta, sizeBytes: 0, source: YOUTUBE_CANONICAL },
-      }),
-    );
-    const { downloads, download } = captureDownloads();
-    await renderApp(mockController(), storage, download);
-    const row = (await screen.findByText('Brahms on YouTube')).closest('li')!;
-
-    await user.click(within(row).getByRole('button', { name: 'Export' }));
-
-    // No audio to bundle, so the full export is a bare project JSON — the
-    // same file doubles as the community contribution format.
-    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
-    expect(downloads[0].filename).toBe('Brahms on YouTube.json');
-    const parsed = parseProjectFile(await downloads[0].blob.text());
-    expect(parsed.audioMeta.source).toBe(YOUTUBE_CANONICAL);
-    expect(parsed.project.source).toBe('youtube');
-  });
-
-  it('imports an exported YouTube project JSON as a fresh project', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    const { container } = await renderApp(mockController(), storage, vi.fn());
-    const json = JSON.stringify({
-      schemaVersion: 1,
-      project: {
-        id: 'shared-1',
-        name: 'A shared performance',
-        createdAt: 0,
-        updatedAt: 0,
-        source: 'youtube',
-      },
-      markers: [{ id: 'm1', time: 10, label: 'A', aliases: [], createdAt: 1 }],
-      audioMeta: {
-        sha256: '',
-        duration: 604.2,
-        mimeType: '',
-        filename: 'A shared performance',
-        sizeBytes: 0,
-        source: 'https://youtu.be/dQw4w9WgXcQ',
-        license: '',
-        attribution: '',
-      },
-    });
-
-    await user.upload(
-      fileInputs(container)[0],
-      new File([json], 'shared.json', { type: 'application/json' }),
-    );
-
-    // Import always creates: the shared project round-trips as a fresh,
-    // editable copy pointing at the same video, in the canonical form.
-    expect(await screen.findByText('A shared performance')).toBeInTheDocument();
-    const summary = (await storage.projects.list()).find((p) => p.name === 'A shared performance')!;
-    expect(summary.source).toBe('youtube');
-    const stored = (await storage.projects.get(summary.id))!;
-    expect(stored.id).not.toBe('shared-1');
-    expect(stored.audioMeta.source).toBe(YOUTUBE_CANONICAL);
-    expect(stored.markers).toHaveLength(1);
-    expect(stored.playerMode).toBe('playback');
-  });
-});
-
 describe('App contributor sign-in', () => {
   it('shows Sign in with Google to an anonymous visitor, who can use the whole app', async () => {
     const { storage } = await renderApp();
@@ -1395,7 +1171,6 @@ describe('App Commons submission', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       commons,
     );
     await pasteLink(user, YOUTUBE_CANONICAL);
@@ -1434,7 +1209,7 @@ describe('App Commons submission', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
     });
-    const { auth } = await renderApp(controller, undefined, undefined, undefined, undefined, commons);
+    const { auth } = await renderApp(controller, undefined, undefined, undefined, commons);
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     await user.click(screen.getByRole('button', { name: 'Projects' }));

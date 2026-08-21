@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
-    "fflate": "^0.8.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "wavesurfer.js": "^7.12.11"
