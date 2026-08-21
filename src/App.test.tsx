@@ -355,7 +355,11 @@ describe('App create from a YouTube link', () => {
   it('reads a missing Commons config as no labels, without touching the network', async () => {
     // The default transport is inert without Vite env — a dev build or a
     // test run never queries anything, and a link create lands in the
-    // unmatched path with the empty state explained.
+    // unmatched path with the empty state explained. Stub the vars empty so
+    // a local .env.local cannot wire the transport in: this test is about
+    // the unconfigured app, whatever the machine carries.
+    vi.stubEnv('VITE_SUPABASE_URL', '');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
     const fetchMock = vi.fn(async () => {
       throw new Error('unexpected fetch');
     });
