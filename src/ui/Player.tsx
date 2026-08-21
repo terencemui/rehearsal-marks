@@ -52,15 +52,6 @@ export interface PlayerProps {
   peaks: PeakData | null;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
-  /**
-   * When set, the player streams this URL instead of the record's audio
-   * blob: the library's first load, where playback must start while the
-   * download still runs. The record's blob is still persisted behind the
-   * scenes, but the stream itself keeps playing uninterruptedly.
-   */
-  streamUrl?: string | null;
-  /** Replaces the ruler note (the library stream explains itself differently). */
-  rulerNote?: string;
   /** Back to the Projects screen; the shell flushes before unmounting. */
   onExit: () => void;
 }
@@ -150,8 +141,6 @@ export function Player({
   autosave,
   peaks,
   controller,
-  streamUrl = null,
-  rulerNote,
   onExit,
 }: PlayerProps) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -521,8 +510,9 @@ export function Player({
   }, []);
 
   // The record's blob, read through a ref so the load effect's dependencies
-  // don't include it: while a url stream is active, the blob landing
-  // mid-stream must not re-run the load and restart playback.
+  // don't include the record object (which changes on every marker edit):
+  // the audio is fixed for the life of a session, so a fresh record identity
+  // must never re-run the load and restart playback.
   const audioBlobRef = useRef(record.audio);
   audioBlobRef.current = record.audio;
 
@@ -547,8 +537,8 @@ export function Player({
             }
           : {
               source: 'upload',
-              blob: streamUrl !== null ? null : audioBlobRef.current,
-              url: streamUrl,
+              blob: audioBlobRef.current,
+              url: null,
               container,
               peaks,
             },
@@ -587,11 +577,9 @@ export function Player({
     return () => {
       cancelled = true;
     };
-    // `streamUrl` is the load's only changing target: the blob is a ref
-    // (uploads never change it mid-session) so a stream stays uninterrupted.
     // The source and its URL are fixed for the life of a session; `loadAttempt`
     // is the failure card's retry, the one deliberate re-run of the whole load.
-  }, [autosave, controller, isYouTube, loadAttempt, peaks, streamUrl, update, youtubeUrl]);
+  }, [autosave, controller, isYouTube, loadAttempt, peaks, update, youtubeUrl]);
 
   /** The failure card's retry: back to loading, then a fresh load attempt. */
   function retryLoad(): void {
@@ -1015,13 +1003,12 @@ export function Player({
       a precision note about working playback would be a lie beside it. */}
       {mode === 'ruler' && !(loadFailed && isYouTube) && (
         <p className="ruler-note">
-          {rulerNote ??
-            (isYouTube && editing && current.markers.length === 0
-              ? // One note, both truths: the missing labels and the coarse
-                // clock the first mark will inherit — stacked hint paragraphs
-                // would read as one warning doubled.
-                `${YOUTUBE_NO_LABELS_NOTE} ${YOUTUBE_RULER_NOTE}`
-              : defaultRulerNote())}
+          {isYouTube && editing && current.markers.length === 0
+            ? // One note, both truths: the missing labels and the coarse
+              // clock the first mark will inherit — stacked hint paragraphs
+              // would read as one warning doubled.
+              `${YOUTUBE_NO_LABELS_NOTE} ${YOUTUBE_RULER_NOTE}`
+            : defaultRulerNote()}
         </p>
       )}
     </main>

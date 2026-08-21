@@ -1,31 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseProjectFile, serializeProjectFile } from '../domain';
-import type { Marker, ProjectFileData } from '../domain';
 import { projectRecord, uploadAudio, youtubeProjectRecord } from '../test/project-fixture';
 import { StorageError } from './errors';
 import { createStorage } from './repository';
 
 const testStorage = () => createStorage({ name: `repo-test-${crypto.randomUUID()}` });
-
-/** A parsed label set with full recording identity — the library's trust anchor. */
-function labelset(markers: Marker[] = []): ProjectFileData {
-  return parseProjectFile(
-    serializeProjectFile({
-      project: { id: 'lib-1', name: 'Library piece', createdAt: 0, updatedAt: 0, source: 'upload' },
-      markers,
-      audioMeta: {
-        sha256: 'lib-hash',
-        duration: 60,
-        mimeType: 'audio/mpeg',
-        filename: 'piece.mp3',
-        sizeBytes: 2,
-        source: 'https://example.org/piece.mp3',
-        license: 'CC0',
-        attribution: 'Someone',
-      },
-    }),
-  );
-}
 
 /**
  * Expected stored size for the summary-test records below, computed by hand:
@@ -183,79 +161,6 @@ describe('project repository', () => {
     expect(error).not.toBeInstanceOf(StorageError);
 
     putSpy.mockRestore();
-    storage.close();
-  });
-});
-
-describe('library-cache repository', () => {
-  it('round-trips a cached entry: audio blob and label set intact', async () => {
-    const storage = await testStorage();
-    const entryLabelset = labelset([{ id: 'm1', time: 10, aliases: [], createdAt: 0 }]);
-    const entry = {
-      id: 'entry-1',
-      audio: new Blob([new Uint8Array([9, 9])], { type: 'audio/mpeg' }),
-      labelset: entryLabelset,
-      cachedAt: 1_700_000_000_000,
-    };
-
-    await storage.library.save(entry);
-    const loaded = await storage.library.get('entry-1');
-
-    expect(loaded!.cachedAt).toBe(entry.cachedAt);
-    expect(loaded!.labelset).toEqual(entry.labelset);
-    expect(await blobBytes(loaded!.audio)).toEqual([9, 9]);
-    storage.close();
-  });
-
-  it('lists summaries with size and cached time, newest first', async () => {
-    const storage = await testStorage();
-    const ls = labelset();
-    await storage.library.save({
-      id: 'old',
-      audio: new Blob([new Uint8Array([1])]),
-      labelset: ls,
-      cachedAt: 1_000,
-    });
-    await storage.library.save({
-      id: 'new',
-      audio: new Blob([new Uint8Array([2])]),
-      labelset: ls,
-      cachedAt: 2_000,
-    });
-
-    expect(await storage.library.list()).toEqual([
-      { id: 'new', sizeBytes: 1, cachedAt: 2_000 },
-      { id: 'old', sizeBytes: 1, cachedAt: 1_000 },
-    ]);
-    storage.close();
-  });
-
-  it('evicts one entry without touching projects', async () => {
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
-    const ls = labelset();
-    await storage.library.save({ id: 'keep', audio: new Blob([new Uint8Array([1])]), labelset: ls, cachedAt: 1 });
-    await storage.library.save({ id: 'drop', audio: new Blob([new Uint8Array([1])]), labelset: ls, cachedAt: 2 });
-
-    await storage.library.evict('drop');
-
-    expect(await storage.library.get('drop')).toBeUndefined();
-    expect(await storage.library.get('keep')).not.toBeUndefined();
-    expect(await storage.projects.get('project-1')).not.toBeUndefined();
-    storage.close();
-  });
-
-  it('evicts the whole cache without touching projects', async () => {
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
-    const ls = labelset();
-    await storage.library.save({ id: 'e1', audio: new Blob([new Uint8Array([1])]), labelset: ls, cachedAt: 1 });
-    await storage.library.save({ id: 'e2', audio: new Blob([new Uint8Array([1])]), labelset: ls, cachedAt: 2 });
-
-    await storage.library.evictAll();
-
-    expect(await storage.library.list()).toEqual([]);
-    expect(await storage.projects.get('project-1')).not.toBeUndefined();
     storage.close();
   });
 });

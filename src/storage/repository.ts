@@ -1,7 +1,7 @@
-import { LIBRARY_STORE, PROJECTS_STORE, openDatabase, requestResult, transactionDone } from './db';
+import { PROJECTS_STORE, openDatabase, requestResult, transactionDone } from './db';
 import { translateError } from './errors';
 import { estimateStoredSize } from './records';
-import type { LibraryEntryRecord, LibraryEntrySummary, ProjectRecord, ProjectSummary } from './records';
+import type { ProjectRecord, ProjectSummary } from './records';
 
 /** Persistence for user projects — the store that is never auto-evicted. */
 export interface ProjectRepository {
@@ -13,20 +13,9 @@ export interface ProjectRepository {
   remove(id: string): Promise<void>;
 }
 
-/** Persistence for the evictable library cache. */
-export interface LibraryRepository {
-  save(entry: LibraryEntryRecord): Promise<void>;
-  get(id: string): Promise<LibraryEntryRecord | undefined>;
-  /** Cached entries newest first, with sizes for eviction decisions. */
-  list(): Promise<LibraryEntrySummary[]>;
-  evict(id: string): Promise<void>;
-  evictAll(): Promise<void>;
-}
-
-/** The persistence layer: one connection, both repositories. */
+/** The persistence layer: one connection. */
 export interface Storage {
   projects: ProjectRepository;
-  library: LibraryRepository;
   close(): void;
 }
 
@@ -50,18 +39,6 @@ export async function createStorage(options: CreateStorageOptions = {}): Promise
       },
       remove: (id) => write(db, PROJECTS_STORE, (store) => store.delete(id)),
     },
-    library: {
-      save: (entry) => write(db, LIBRARY_STORE, (store) => store.put(entry)),
-      get: (id) => read<LibraryEntryRecord | undefined>(db, LIBRARY_STORE, (store) => store.get(id)),
-      list: async () => {
-        const entries = await read<LibraryEntryRecord[]>(db, LIBRARY_STORE, (store) => store.getAll());
-        return entries
-          .map(summarizeLibraryEntry)
-          .sort((a, b) => b.cachedAt - a.cachedAt);
-      },
-      evict: (id) => write(db, LIBRARY_STORE, (store) => store.delete(id)),
-      evictAll: () => write(db, LIBRARY_STORE, (store) => store.clear()),
-    },
     close: () => db.close(),
   };
 }
@@ -79,14 +56,6 @@ function summarizeProject(record: ProjectRecord): ProjectSummary {
     source: record.source ?? 'upload',
     audioUrl: record.audioMeta.source,
     sha256: record.audioMeta.sha256,
-  };
-}
-
-function summarizeLibraryEntry(entry: LibraryEntryRecord): LibraryEntrySummary {
-  return {
-    id: entry.id,
-    sizeBytes: entry.audio.size,
-    cachedAt: entry.cachedAt,
   };
 }
 

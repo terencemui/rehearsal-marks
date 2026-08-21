@@ -1,4 +1,4 @@
-import type { AudioMeta, Marker, ProjectFileData, ProjectSource } from '../domain';
+import type { AudioMeta, Marker, ProjectSource } from '../domain';
 
 export type { ProjectSource };
 
@@ -49,10 +49,6 @@ export interface ProjectRecord {
  * against, so it opens in Label with the marking tools in reach. Opening an
  * empty project read-only would hide the only thing there is to do with it.
  *
- * Library-seeded projects are their own case — they carry a label set but
- * their source is the audio file they were seeded from, so `seedProject`
- * states Playback directly rather than deriving it here.
- *
  * Creation paths stamp this into new records; the player applies it when the
  * persisted mode is missing.
  */
@@ -76,7 +72,7 @@ export interface ProjectSummary {
   updatedAt: number;
   /** Where the recording comes from — drives the row's YouTube badge. */
   source: ProjectSource;
-  /** The recording's origin — a library audio URL, or empty for uploads. */
+  /** The recording's origin — a YouTube URL for YouTube projects, or empty for uploads. */
   audioUrl: string;
   /**
    * The recording's sha256 — the stable identity the "Loaded" join matches
@@ -84,26 +80,6 @@ export interface ProjectSummary {
    * seeded project.
    */
   sha256: string;
-}
-
-/**
- * A cached community recording: audio plus its parsed label set, stored
- * independently of user projects so the cache can be evicted on its own.
- */
-export interface LibraryEntryRecord {
-  /** The library catalog entry id. */
-  id: string;
-  audio: Blob;
-  labelset: ProjectFileData;
-  /** Epoch ms. */
-  cachedAt: number;
-}
-
-/** One row of the cache — enough to decide what to evict under pressure. */
-export interface LibraryEntrySummary {
-  id: string;
-  sizeBytes: number;
-  cachedAt: number;
 }
 
 const encoder = new TextEncoder();

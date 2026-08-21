@@ -62,7 +62,6 @@ export interface ProjectsScreenProps {
   onSubmitToCommons: (id: string) => void;
   /** Starts the Google OAuth flow — a signed-out contributor's submit. */
   onSignIn: () => void;
-  onBrowseLibrary: () => void;
 }
 
 /**
@@ -85,7 +84,6 @@ export function ProjectsScreen({
   submittingId = null,
   onSubmitToCommons,
   onSignIn,
-  onBrowseLibrary,
 }: ProjectsScreenProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -132,13 +130,7 @@ export function ProjectsScreen({
       {projects.length === 0 ? (
         <section className="projects-empty">
           <h2>No projects yet</h2>
-          <p>
-            Paste a YouTube link above to start marking, or browse the community library for
-            a pre-marked recording.
-          </p>
-          <button type="button" onClick={onBrowseLibrary}>
-            Browse the library
-          </button>
+          <p>Paste a YouTube link above to start marking.</p>
         </section>
       ) : (
         <>
