@@ -22,6 +22,7 @@ import {
   youtubeAudioMeta,
 } from '../domain';
 import type { Marker, ProjectFileData } from '../domain';
+import type { ProjectRecord } from '../storage';
 
 export const PUBLICATION_STATUSES = ['pending', 'published', 'rejected'] as const;
 export type PublicationStatus = (typeof PUBLICATION_STATUSES)[number];
@@ -199,6 +200,29 @@ export function projectFileFromLabelSetRow(row: LabelSetRow): ProjectFileData {
       license: '',
       attribution: '',
     }),
+  };
+}
+
+/**
+ * The record's data fields, as the project-file format wants them — the
+ * shared conversion behind the Commons submission, so the record direction
+ * and the row direction never drift apart on which fields carry recording
+ * identity and which describe stored bytes.
+ */
+export function projectFileFromRecord(record: ProjectRecord): ProjectFileData {
+  return {
+    project: {
+      id: record.id,
+      name: record.name,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      source: record.source,
+    },
+    markers: record.markers,
+    // A YouTube file carries the recording identity that applies — the
+    // canonical URL, the known duration, and the title — and leaves empty
+    // everything that describes stored bytes, whatever the record carries.
+    audioMeta: record.source === 'youtube' ? youtubeAudioMeta(record.audioMeta) : record.audioMeta,
   };
 }
 

@@ -29,9 +29,6 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
     onOpen: vi.fn(),
     onRename: vi.fn(),
     onDelete: vi.fn(),
-    onExport: vi.fn(),
-    onExportLabels: vi.fn(),
-    onImportLabels: vi.fn(),
     authKind: 'signed-in',
     commonsRows: null,
     onSubmitToCommons: vi.fn(),
@@ -69,9 +66,6 @@ describe('ProjectsScreen list', () => {
         onOpen={vi.fn()}
         onRename={vi.fn()}
         onDelete={vi.fn()}
-        onExport={vi.fn()}
-        onExportLabels={vi.fn()}
-        onImportLabels={vi.fn()}
         authKind="signed-in"
         commonsRows={null}
         onSubmitToCommons={vi.fn()}
@@ -211,62 +205,6 @@ describe('ProjectsScreen delete', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(props.onDelete).toHaveBeenCalledWith('project-1');
-  });
-});
-
-describe('ProjectsScreen export', () => {
-  it('routes Export and Export labels to the caller with the row’s project id', async () => {
-    const user = userEvent.setup();
-    const { props } = renderScreen();
-
-    await user.click(screen.getByRole('button', { name: 'Export' }));
-    expect(props.onExport).toHaveBeenCalledWith('project-1');
-
-    await user.click(screen.getByRole('button', { name: 'Export labels' }));
-    expect(props.onExportLabels).toHaveBeenCalledWith('project-1');
-  });
-});
-
-describe('ProjectsScreen label-set import', () => {
-  it('confirms before replacing a project that has markers, and Cancel walks it back', async () => {
-    const user = userEvent.setup();
-    const { props } = renderScreen();
-
-    await user.click(screen.getByRole('button', { name: 'Import labels' }));
-
-    expect(
-      screen.getByText('Replace this project’s 2 markers with the label set?'),
-    ).toBeInTheDocument();
-    expect(props.onImportLabels).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.getByRole('button', { name: 'Import labels' })).toBeInTheDocument();
-    expect(props.onImportLabels).not.toHaveBeenCalled();
-  });
-
-  it('hands the picked file to the caller with the row’s project id', async () => {
-    const user = userEvent.setup();
-    const { props, container } = renderScreen();
-
-    await user.click(screen.getByRole('button', { name: 'Import labels' }));
-    await user.click(screen.getByRole('button', { name: 'Replace' }));
-    const file = new File(['{}'], 'labels.json', { type: 'application/json' });
-    await user.upload(container.querySelector('input[type="file"]')!, file);
-
-    expect(props.onImportLabels).toHaveBeenCalledWith('project-1', file);
-  });
-
-  it('skips the confirmation when the project has no markers', async () => {
-    const user = userEvent.setup();
-    const { props, container } = renderScreen({ projects: [summary({ markerCount: 0 })] });
-
-    await user.click(screen.getByRole('button', { name: 'Import labels' }));
-    expect(screen.queryByText(/Replace this project/)).not.toBeInTheDocument();
-
-    const file = new File(['{}'], 'labels.json', { type: 'application/json' });
-    await user.upload(container.querySelector('input[type="file"]')!, file);
-
-    expect(props.onImportLabels).toHaveBeenCalledWith('project-1', file);
   });
 });
 

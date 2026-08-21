@@ -14,7 +14,7 @@ import { parseCatalog, resolveUrl } from './library/catalog';
 import type { CatalogEntry } from './library/catalog';
 import { LibraryError } from './library/errors';
 import { downloadAndCache, fetchLabelset, seededProjectId, seedProject } from './library/load';
-import { exportLabelSetJson, exportProjectJson, exportProjectZip, importLabelSet, importProjectJson, importProjectZip, projectFileFromRecord, sanitizeDownloadName } from './portability';
+import { projectFileFromRecord } from './commons/labelSet';
 import { validateProjectName } from './projects/summary';
 import { createAutosave, createStorage, saveStatusFor, sha256, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
@@ -23,9 +23,7 @@ import type { CommunityLabelSet } from './youtube/community';
 import { ContributorControl } from './ui/Contributor';
 import { CreateProject } from './ui/CreateProject';
 import { LibraryScreen } from './ui/LibraryScreen';
-import { triggerDownload } from './ui/download';
 import { HelpTab } from './ui/HelpTab';
-import { ImportPicker } from './ui/ImportPicker';
 import { Player } from './ui/Player';
 import { ProjectsScreen } from './ui/ProjectsScreen';
 import './ui/app.css';
@@ -35,8 +33,6 @@ export interface AppProps {
   controllerFactory?: () => AudioController;
   /** Test seam: an already-opened storage; the app opens its own when absent. */
   storage?: Storage;
-  /** Test seam: captures downloads instead of handing them to the browser. */
-  download?: (blob: Blob, filename: string) => void;
   /** Test seam: the video-title lookup, so component tests never touch the network. */
   fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
   /**
@@ -178,16 +174,15 @@ function rowsById(rows: LabelSetRow[]): Record<string, LabelSetRow> {
 
 /**
  * The app shell: the Projects tab is home — the link-only create, the list,
- * rename, delete, export, and import. The Library tab (T11) lists the
- * community catalog and loads entries into editable projects; Help (T13) is
- * the discoverable reference. Opening a project drops into the player;
- * leaving flushes the session's autosave before the list is re-read, so the
- * workspace never shows stale data.
+ * rename, and delete. The Library tab (T11) lists the community catalog and
+ * loads entries into editable projects; Help (T13) is the discoverable
+ * reference. Opening a project drops into the player; leaving flushes the
+ * session's autosave before the list is re-read, so the workspace never
+ * shows stale data.
  */
 function App({
   controllerFactory = createAudioController,
   storage: injectedStorage,
-  download = triggerDownload,
   fetchTitle = fetchYouTubeTitle,
   // The community transport, per ADR-0001: an anonymous query against the
   // hosted Commons, run behind the create pipeline's seam. A project not
@@ -230,8 +225,6 @@ function App({
   const [loadingEntryId, setLoadingEntryId] = useState<string | null>(null);
   /** Bumped by the catalog's retry button — refetches without a tab round-trip. */
   const [catalogAttempt, setCatalogAttempt] = useState(0);
-  const [importingZip, setImportingZip] = useState(false);
-  const [importingLabelsId, setImportingLabelsId] = useState<string | null>(null);
   /** The contributor session — the header's sign-in state. Anonymous first paint. */
   const [authState, setAuthState] = useState<AuthState>({ kind: 'anonymous' });
   /**
@@ -787,151 +780,10 @@ function App({
     }
   }
 
-  /** Imports a picked zip or project JSON as a brand-new project — import can only create. */
-  async function handleImportFile(file: File): Promise<void> {
-    if (storage === null || workingRef.current) return;
-    workingRef.current = true;
-    setImportingZip(true);
-    setNotice(null);
-    try {
-      // Names come from a fresh list read, not the render-closure state: the
-      // workspace can be interactive before the first list resolves, and a
-      // failed list read leaves the state stale — naming against either would
-      // let an import duplicate an existing project's name.
-      const names = (await storage.projects.list()).map((p) => p.name);
-      // The two import formats: an upload's full project is a zip; a YouTube
-      // project's is a bare project JSON — the same file its export produces.
-      // Dispatch on the content, never the name: a download service that
-      // renamed a JSON to .txt, or a zip saved under a .json name, must land
-      // in the pipeline that can actually read it.
-      const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-      const isZip =
-        head.length === 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
-      const outcome = isZip
-        ? await importProjectZip(file, {
-            existingNames: names,
-            save: (record) => storage.projects.save(record),
-          })
-        : await importProjectJson(file, {
-            existingNames: names,
-            save: (record) => storage.projects.save(record),
-          });
-      if (!outcome.ok) {
-        setNotice(outcome.guidance);
-        return;
-      }
-      await refreshProjects(storage);
-      // The import's write succeeded — clear any stale failure text left by
-      // an earlier rename's save, exactly as renameProject's success does.
-      setStatus('saved');
-    } catch (error) {
-      setNotice(
-        error instanceof StorageError && error.code === 'storage-full'
-          ? 'Browser storage is full — free up space, then import again.'
-          : 'Something went wrong importing the project. Please try again.',
-      );
-    } finally {
-      workingRef.current = false;
-      setImportingZip(false);
-    }
-  }
-
-  /** Downloads the full project — one zip for uploads, bare project JSON for YouTube. */
-  async function handleExport(id: string): Promise<void> {
-    if (storage === null) return;
-    setNotice(null);
-    try {
-      const record = await storage.projects.get(id);
-      if (record === undefined) {
-        // A stale row (another tab deleted it) — quietly re-sync the list.
-        await refreshProjects(storage);
-        return;
-      }
-      if (record.audio === null) {
-        // A YouTube project has no audio to bundle, and needs none: a bare
-        // project JSON carrying the video identity and the marks is the full
-        // export — and the community contribution format.
-        download(
-          new Blob([exportProjectJson(record)], { type: 'application/json' }),
-          `${sanitizeDownloadName(record.name)}.json`,
-        );
-        return;
-      }
-      download(await exportProjectZip(record), `${sanitizeDownloadName(record.name)}.zip`);
-    } catch {
-      setNotice('Something went wrong exporting the project. Try again.');
-    }
-  }
-
-  /** Downloads the label-set-only JSON — the community contribution format. */
-  async function handleExportLabels(id: string): Promise<void> {
-    if (storage === null) return;
-    setNotice(null);
-    try {
-      const record = await storage.projects.get(id);
-      if (record === undefined) {
-        await refreshProjects(storage);
-        return;
-      }
-      download(
-        new Blob([exportLabelSetJson(record)], { type: 'application/json' }),
-        `${sanitizeDownloadName(record.name)}.labels.json`,
-      );
-    } catch {
-      setNotice('Something went wrong exporting the labels. Try again.');
-    }
-  }
-
-  /** Applies a picked label set to one project, gated on recording identity. */
-  async function handleImportLabels(id: string, file: File): Promise<void> {
-    if (storage === null || workingRef.current) return;
-    workingRef.current = true;
-    setImportingLabelsId(id);
-    setNotice(null);
-    try {
-      let record: ProjectRecord | undefined;
-      try {
-        record = await storage.projects.get(id);
-      } catch {
-        setNotice('Something went wrong reading that project. Please reload.');
-        return;
-      }
-      if (record === undefined) {
-        await refreshProjects(storage);
-        return;
-      }
-      const outcome = importLabelSet(await file.text(), record.audioMeta.sha256);
-      if (!outcome.ok) {
-        setNotice(outcome.guidance);
-        return;
-      }
-      setStatus('saving');
-      try {
-        await storage.projects.save({ ...record, markers: outcome.markers, updatedAt: Date.now() });
-        setStatus('saved');
-      } catch (error) {
-        setStatus(saveStatusFor(error));
-      }
-      await refreshProjects(storage);
-    } catch {
-      // Everything user-caused is an outcome and every storage write has its
-      // own branch; what lands here is the file read itself — still the user's
-      // failure to see, never a silent unhandled rejection.
-      setNotice('Something went wrong importing the label set. Please try again.');
-    } finally {
-      workingRef.current = false;
-      setImportingLabelsId(null);
-    }
-  }
-
   // Every workspace pipeline holds the working lock while it runs; each
   // control must be disabled across all of them, or an action made mid-flight
   // is silently dropped by the lock guard.
-  const workspaceBusy =
-    creatingFromLink ||
-    openingId !== null ||
-    importingZip ||
-    importingLabelsId !== null;
+  const workspaceBusy = creatingFromLink || openingId !== null;
 
   if (session !== null) {
     return (
@@ -984,7 +836,6 @@ function App({
             busy={workspaceBusy}
             creatingFromLink={creatingFromLink}
           />
-          <ImportPicker onFile={handleImportFile} busy={workspaceBusy} working={importingZip} />
           <ProjectsScreen
             projects={projects}
             status={status}
@@ -994,10 +845,6 @@ function App({
             onOpen={(id) => void openProject(id)}
             onRename={(id, name) => void renameProject(id, name)}
             onDelete={(id) => void deleteProject(id)}
-            onExport={(id) => void handleExport(id)}
-            onExportLabels={(id) => void handleExportLabels(id)}
-            onImportLabels={(id, file) => void handleImportLabels(id, file)}
-            importingLabelsId={importingLabelsId}
             authKind={authState.kind}
             commonsRows={commonsRows}
             submittingId={submittingId}
