@@ -1,3 +1,80 @@
+/* The practice split view (T27): a YouTube project's player splits on a
+desktop viewport — the video keeps its 16:9 size in roughly the left half,
+the practice readout follows the live playhead on the right. Below the
+breakpoint the readout stacks under the video. */
+.player-practice-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .player-practice-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The flags and the playhead belong to the timeline, never the video: on a
+YouTube project they stay inside the ruler band, whose height the ruler
+stylesheet owns as --ruler-height. */
+.player-waveform-shell.youtube-shell .player-markers,
+.player-waveform-shell.youtube-shell .player-playhead {
+  top: auto;
+  bottom: 0;
+  height: var(--ruler-height);
+}
+
+/* The practice readout: the passed and next slots at the bar's ends, with
+their timestamps under it, aligned to the same two ends. */
+.player-practice-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.player-practice-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.player-practice-marker {
+  font: 600 16px/22px system-ui, sans-serif;
+  color: #0f766e;
+}
+
+/* Start and End are slots, not markers: the accent reads as a real mark, and
+these name the recording's boundaries instead. */
+.player-practice-marker.practice-placeholder {
+  color: #64748b;
+}
+
+.player-practice-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.player-practice-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: #0f766e;
+}
+
+.player-practice-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #64748b;
+}
+
 /* Playback transport and the playhead overlay. */
 
 /* The zoomed view: a horizontally scrollable window over the content. The

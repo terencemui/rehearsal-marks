@@ -25,6 +25,7 @@ import { defaultPlayerMode } from '../storage';
 import type { Autosave, PlayerMode, ProjectRecord, SaveStatus } from '../storage';
 import { MarkerFlags } from './MarkerFlags';
 import { MarkerInspector } from './MarkerInspector';
+import { PracticeReadout } from './PracticeReadout';
 import { STATUS_TEXT } from './status';
 import { UndoToast } from './UndoToast';
 import {
@@ -692,6 +693,40 @@ export function Player({
     longPress.current = null;
   }, []);
 
+  // The seek surface plus its overlays, shared by both layouts: the
+  // practice split view on a YouTube project, or the plain shell elsewhere.
+  const timelineShell = (
+    <div
+      ref={shellRef}
+      className={isYouTube ? 'player-waveform-shell youtube-shell' : 'player-waveform-shell'}
+      onClickCapture={onClickCapture}
+      onDoubleClick={onDoubleClick}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={cancelLongPress}
+      onTouchCancel={cancelLongPress}
+    >
+      <div
+        ref={containerRef}
+        className="player-waveform"
+        style={viewWidth !== undefined ? { width: `${viewWidth}px` } : undefined}
+      />
+      <MarkerFlags
+        markers={labeled}
+        duration={duration}
+        selectedId={editing ? selectedId : null}
+        onFlagClick={handleFlagClick}
+        width={viewWidth}
+      />
+      {/* pointer-events: none — clicks pass through to the seek surface. */}
+      <div
+        className="player-playhead"
+        style={{ left: `${playheadLeft}px` }}
+        aria-hidden="true"
+      />
+    </div>
+  );
+
   /** Capture-phase guard: a long-press's trailing click must not seek. */
   function onClickCapture(event: React.MouseEvent): void {
     if (!suppressNextClick.current) return;
@@ -899,35 +934,22 @@ export function Player({
           </button>
         </div>
       )}
-      <div
-        ref={shellRef}
-        className="player-waveform-shell"
-        onClickCapture={onClickCapture}
-        onDoubleClick={onDoubleClick}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={cancelLongPress}
-        onTouchCancel={cancelLongPress}
-      >
-        <div
-          ref={containerRef}
-          className="player-waveform"
-          style={viewWidth !== undefined ? { width: `${viewWidth}px` } : undefined}
-        />
-        <MarkerFlags
-          markers={labeled}
-          duration={duration}
-          selectedId={editing ? selectedId : null}
-          onFlagClick={handleFlagClick}
-          width={viewWidth}
-        />
-        {/* pointer-events: none — clicks pass through to the seek surface. */}
-        <div
-          className="player-playhead"
-          style={{ left: `${playheadLeft}px` }}
-          aria-hidden="true"
-        />
-      </div>
+      {isYouTube ? (
+        // T27: the practice split view — the video (with its ruler and
+        // markers below, and the `youtube-shell` class confining flags and
+        // playhead to the ruler band) in roughly the left half, the practice
+        // readout following the live playhead beside it.
+        <div className="player-practice-split">
+          {timelineShell}
+          <PracticeReadout
+            markers={labeled}
+            currentTime={playback.currentTime}
+            duration={duration}
+          />
+        </div>
+      ) : (
+        timelineShell
+      )}
       <div className="player-transport">
         <button
           type="button"
