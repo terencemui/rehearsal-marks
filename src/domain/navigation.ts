@@ -16,8 +16,13 @@ import type { LabeledMarker } from './marker';
  * reach each of them individually.
  */
 
-/** One media frame of tolerance, in seconds: an MP3 frame is ~26ms. */
-const FRAME_EPSILON = 0.05;
+/**
+ * One media frame of tolerance, in seconds: an MP3 frame is ~26ms. The
+ * practice readout's passed/next boundary shares this constant, so a marker
+ * flips from next to passed at the same instant the arrow jumps consider it
+ * reached.
+ */
+export const FRAME_EPSILON = 0.05;
 
 /** The next marker after `time` in time order; wraps to the first. */
 export function nextMarker(

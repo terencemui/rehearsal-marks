@@ -1,8 +1,15 @@
 /* Ruler-only timeline — the degraded view when the waveform cannot decode. */
 
+:root {
+  /* The timeline band's height. The YouTube player's flags and playhead
+  overlay it (player.css), so the height lives here — one source of truth
+  for the band the marks render on. */
+  --ruler-height: 96px;
+}
+
 .rm-ruler {
   position: relative;
-  height: 96px;
+  height: var(--ruler-height);
   border-bottom: 2px solid #0f766e;
   cursor: pointer;
   user-select: none;
