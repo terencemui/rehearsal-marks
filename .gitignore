@@ -27,3 +27,6 @@ coverage
 
 # Nested agent worktrees — checkouts of this repo, never content of it
 .claude/worktrees/
+
+# Supabase CLI cache (supabase link/db push)
+supabase/.temp/
