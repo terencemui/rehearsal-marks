@@ -33,7 +33,6 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
     commonsRows: null,
     onSubmitToCommons: vi.fn(),
     onSignIn: vi.fn(),
-    onBrowseLibrary: vi.fn(),
     ...overrides,
   };
   const view = render(<ProjectsScreen {...props} />);
@@ -70,7 +69,6 @@ describe('ProjectsScreen list', () => {
         commonsRows={null}
         onSubmitToCommons={vi.fn()}
         onSignIn={vi.fn()}
-        onBrowseLibrary={vi.fn()}
       />,
     );
     expect(screen.queryByText('YouTube')).not.toBeInTheDocument();
@@ -273,18 +271,11 @@ describe('ProjectsScreen Commons submission', () => {
 
 describe('ProjectsScreen empty state', () => {
   it('points at pasting a YouTube link and hides the list', () => {
-    const { props } = renderScreen({ projects: [] });
+    renderScreen({ projects: [] });
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByText(/paste a YouTube link/i)).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
     expect(screen.queryByText(/Total used/)).not.toBeInTheDocument();
-    expect(props.onBrowseLibrary).toBeDefined();
-  });
-
-  it('routes "Browse the library" to the caller', async () => {
-    const user = userEvent.setup();
-    const { props } = renderScreen({ projects: [] });
-    await user.click(screen.getByRole('button', { name: 'Browse the library' }));
-    expect(props.onBrowseLibrary).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /browse/i })).not.toBeInTheDocument();
   });
 });

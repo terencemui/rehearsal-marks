@@ -254,8 +254,8 @@ describe('Player playback controls', () => {
 });
 
 /* T18 modes. The record's persisted playerMode is the player's initial
-posture — uploads arrive in Label mode, YouTube and library-seeded projects
-in Playback — and the segmented control persists each switch. */
+posture — uploads arrive in Label mode, YouTube projects in Playback — and
+the segmented control persists each switch. */
 
 /** Renders a player whose record persisted Playback as the last-used mode. */
 function renderPlaybackPlayer(record = projectRecord({ playerMode: 'playback' })) {
@@ -1646,32 +1646,6 @@ describe('Player — YouTube projects', () => {
 
     await screen.findByText(/Playing from YouTube/);
     expect(screen.queryByText(/no community labels/i)).not.toBeInTheDocument();
-    storage.close();
-  });
-
-  it('lets an explicit ruler note override the YouTube one', async () => {
-    // The library's streaming session sets its own note; source must not win
-    // over an explicitly supplied one.
-    const storage = await testStorage();
-    const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 200 })),
-    });
-    const record = youtubeProjectRecord({
-      audioMeta: { ...projectRecord().audioMeta, duration: 200, source: CANONICAL },
-    });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
-
-    render(
-      <Player
-        autosave={autosave}
-        peaks={null}
-        controller={controller}
-        rulerNote="Something else entirely"
-        onExit={vi.fn()}
-      />,
-    );
-
-    expect(await screen.findByText('Something else entirely')).toBeInTheDocument();
     storage.close();
   });
 

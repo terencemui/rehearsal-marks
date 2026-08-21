@@ -9,8 +9,6 @@ export { StorageError } from './errors';
 export type { StorageErrorCode } from './errors';
 export { defaultPlayerMode, estimateStoredSize } from './records';
 export type {
-  LibraryEntryRecord,
-  LibraryEntrySummary,
   PlayerMode,
   ProjectRecord,
   ProjectSource,
@@ -19,7 +17,6 @@ export type {
 export { createStorage } from './repository';
 export type {
   CreateStorageOptions,
-  LibraryRepository,
   ProjectRepository,
   Storage,
 } from './repository';
