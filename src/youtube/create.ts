@@ -17,8 +17,8 @@ export interface YouTubeDependencies {
   /**
    * The video's community label set, or null when none exists or loads —
    * never rejects the project; an unlabeled video is a Label-mode start.
-   * The transport (a Supabase query, per ADR-0001) lands with T21; until
-   * then the app passes a resolver that always answers null.
+   * The transport (a Supabase query, per ADR-0001) is the app's default
+   * resolver; tests inject one that always answers null.
    */
   loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null>;
   save: (record: ProjectRecord) => Promise<void>;

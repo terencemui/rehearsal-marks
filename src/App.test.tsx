@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DecodeError } from './audio';
 import type { PeakData } from './audio';
 import { parseProjectFile, serializeProjectFile } from './domain';
+import { labelSetRow } from './test/commons-fixture';
 import type { ProjectFileData } from './domain';
 import type { CatalogEntry } from './library/catalog';
 import { exportProjectZip } from './portability';
@@ -143,6 +144,7 @@ function deferred<T>() {
 afterEach(async () => {
   await closeTestStorages();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('App upload flow', () => {
@@ -297,6 +299,84 @@ describe('App create from a YouTube link', () => {
     expect(stored.markers).toEqual(community.markers);
     expect(stored.playerMode).toBe('playback');
     expect(stored.audioMeta.duration).toBe(604.2);
+  });
+
+  it('consults the hosted Commons by default and copies a published set in', async () => {
+    // The real transport, end to end: a wired app (Vite env set) queries the
+    // Commons at creation, and a published set for the video becomes the
+    // project's own editable copy, opening in Playback mode. No loadCommunityLabels
+    // prop is passed — this is the app's default wiring.
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://abccompany.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key-1');
+    const row = labelSetRow({ title: VIDEO_TITLE });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/label_sets')) {
+        return jsonResponse(JSON.stringify([row]));
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+    });
+    const opened = await testStorage();
+    render(
+      <App
+        controllerFactory={() => controller}
+        storage={opened}
+        fetchTitle={async () => VIDEO_TITLE}
+      />,
+    );
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
+    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(await screen.findByRole('button', { name: 'A' })).toBeInTheDocument();
+    // The one query was the anonymous published read, keyed on the video ID.
+    const [requested] = fetchMock.mock.calls[0] as [string];
+    expect(requested).toContain(`video_id=eq.${VIDEO_ID}`);
+    expect(requested).toContain('publication_status=eq.published');
+    const [summary] = await opened.projects.list();
+    const stored = (await opened.projects.get(summary.id))!;
+    expect(stored.markers).toEqual(row.markers);
+    expect(stored.playerMode).toBe('playback');
+  });
+
+  it('reads a missing Commons config as no labels, without touching the network', async () => {
+    // The default transport is inert without Vite env — a dev build or a
+    // test run never queries anything, and a link create lands in the
+    // unmatched path with the empty state explained.
+    const fetchMock = vi.fn(async () => {
+      throw new Error('unexpected fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    const controller = mockController({
+      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+    });
+    const opened = await testStorage();
+    render(
+      <App
+        controllerFactory={() => controller}
+        storage={opened}
+        fetchTitle={async () => VIDEO_TITLE}
+      />,
+    );
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    await screen.findByRole('heading', { name: VIDEO_TITLE });
+    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByText(/no community labels loaded/i)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    const [summary] = await opened.projects.list();
+    expect((await opened.projects.get(summary.id))!.markers).toEqual([]);
   });
 
   it('lands in the same player session an upload does', async () => {
