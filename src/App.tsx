@@ -4,6 +4,8 @@ import type { AudioController, PeakData } from './audio';
 import { createDefaultAuthController } from './auth';
 import type { AuthController, AuthState } from './auth';
 import { errorMessage } from './domain';
+import { CommonsError } from './commons/errors';
+import { readCommonsConfig } from './commons/load';
 import { parseCatalog, resolveUrl } from './library/catalog';
 import type { CatalogEntry } from './library/catalog';
 import { LibraryError } from './library/errors';
@@ -13,7 +15,7 @@ import { validateProjectName } from './projects/summary';
 import { createAutosave, createStorage, saveStatusFor, sha256, StorageError } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
 import { createProjectFromUpload } from './upload';
-import { createProjectFromYouTubeLink, fetchYouTubeTitle } from './youtube';
+import { createProjectFromYouTubeLink, fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
 import { ContributorControl } from './ui/Contributor';
 import { CreateProject } from './ui/CreateProject';
@@ -34,7 +36,12 @@ export interface AppProps {
   download?: (blob: Blob, filename: string) => void;
   /** Test seam: the video-title lookup, so component tests never touch the network. */
   fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
-  /** Test seam: the community label-set lookup — same reason as fetchTitle. */
+  /**
+   * Test seam: the community label-set lookup — same reason as fetchTitle.
+   * The default is the real transport: an anonymous query against the hosted
+   * Commons (ADR-0001), which reads as no labels when the app is not wired
+   * to a Supabase project or the Commons is unreachable.
+   */
   loadCommunityLabels?: (videoId: string) => Promise<CommunityLabelSet | null>;
   /**
    * Test seam: the contributor sign-in surface, so component tests never
@@ -73,24 +80,47 @@ const CATALOG_URL = new URL(import.meta.env.BASE_URL + 'library.json', window.lo
 const EMPTY_BLOB = new Blob();
 
 /**
- * The library's fetch surface, translating every network failure into the
- * LibraryError the tab surfaces. Catalog and label sets come back as text;
- * the audio comes back as a blob for hashing. Every fetch carries a
- * timeout: a request that never settles must not leave the tab loading
- * forever — or a streaming session's save waiting indefinitely.
+ * The app's fetch surface, translating every network failure into the error
+ * each consumer surfaces — the LibraryError the tab shows, or the
+ * CommonsError a label-set read degrades. Text comes back as text; the audio
+ * as a blob for hashing. Every fetch carries a timeout: a request that never
+ * settles must not leave the tab loading forever — or a streaming session's
+ * save waiting indefinitely — and a hung Commons query must not hold a link
+ * create hostage.
  */
 const TEXT_FETCH_TIMEOUT_MS = 15_000;
 const AUDIO_FETCH_TIMEOUT_MS = 120_000;
+/**
+ * The Commons query's own budget: it runs inside link creation's critical
+ * path, so it must never extend the title lookup's — a dead store costs the
+ * user seconds, not the full read timeout.
+ */
+const COMMONS_FETCH_TIMEOUT_MS = 5_000;
 
-async function fetchLibraryText(url: string): Promise<string> {
+/** Fetches a URL as text with the read timeout; network and HTTP failures become `failure`. */
+async function fetchTextWithTimeout(
+  url: string,
+  failure: () => Error,
+  headers?: Record<string, string>,
+  timeoutMs = TEXT_FETCH_TIMEOUT_MS,
+): Promise<string> {
   let response: Response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(TEXT_FETCH_TIMEOUT_MS) });
+    response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers });
   } catch {
-    throw fetchFailure();
+    throw failure();
   }
-  if (!response.ok) throw fetchFailure();
+  if (!response.ok) throw failure();
   return response.text();
+}
+
+function fetchLibraryText(url: string): Promise<string> {
+  return fetchTextWithTimeout(url, fetchFailure);
+}
+
+/** The Commons' anonymous reads; the caller supplies the anon-key headers the query needs. */
+function fetchCommonsText(url: string, headers?: Record<string, string>): Promise<string> {
+  return fetchTextWithTimeout(url, commonsFailure, headers, COMMONS_FETCH_TIMEOUT_MS);
 }
 
 async function fetchLibraryAudio(url: string): Promise<Blob> {
@@ -107,6 +137,14 @@ async function fetchLibraryAudio(url: string): Promise<Blob> {
 function fetchFailure(): LibraryError {
   return new LibraryError(
     "The library couldn't be reached. Check your connection and try again.",
+    'fetch-failed',
+  );
+}
+
+/** The Commons' read failure — the create pipeline degrades it to an unlabeled video. */
+function commonsFailure(): CommonsError {
+  return new CommonsError(
+    "The Commons couldn't be reached. Check your connection and try again.",
     'fetch-failed',
   );
 }
@@ -137,11 +175,16 @@ function App({
   storage: injectedStorage,
   download = triggerDownload,
   fetchTitle = fetchYouTubeTitle,
-  // The community transport is T21's, per ADR-0001: a Supabase query for
-  // anonymous reads. Until it lands, every video starts unlabeled — the
-  // create pipeline's seam stays, and the pure identity gate
-  // (validateYouTubeLabelSet) is what T21's loader will run behind it.
-  loadCommunityLabels = async () => null,
+  // The community transport, per ADR-0001: an anonymous query against the
+  // hosted Commons, run behind the create pipeline's seam. A project not
+  // wired to a Supabase project — or a Commons that cannot be reached —
+  // reads as no labels: an unlabeled video starts in Label mode with the
+  // empty state explained, exactly as an index fetch failure did.
+  loadCommunityLabels = (videoId) =>
+    loadCommunityLabelSet(videoId, {
+      config: readCommonsConfig(),
+      fetchText: fetchCommonsText,
+    }),
   authFactory = createDefaultAuthController,
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);

@@ -15,8 +15,9 @@ export function HelpTab() {
     <section className="help">
       <h2>Help</h2>
       <p className="help-intro">
-        Everything about this app in one place. Your marks never leave your browser — YouTube
-        playback streams from Google, and the app itself sends nothing out.
+        Everything about this app in one place. Your projects stay in your browser — YouTube
+        playback streams from Google, and nothing leaves the app unless you choose to publish
+        a label set to the Commons.
       </p>
 
       <section aria-labelledby="help-keyboard">
@@ -160,13 +161,14 @@ export function HelpTab() {
         <ul>
           <li>
             Projects live entirely in this browser: your markers and your uploaded recordings{' '}
-            <strong>never leave your browser</strong>. There are no accounts and no server
-            uploads — the app is your hard drive.
+            <strong>stay in your browser</strong>. There are no accounts for projects and no
+            server uploads — the app is your hard drive. The one exception is the Commons: a
+            label set you submit there is shared with every student once it's published.
           </li>
           <li>
             A <strong>YouTube project</strong> plays its video from YouTube itself: playback
             streams from Google's servers while the video stays visible, per YouTube's terms.
-            The project still lives entirely in this browser — its marks never leave it, and
+            The project still lives entirely in this browser — its marks stay in it, and
             Google never sees them.
           </li>
           <li>
@@ -208,28 +210,74 @@ export function HelpTab() {
       <section aria-labelledby="help-contribute">
         <h3 id="help-contribute">Contribute a label set</h3>
         <p>
-          The Commons is the collection of label sets for YouTube recordings — readable by
-          everyone, contributed by students like you. Publishing needs an account; browsing
-          never does. Here is the whole path:
+          Label sets are the community's shared marks for a performance — contributed two ways,
+          depending on the recording. YouTube performances are published from inside the app,
+          with nothing to download or set up; CC0 Library recordings keep the repo's
+          pull-request flow.
+        </p>
+
+        <h4>From the app — YouTube performances</h4>
+        <p>
+          If you marked a public performance on YouTube and want every student to start from
+          your marks, the whole path is in the app:
         </p>
         <ol>
           <li>
-            Open the recording in the app and place your markers — labels come out A, B,
-            C… in time order automatically.
+            Create a project from the performance's YouTube link and place your marks — labels
+            come out A, B, C… in time order automatically.
           </li>
           <li>
-            Sign in with Google at the top of the screen. Contributing requires an account;
-            viewing the Commons never does.
+            Sign in with Google — the only account the app ever asks for. Reading label sets
+            never requires one; publishing does.
           </li>
           <li>
-            Your label set is one JSON — Export labels on the Projects screen prepares it.
-            No GitHub account, no pull requests: contributions go to the Commons, not to the
-            repository. Your recordings never leave your browser; the Commons holds label
-            sets for YouTube recordings only.
+            Submit your label set. It sits as <strong>pending</strong> — visible to you, not
+            yet to anyone else — until a maintainer reviews it.
           </li>
           <li>
-            Contributions are moderated: a new one waits as pending until a maintainer
-            reviews it, then it loads for every student.
+            Once <strong>published</strong>, anyone who opens this video gets your marks, and
+            you can update them any time — updates return the set to pending and go through
+            review again.
+          </li>
+        </ol>
+        <p>
+          Publishing makes your marks public — publish only marks you placed yourself on this
+          exact performance.
+        </p>
+
+        <h4>The CC0 Library — through the repo</h4>
+        <p>
+          Label sets for Library recordings go through the repo's pull-request flow, which
+          needs a GitHub account — the Library's rows promise license and attribution, so
+          contributions are reviewed in git. The GitHub-facing version with the review rules
+          is <code>CONTRIBUTING.md</code>; the path is:
+        </p>
+        <ol>
+          <li>
+            Open the library recording in the app and place your markers — labels come out
+            A, B, C… in time order automatically.
+          </li>
+          <li>
+            On the Projects screen, choose <strong>Export labels</strong> on that project's row.
+            This downloads one JSON file carrying your markers and the recording's identity
+            (sha256, duration, source, license, attribution) — the facts that make the set
+            applicable to exactly one recording.
+          </li>
+          <li>
+            Fork the{' '}
+            <a href="https://github.com/terencemui/rehearsal-marks">rehearsal-marks repo</a> and
+            add the exported file, renamed to <code>&lt;entry-id&gt;.json</code>, at{' '}
+            <code>library/labelsets/</code> — one file, one recording, nothing else.
+          </li>
+          <li>
+            Open a pull request with that single file. Reviewers verify the checklist in
+            docs/maintainer-catalog.md — recording identity, marker sanity, and the CC0-only
+            rule.
+          </li>
+          <li>
+            Once merged, your label set ships in the Library for every student. Only label sets
+            for library recordings can be contributed this way: your own uploads never leave
+            your browser.
           </li>
         </ol>
       </section>

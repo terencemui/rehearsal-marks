@@ -54,6 +54,20 @@ export interface LabelSetValues {
 }
 
 /**
+ * The read projection of a `label_sets` row — the three facts an anonymous
+ * lookup requests and consumes. The full row (contributor identity, stamps,
+ * publication status) belongs to the write and round-trip paths; a reader
+ * needs only the identity, the marks, and the duration they seed.
+ */
+export interface LabelSetReadRow {
+  /** The 11-character YouTube video ID — the row's recording-identity key. */
+  video_id: string;
+  /** Seconds, float — the soft check of recording identity. */
+  duration: number;
+  markers: Marker[];
+}
+
+/**
  * Parses a `label_sets` row. Tolerates unknown fields (forward
  * compatibility) and validates everything a consumer depends on — markers
  * through the domain's own marker rules, the video ID through the domain's
@@ -62,20 +76,7 @@ export interface LabelSetValues {
 export function parseLabelSetRow(value: unknown): LabelSetRow {
   const row = assertObject(value, 'the row');
 
-  let markers: Marker[];
-  try {
-    markers = parseMarkers(row.markers);
-  } catch (error) {
-    // Only the neutral marker/value errors belong to the row; anything else
-    // is a domain rule with its own code.
-    if (
-      error instanceof DomainError &&
-      (error.code === 'invalid-value' || error.code === 'invalid-markers')
-    ) {
-      throw invalidRow(error.message);
-    }
-    throw error;
-  }
+  const markers = readRowMarkers(row.markers);
 
   return {
     id: assertNonEmptyString(row.id, '"id"'),
@@ -87,6 +88,23 @@ export function parseLabelSetRow(value: unknown): LabelSetRow {
     publication_status: readStatus(row.publication_status),
     created_at: assertTimestamp(row.created_at, '"created_at"'),
     updated_at: assertTimestamp(row.updated_at, '"updated_at"'),
+  };
+}
+
+/**
+ * Parses the read projection of a `label_sets` row — what the anonymous
+ * lookup requests and consumes. Applies the same domain rules the full
+ * parser applies to the three fields it reads and tolerates everything
+ * else (a full row parses as a projection), so a bad answer is a loud
+ * error, never a broken project. Publication status never reaches a reader:
+ * the query filter and RLS are its only gate.
+ */
+export function parseLabelSetReadRow(value: unknown): LabelSetReadRow {
+  const row = assertObject(value, 'the row');
+  return {
+    video_id: readVideoId(row.video_id),
+    duration: assertNonNegativeNumber(row.duration, '"duration"'),
+    markers: readRowMarkers(row.markers),
   };
 }
 
@@ -181,6 +199,23 @@ type JsonObject = Record<string, unknown>;
 
 function invalidRow(reason: string): CommonsError {
   return new CommonsError(`Invalid label set row: ${reason}`, 'invalid-label-set-row');
+}
+
+/** The row's markers through the domain's own rules — the shared gate of both parsers. */
+function readRowMarkers(value: unknown): Marker[] {
+  try {
+    return parseMarkers(value);
+  } catch (error) {
+    // Only the neutral marker/value errors belong to the row; anything else
+    // is a domain rule with its own code.
+    if (
+      error instanceof DomainError &&
+      (error.code === 'invalid-value' || error.code === 'invalid-markers')
+    ) {
+      throw invalidRow(error.message);
+    }
+    throw error;
+  }
 }
 
 /** A project the contributor cannot publish — their side of the boundary, not the row's. */

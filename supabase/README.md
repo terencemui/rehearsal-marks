@@ -6,6 +6,9 @@ Row Level Security as the authorization boundary (ADR-0001).
 - `migrations/` — schema and RLS, one file per change, timestamp-prefixed in
   filename order. Apply with the Supabase CLI (`supabase db push`) against a
   linked project, or run each file in the dashboard's SQL editor.
+- `seed.sql` — content, not schema: the first published label set, so the
+  Commons is never empty. Runs as the postgres role (dashboard SQL editor),
+  never via `authenticated` — see `docs/maintainer-commons.md`.
 
 ## Wiring the app
 
@@ -18,9 +21,19 @@ at the repo root):
   public: the anon key ships with the browser, and RLS is the authorization
   boundary, not the key.
 
-Absent or blank, sign-in reports itself unavailable and everything else keeps
-working — contributor sign-in (T24) is wired; the anonymous Commons query
-(T21) is still to land.
+Absent or blank, the app builds and runs unconfigured: every anonymous Commons
+read returns "no labels" (a link create lands in the unmatched path) and
+contributor sign-in reports itself unavailable — browsing, local projects, and
+YouTube playback keep working as usual.
+
+The two consumers of that wiring:
+
+- **Anonymous reads (T21)** — the lookup a YouTube project's creation runs
+  queries the Commons directly over PostgREST with the anon key, no account
+  needed.
+- **Contributor sign-in (T24)** — Google OAuth through supabase-js's auth
+  client; the signed-in contributor is the `contributor_id` behind every
+  `label_sets` row.
 
 ## Google sign-in setup
 

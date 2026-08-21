@@ -31,11 +31,11 @@ describe('HelpTab', () => {
     expect(formats).toHaveTextContent('16');
   });
 
-  it('explains storage honestly, including the never-leaves-your-browser guarantee', () => {
+  it('explains storage honestly, including the stays-in-your-browser guarantee', () => {
     render(<HelpTab />);
 
     const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
-    expect(storage).toHaveTextContent('never leave your browser');
+    expect(storage).toHaveTextContent('stay in your browser');
     expect(storage).toHaveTextContent('automatically');
     expect(storage).toHaveTextContent(/export/i);
   });
@@ -44,7 +44,7 @@ describe('HelpTab', () => {
     render(<HelpTab />);
 
     const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
-    // Playback streams from Google; the marks still never leave the browser.
+    // Playback streams from Google; the marks stay in the browser.
     expect(storage).toHaveTextContent(/streams from Google/i);
     expect(storage).toHaveTextContent(/Google never sees them/i);
   });
@@ -58,30 +58,38 @@ describe('HelpTab', () => {
     expect(eviction).toHaveTextContent('export');
   });
 
-  it('walks through the label-set contribution workflow as ordered steps', () => {
+  it('walks through the in-app contribution flow without any git or GitHub', () => {
     render(<HelpTab />);
 
     const workflow = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
-    const steps = withinOrderedList(workflow);
-    expect(steps.length).toBeGreaterThanOrEqual(3);
+    const steps = withinOrderedList(workflow, 0);
+    expect(steps.length).toBeGreaterThanOrEqual(4);
     const text = steps.map((step) => step.textContent).join('\n');
-    expect(text).toMatch(/sign in with google/i);
-    expect(text).toMatch(/no github account/i);
-    expect(text).toMatch(/no pull requests/i);
-    expect(text).toMatch(/review/i);
-    // The steps only promise actions that exist today — the contribution UI
-    // is not here yet, so the copy points at Export labels, not an app button.
-    expect(text).toMatch(/export labels/i);
-    // The PR contribution flow is retired (ADR-0001) — nothing here sends a
-    // student to fork the repo.
-    expect(text).not.toMatch(/fork/i);
+    expect(text).toMatch(/sign in/i);
+    expect(text).toMatch(/pending/i);
+    expect(text).toMatch(/published/i);
+    // The in-app flow is the musician's path: no pull requests, no GitHub.
+    expect(text).not.toMatch(/pull request/i);
+    expect(text).not.toMatch(/github/i);
+  });
+
+  it('keeps the Library contribution flow on the repo pull-request path', () => {
+    render(<HelpTab />);
+
+    const workflow = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
+    const steps = withinOrderedList(workflow, 1);
+    const text = steps.map((step) => step.textContent).join('\n');
+    expect(text).toMatch(/export/i);
+    expect(text).toMatch(/labelsets/i);
+    expect(text).toMatch(/pull request/i);
+    expect(text).toMatch(/one file/i);
   });
 
 });
 
-/** The `<li>` elements of the first ordered list inside a container. */
-function withinOrderedList(container: HTMLElement): HTMLElement[] {
-  const list = container.querySelector('ol');
-  if (list === null) throw new Error('No ordered list found in the section');
+/** The `<li>` elements of the nth ordered list inside a container. */
+function withinOrderedList(container: HTMLElement, index: number): HTMLElement[] {
+  const list = container.querySelectorAll('ol')[index];
+  if (list === undefined) throw new Error('No ordered list found in the section');
   return Array.from(list.querySelectorAll('li'));
 }

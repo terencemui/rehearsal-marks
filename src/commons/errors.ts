@@ -2,7 +2,9 @@
 export type CommonsErrorCode =
   | 'invalid-label-set-row'
   | 'invalid-label-set'
-  | 'not-youtube-label-set';
+  | 'not-youtube-label-set'
+  | 'fetch-failed'
+  | 'invalid-response';
 
 /**
  * A rejected Commons operation: a bad row from the Commons, a project the
