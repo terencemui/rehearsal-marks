@@ -17,12 +17,15 @@ export interface MockAuthBackend extends SupabaseAuth {
   failNextSignIn(): void;
   /** The next sign-out rejects. */
   failNextSignOut(): void;
+  /** The next account deletion rejects — a backend failure. */
+  failNextAccountDelete(): void;
 }
 
 export function mockAuthBackend(): MockAuthBackend {
   let contributor: Contributor | null = null;
   let nextSignInFails = false;
   let nextSignOutFails = false;
+  let nextDeleteFails = false;
   const listeners = new Set<(contributor: Contributor | null) => void>();
 
   return {
@@ -52,6 +55,17 @@ export function mockAuthBackend(): MockAuthBackend {
       contributor = null;
       for (const listener of listeners) listener(null);
     }),
+    deleteAccount: vi.fn(async () => {
+      if (nextDeleteFails) {
+        nextDeleteFails = false;
+        // A failed deletion changes nothing server-side: the session stays.
+        throw new Error('account deletion failed');
+      }
+      // The account is gone: the backend's own session is dead, and the
+      // controller lands anonymous from its own success path.
+      contributor = null;
+      for (const listener of listeners) listener(null);
+    }),
     setContributor(next) {
       contributor = next;
       for (const listener of listeners) listener(next);
@@ -61,6 +75,9 @@ export function mockAuthBackend(): MockAuthBackend {
     },
     failNextSignOut() {
       nextSignOutFails = true;
+    },
+    failNextAccountDelete() {
+      nextDeleteFails = true;
     },
   };
 }

@@ -1,23 +1,50 @@
+import { useState } from 'react';
+import { PrivacyPolicy, TermsOfService } from './Legal';
 import './help.css';
 
 /**
  * The Help tab: the discoverable home for everything the player keeps off the
  * visible chrome — the keyboard scheme, the accepted formats and their limits,
  * how storage works, what eviction can do, and the label-set contribution
- * workflow. Static reference content; no state, no storage access.
+ * workflow. Static reference content; the only state is which legal document
+ * (T26) is showing behind the privacy-policy and terms links, swapped in for
+ * the reference content and back again. No storage access.
  *
  * Keep the facts here in sync with their sources of truth: the keyboard
  * reference mirrors docs/keyboard-reference.md, the format rules live in
- * src/upload/upload.ts, and the contribution workflow matches CONTRIBUTING.md.
+ * src/upload/upload.ts, the contribution workflow matches CONTRIBUTING.md,
+ * and the legal documents live in src/ui/Legal.tsx.
  */
 export function HelpTab() {
+  // Which document is showing: null is the reference content itself.
+  const [doc, setDoc] = useState<'privacy' | 'terms' | null>(null);
+
+  if (doc !== null) {
+    return (
+      <section className="help">
+        <button type="button" className="help-back" onClick={() => setDoc(null)}>
+          ← Back to Help
+        </button>
+        {doc === 'privacy' ? <PrivacyPolicy /> : <TermsOfService />}
+      </section>
+    );
+  }
+
   return (
     <section className="help">
       <h2>Help</h2>
       <p className="help-intro">
-        Everything about this app in one place. Your projects stay in your browser — YouTube
-        playback streams from Google, and nothing leaves the app unless you choose to publish
-        a label set to the Commons.
+        Everything about this app in one place. Two kinds of data live here: your projects,
+        which stay in your browser and never leave it, and the label sets you contribute to the
+        Commons, which are public by definition. YouTube playback streams from Google. Read the{' '}
+        <button type="button" className="help-link" onClick={() => setDoc('privacy')}>
+          Privacy policy
+        </button>{' '}
+        and{' '}
+        <button type="button" className="help-link" onClick={() => setDoc('terms')}>
+          Terms
+        </button>
+        .
       </p>
 
       <section aria-labelledby="help-keyboard">
@@ -162,8 +189,13 @@ export function HelpTab() {
           <li>
             Projects live entirely in this browser: your markers and your uploaded recordings{' '}
             <strong>stay in your browser</strong>. There are no accounts for projects and no
-            server uploads — the app is your hard drive. The one exception is the Commons: a
-            label set you submit there is shared with every student once it's published.
+            server uploads — the app is your hard drive. Local projects{' '}
+            <strong>never leave your browser</strong>, not even to the Commons.
+          </li>
+          <li>
+            The Commons is the one hosted surface. A label set you contribute there is stored on
+            a server, and once <strong>published</strong> it is public: every student can read
+            it, and it is attributed to you.
           </li>
           <li>
             A <strong>YouTube project</strong> plays its video from YouTube itself: playback
@@ -241,8 +273,9 @@ export function HelpTab() {
           </li>
         </ol>
         <p>
-          Publishing makes your marks public — publish only marks you placed yourself on this
-          exact performance.
+          A published label set is <strong>public by definition</strong> — anyone who opens
+          this video reads your marks, and the set is attributed to you (your Google account).
+          Publish only marks you placed yourself on this exact performance.
         </p>
 
         <h4>The CC0 Library — through the repo</h4>

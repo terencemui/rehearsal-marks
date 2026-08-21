@@ -28,6 +28,49 @@
   cursor: help;
 }
 
+.contributor-account {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.contributor-account-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Account deletion is a one-way door: the action and its confirmation carry
+   the danger color, apart from the quiet teal sign-out. */
+.contributor-delete {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.contributor-delete:hover,
+.contributor-delete-confirm:hover {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.contributor-confirm-delete {
+  margin: 0;
+  max-width: 28em;
+  font-size: 13px;
+  color: #444;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.contributor-delete-confirm {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
 .contributor-notice {
   margin: 0;
   max-width: 24em;

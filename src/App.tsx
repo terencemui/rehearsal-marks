@@ -352,6 +352,11 @@ function App({
     void authRef.current?.signOut();
   }
 
+  /** Deletes the contributor's account and its label sets (T26). */
+  function handleDeleteAccount(): void {
+    void authRef.current?.deleteAccount();
+  }
+
   async function handleFile(file: File): Promise<void> {
     if (storage === null || workingRef.current) return;
     workingRef.current = true;
@@ -888,6 +893,7 @@ function App({
           state={authState}
           onSignIn={handleSignIn}
           onSignOut={handleSignOut}
+          onDeleteAccount={handleDeleteAccount}
         />
       </header>
       <div role="tablist" aria-label="Workspace" className="tabs">

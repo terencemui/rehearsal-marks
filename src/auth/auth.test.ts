@@ -18,6 +18,7 @@ function fakeBackend(overrides: Partial<SupabaseAuth> = {}): SupabaseAuth {
     onAuthStateChange: vi.fn(() => ({ unsubscribe: vi.fn() })),
     signInWithGoogle: vi.fn(async () => {}),
     signOut: vi.fn(async () => {}),
+    deleteAccount: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -237,6 +238,55 @@ describe('createAuthController', () => {
     }
   });
 
+  it('deletes the signed-in contributor account and returns to anonymous', async () => {
+    const backend = fakeBackend({
+      getSession: vi.fn(async () => CONTRIBUTOR),
+      deleteAccount: vi.fn(async () => {}),
+    });
+    const controller = createAuthController(backend);
+    await vi.waitFor(() => {
+      expect(controller.getState().kind).toBe('signed-in');
+    });
+
+    await controller.deleteAccount();
+
+    expect(backend.deleteAccount).toHaveBeenCalledOnce();
+    expect(controller.getState()).toEqual({ kind: 'anonymous' });
+  });
+
+  it('a failed account deletion keeps the signed-in state with an honest notice', async () => {
+    const backend = fakeBackend({
+      getSession: vi.fn(async () => CONTRIBUTOR),
+      deleteAccount: vi.fn(async () => {
+        throw new Error('nope');
+      }),
+    });
+    const controller = createAuthController(backend);
+    await vi.waitFor(() => {
+      expect(controller.getState().kind).toBe('signed-in');
+    });
+
+    await controller.deleteAccount();
+
+    const state = controller.getState();
+    expect(state.kind).toBe('signed-in');
+    if (state.kind === 'signed-in') {
+      expect(state.contributor).toEqual(CONTRIBUTOR);
+      expect(state.notice).toMatch(/didn't work/i);
+    }
+  });
+
+  it('a delete while anonymous is a no-op — nothing to delete', async () => {
+    const deleteAccount = vi.fn(async () => {});
+    const backend = fakeBackend({ deleteAccount });
+    const controller = createAuthController(backend);
+
+    await controller.deleteAccount();
+
+    expect(deleteAccount).not.toHaveBeenCalled();
+    expect(controller.getState()).toEqual({ kind: 'anonymous' });
+  });
+
   it('is unavailable when there is no backend, and sign-in is a no-op', async () => {
     const controller = createAuthController(null);
 
@@ -246,6 +296,7 @@ describe('createAuthController', () => {
     });
     await controller.signInWithGoogle();
     await controller.signOut();
+    await controller.deleteAccount();
     expect(controller.getState()).toEqual({
       kind: 'unavailable',
       reason: AUTH_UNAVAILABLE_REASON,

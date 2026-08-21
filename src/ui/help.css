@@ -5,6 +5,40 @@
   max-width: 60ch;
 }
 
+/* The in-app legal links ride in the intro as quiet buttons, and the back
+   link sits above a document — both look like text, behave like buttons. */
+.help .help-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: #0f766e;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.help .help-back {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: none;
+  padding: 4px 10px;
+  font-size: 14px;
+  color: #0f766e;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.help .help-back:hover {
+  background: #0f766e;
+  color: #fff;
+}
+
+.help .legal-updated {
+  font-style: italic;
+  color: #666;
+  font-size: 13px;
+}
+
 .help .help-intro + section h3 {
   margin-top: 28px;
 }

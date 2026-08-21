@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { HelpTab } from './HelpTab';
 
@@ -83,6 +84,59 @@ describe('HelpTab', () => {
     expect(text).toMatch(/labelsets/i);
     expect(text).toMatch(/pull request/i);
     expect(text).toMatch(/one file/i);
+  });
+
+  it('distinguishes local projects from contributed label sets', () => {
+    render(<HelpTab />);
+
+    const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
+    // Local projects never leave the browser — the honest line is not
+    // "nothing leaves the app" but "your projects stay; contributions are
+    // public by definition".
+    expect(storage).toHaveTextContent(/never leave your browser/i);
+    expect(storage).toHaveTextContent(/stay in your browser/i);
+    // The hosted side is named plainly: public, and attributed to its
+    // contributor.
+    const contribute = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
+    expect(contribute).toHaveTextContent(/public/i);
+    expect(contribute).toHaveTextContent(/attributed/i);
+  });
+
+  it('says plainly that a published label set is public and attributable', () => {
+    render(<HelpTab />);
+
+    const contribute = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
+    expect(contribute).toHaveTextContent(/public by definition/i);
+    expect(contribute).toHaveTextContent(/attributed to you/i);
+  });
+
+  it('makes the privacy policy reachable, with the honest line intact', async () => {
+    const user = userEvent.setup();
+    render(<HelpTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Privacy policy' }));
+
+    const privacy = screen.getByRole('heading', { name: 'Privacy policy' }).closest('section')!;
+    expect(privacy).toHaveTextContent(/stay in your browser/i);
+    expect(privacy).toHaveTextContent(/streams from Google/i);
+    expect(privacy).toHaveTextContent(/public/i);
+    expect(privacy).toHaveTextContent(/attributed/i);
+    expect(privacy).toHaveTextContent(/Delete account/i);
+
+    // Back to Help restores the reference content.
+    await user.click(screen.getByRole('button', { name: /back to help/i }));
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+  });
+
+  it('makes the terms reachable', async () => {
+    const user = userEvent.setup();
+    render(<HelpTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Terms' }));
+
+    const terms = screen.getByRole('heading', { name: 'Terms' }).closest('section')!;
+    expect(terms).toHaveTextContent(/public/i);
+    expect(terms).toHaveTextContent(/as-is/i);
   });
 
 });
