@@ -18,8 +18,8 @@ breakpoint the readout stacks under the video. */
 /* The flags and the playhead belong to the timeline, never the video: on a
 YouTube project they stay inside the ruler band, whose height the ruler
 stylesheet owns as --ruler-height. */
-.player-waveform-shell.youtube-shell .player-markers,
-.player-waveform-shell.youtube-shell .player-playhead {
+.player-ruler-shell.youtube-shell .player-markers,
+.player-ruler-shell.youtube-shell .player-playhead {
   top: auto;
   bottom: 0;
   height: var(--ruler-height);
@@ -78,12 +78,12 @@ these name the recording's boundaries instead. */
 /* Playback transport and the playhead overlay. */
 
 /* The zoomed view: a horizontally scrollable window over the content. The
-content width (waveform, flags, ruler) is set inline from the zoom state.
+content width (flags, ruler) is set inline from the zoom state.
 `touch-action: pan-y` keeps native vertical page scroll for one finger while
 leaving the horizontal content scroll and the two-finger pinch to the
 player's own handlers — with pan-x allowed, the browser would claim a
 two-finger pan mid-pinch and the handlers could no longer cancel it. */
-.player-waveform-shell {
+.player-ruler-shell {
   position: relative;
   overflow-x: auto;
   overscroll-behavior-x: contain;

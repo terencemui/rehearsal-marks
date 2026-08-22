@@ -28,7 +28,7 @@ async function renderLoadedPlayer(controller: MockController = mockController())
   const storage = await testStorage();
   const record = projectRecord();
   // Match the record's own duration so the load triggers no autosave write.
-  controller.load = vi.fn(async () => ({ mode: 'ruler' as const, duration: 123.456 }));
+  controller.load = vi.fn(async () => ({ duration: 123.456 }));
   // Settle the mount duration before the fit runs (the mock's 10s default
   // would fit a 98 px shell instead).
   controller.emitPlayback({ duration: 123.456 });
@@ -50,7 +50,7 @@ describe('Player', () => {
     // Load reports the record's own duration, so no autosave mutation is
     // triggered and the status line reads Saved.
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 123.456 })),
+      load: vi.fn(async () => ({ duration: 123.456 })),
     });
     const record = projectRecord();
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
@@ -62,22 +62,22 @@ describe('Player', () => {
 
     // The canonical URL derived from the stored video ID is the whole input
     // to the seam; the container the controller renders into is the player's
-    // waveform element.
+    // ruler element.
     expect(controller.load).toHaveBeenCalledTimes(1);
     const options = youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(options.url).toBe(canonicalYouTubeUrl(record.videoId));
     expect(options.container).toBeInstanceOf(HTMLDivElement);
     expect(document.body.contains(options.container)).toBe(true);
 
-    // Ruler mode shows the YouTube precision note under the timeline.
+    // The loaded player shows the YouTube precision note under the timeline.
     expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
     storage.close();
   });
 
-  it('renders the YouTube ruler note when the load reports ruler mode', async () => {
+  it('renders the YouTube precision note once the load settles', async () => {
     const storage = await testStorage();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 5 })),
+      load: vi.fn(async () => ({ duration: 5 })),
     });
     const record = projectRecord({ duration: 5 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
@@ -88,10 +88,10 @@ describe('Player', () => {
     storage.close();
   });
 
-  it('persists the media duration learned in ruler mode', async () => {
+  it('persists the media duration learned from the load', async () => {
     const storage = await testStorage();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 42 })),
+      load: vi.fn(async () => ({ duration: 42 })),
     });
     const record = projectRecord({ duration: 0 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
@@ -154,7 +154,7 @@ describe('Player', () => {
     // The media element reports the record's duration plus measurement noise:
     // past the debounce window, nothing may have been scheduled.
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 123.4560004 })),
+      load: vi.fn(async () => ({ duration: 123.4560004 })),
     });
 
     render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
@@ -367,7 +367,7 @@ describe('Player modes', () => {
     const user = userEvent.setup();
     const { container, controller } = await renderPlaybackPlayer();
     mockShellRect(container, 800);
-    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
     act(() => controller.emitPlayback({ currentTime: 15 }));
 
     await user.keyboard('m');
@@ -389,23 +389,6 @@ describe('Player modes', () => {
     expect(controller.seek).toHaveBeenLastCalledWith(20);
     expect(screen.queryByRole('region', { name: 'Marker B' })).not.toBeInTheDocument();
     expect(flags(container)[1]).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  it('adds nothing on a long-press in Playback mode', async () => {
-    const { container } = await renderPlaybackPlayer();
-    mockShellRect(container, 800);
-    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
-
-    vi.useFakeTimers();
-    try {
-      fireEvent.touchStart(shell, { touches: [{ clientX: 400, clientY: 10 }] });
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-      expect(flags(container)).toHaveLength(2);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it('keeps a Label-mode selection hidden in Playback and restores it on return', async () => {
@@ -474,7 +457,7 @@ const RECORD_SECONDS = 123.456;
 async function renderMarkingPlayer(record = projectRecord()) {
   const controller = mockController();
   const storage = await testStorage();
-  controller.load = vi.fn(async () => ({ mode: 'ruler' as const, duration: RECORD_SECONDS }));
+  controller.load = vi.fn(async () => ({ duration: RECORD_SECONDS }));
   // Settle the mount duration before the fit runs.
   controller.emitPlayback({ duration: RECORD_SECONDS });
   const rectSpy = vi
@@ -511,7 +494,7 @@ function shellRect(width: number): DOMRect {
 
 /** Gives the shell (the scrollable viewport) a predictable geometry. */
 function mockShellRect(container: HTMLElement, width: number): void {
-  const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+  const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
   vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue(shellRect(width));
 }
 
@@ -565,93 +548,6 @@ describe('Player marking — adding', () => {
     expect(screen.queryByText(/deleted/)).not.toBeInTheDocument();
   });
 
-  it('adds a marker at the double-clicked position', async () => {
-    const { container } = await renderMarkingPlayer();
-    mockShellRect(container, 800);
-    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
-
-    fireEvent.doubleClick(shell, { clientX: 200 });
-
-    const markerFlags = flags(container);
-    // 200 px at the default 8 px/s floor is exactly 25 s — after both
-    // existing markers, so the new one takes C.
-    expect(markerFlags.map((flag) => flag.textContent)).toEqual(['A', 'B', 'C']);
-    expect(markerFlags[2].style.left).toBe(`${(25 / RECORD_SECONDS) * 100}%`);
-  });
-
-  it('does not add a marker when double-clicking a flag', async () => {
-    const { container } = await renderMarkingPlayer();
-
-    fireEvent.doubleClick(flags(container)[0]);
-
-    expect(flags(container)).toHaveLength(2);
-  });
-
-  it('adds a marker on long-press; a tap or a drag adds nothing', async () => {
-    const { container, controller } = await renderMarkingPlayer();
-    mockShellRect(container, 800);
-    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
-    const waveform = container.querySelector('.player-waveform') as HTMLElement;
-    // The seek surface the trailing click must never reach (wavesurfer or the
-    // ruler listens just like this).
-    const surfaceClick = vi.fn();
-    waveform.addEventListener('click', surfaceClick);
-
-    vi.useFakeTimers();
-    try {
-      fireEvent.touchStart(shell, { touches: [{ clientX: 400, clientY: 10 }] });
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-
-      const markerFlags = flags(container);
-      // 400 px at the 8 px/s floor is 50 s — after both existing markers.
-      expect(markerFlags).toHaveLength(3);
-      expect(markerFlags[2].style.left).toBe(`${(50 / RECORD_SECONDS) * 100}%`);
-
-      // The long-press's trailing click is consumed in the capture phase
-      // before it reaches the seek surface below.
-      fireEvent.touchEnd(shell);
-      fireEvent.click(waveform);
-      expect(surfaceClick).not.toHaveBeenCalled();
-      expect(controller.seek).not.toHaveBeenCalled();
-
-      // A tap (start → end, no hold) adds nothing, and its click seeks.
-      fireEvent.touchStart(shell, { touches: [{ clientX: 320, clientY: 10 }] });
-      fireEvent.touchEnd(shell);
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-      expect(flags(container)).toHaveLength(3);
-      fireEvent.click(waveform);
-      expect(surfaceClick).toHaveBeenCalledTimes(1);
-
-      // A drag (movement beyond the slop) is not a long-press.
-      fireEvent.touchStart(shell, { touches: [{ clientX: 480, clientY: 10 }] });
-      fireEvent.touchMove(shell, { touches: [{ clientX: 720, clientY: 10 }] });
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-      expect(flags(container)).toHaveLength(3);
-
-      // A long-press whose trailing click never arrives (the touch ends off
-      // the surface) must not swallow a later genuine click: the suppression
-      // expires on its own.
-      fireEvent.touchStart(shell, { touches: [{ clientX: 560, clientY: 10 }] });
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-      fireEvent.touchEnd(shell); // no click follows
-      expect(flags(container)).toHaveLength(4);
-      act(() => {
-        vi.advanceTimersByTime(1000);
-      });
-      fireEvent.click(waveform);
-      expect(surfaceClick).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
 });
 
 describe('Player marking — flags and selection', () => {
@@ -667,7 +563,7 @@ describe('Player marking — flags and selection', () => {
   it('selects a marker and jumps to it when its flag is clicked', async () => {
     const { container, controller } = await renderMarkingPlayer();
     mockShellRect(container, 200);
-    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
 
     fireEvent.click(flags(container)[1]); // B at 20s
 
@@ -1185,13 +1081,13 @@ describe('Player navigation — suppression in text inputs', () => {
 /* T08 zoom. Every timeline fits the viewport — the video is the main item and
 a zoomed timeline would stretch the embed off-screen — so the level is always
 fit, never gestured. The gesture machinery is gone; these tests cover the
-layout that remains: the fitted width, reveal-on-add, and the ruler-mode fit.
+layout that remains: the fitted width, reveal-on-add, and the loaded-player fit.
 jsdom has no layout, so the shell's rect is mocked (see renderMarkingPlayer). */
 
 describe('Player zoom', () => {
-  it('fits the timeline to the shell: waveform and flags span the viewport', async () => {
+  it('fits the timeline to the shell: ruler and flags span the viewport', async () => {
     const { container } = await renderMarkingPlayer();
-    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+    const waveform = container.querySelector('.player-ruler') as HTMLElement;
     const overlay = container.querySelector('.player-markers') as HTMLElement;
 
     // The helper's shell is as wide as the fitted content: 123.456 s × 8 px/s.
@@ -1206,7 +1102,7 @@ describe('Player zoom', () => {
     const user = userEvent.setup();
     const { container, controller } = await renderMarkingPlayer();
     mockShellRect(container, 200);
-    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
+    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
 
     act(() => controller.emitPlayback({ currentTime: 40 }));
     await user.keyboard('m');
@@ -1216,10 +1112,10 @@ describe('Player zoom', () => {
     expect(flags(container)).toHaveLength(3);
   });
 
-  it('fits the timeline width in ruler mode too', async () => {
+  it('fits the timeline width once the recording loads', async () => {
     const storage = await testStorage();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 50 })),
+      load: vi.fn(async () => ({ duration: 50 })),
     });
     // Give the shell a real width and settle the mount duration first, so the
     // fit lands where the width assertion below can read it.
@@ -1236,7 +1132,7 @@ describe('Player zoom', () => {
     await screen.findByText(/Playing from YouTube/);
     rectSpy.mockRestore();
 
-    const waveform = container.querySelector('.player-waveform') as HTMLElement;
+    const waveform = container.querySelector('.player-ruler') as HTMLElement;
     expect(waveform.style.width).toBe('400px'); // fit — 50 s in a 400 px shell
     storage.close();
   });
@@ -1249,7 +1145,7 @@ describe('Player — YouTube projects', () => {
   async function renderYouTubePlayer(duration = 200) {
     const storage = await testStorage();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration })),
+      load: vi.fn(async () => ({ duration })),
     });
     // Settle the mount duration before the fit runs, so a width-mocked test
     // sees the level for this recording rather than the mock's 10s default.
@@ -1260,7 +1156,7 @@ describe('Player — YouTube projects', () => {
       <Player autosave={autosave} controller={controller} onExit={vi.fn()} />,
     );
     // Settle the load before handing the view back: the ruler note only
-    // renders once the load has reported its mode.
+    // renders once the load has settled.
     await screen.findByText(/Playing from YouTube/);
     return { ...view, controller, storage, autosave };
   }
@@ -1271,11 +1167,11 @@ describe('Player — YouTube projects', () => {
     const options = youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]);
     // No blob and no peaks exist on this path — the URL is the whole input.
     expect(options.url).toBe(CANONICAL);
-    expect(options.container).toHaveClass('player-waveform');
+    expect(options.container).toHaveClass('player-ruler');
     storage.close();
   });
 
-  it('states playback precision honestly instead of the waveform note', async () => {
+  it('states playback precision honestly on the ruler note', async () => {
     const { storage } = await renderYouTubePlayer();
 
     const note = await screen.findByText(/Playing from YouTube/);
@@ -1294,7 +1190,6 @@ describe('Player — YouTube projects', () => {
     // (private, removed, region-blocked, embed-disabled, or no API script).
     const controller = mockController({
       load: vi.fn(async () => ({
-        mode: 'ruler' as const,
         duration: 0,
         error: new YouTubePlaybackError(150),
       })),
@@ -1324,8 +1219,8 @@ describe('Player — YouTube projects', () => {
     const storage = await testStorage();
     const load = vi
       .fn<() => Promise<LoadResult>>()
-      .mockResolvedValueOnce({ mode: 'ruler', duration: 0, error: new YouTubePlaybackError(150) })
-      .mockResolvedValueOnce({ mode: 'ruler', duration: 604.2 });
+      .mockResolvedValueOnce({ duration: 0, error: new YouTubePlaybackError(150) })
+      .mockResolvedValueOnce({ duration: 604.2 });
     const controller = mockController({ load });
     const record = projectRecord({ duration: 604.2 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
@@ -1349,7 +1244,6 @@ describe('Player — YouTube projects', () => {
     const storage = await testStorage();
     const controller = mockController({
       load: vi.fn(async () => ({
-        mode: 'ruler' as const,
         duration: 604.2,
         error: new YouTubePlaybackError(150),
       })),
@@ -1371,7 +1265,7 @@ describe('Player — YouTube projects', () => {
   it('tells an empty Label-mode project that no community labels loaded', async () => {
     const storage = await testStorage();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+      load: vi.fn(async () => ({ duration: 604.2 })),
     });
     const record = projectRecord({ playerMode: 'label', markers: [], duration: 604.2 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
@@ -1389,7 +1283,7 @@ describe('Player — YouTube projects', () => {
   it('keeps the no-labels note to the empty Label-mode case', async () => {
     const storage = await testStorage();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+      load: vi.fn(async () => ({ duration: 604.2 })),
     });
     // Marks in hand: Playback mode, nothing to explain.
     const record = projectRecord({ playerMode: 'playback', duration: 604.2 });
@@ -1411,7 +1305,7 @@ describe('Player — YouTube projects', () => {
       .mockReturnValue(shellRect(800));
     const { container, storage } = await renderYouTubePlayer(200);
 
-    const surface = container.querySelector('.player-waveform') as HTMLElement;
+    const surface = container.querySelector('.player-ruler') as HTMLElement;
     expect(surface.style.width).toBe('800px'); // fit — never the 1600 px floor
 
     rectSpy.mockRestore();
@@ -1420,8 +1314,8 @@ describe('Player — YouTube projects', () => {
 
   it('leaves ctrl+scroll to the browser — there is no zoom to gesture at', async () => {
     const { container, storage } = await renderYouTubePlayer(200);
-    const shell = container.querySelector('.player-waveform-shell') as HTMLElement;
-    const before = (container.querySelector('.player-waveform') as HTMLElement).style.width;
+    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
+    const before = (container.querySelector('.player-ruler') as HTMLElement).style.width;
 
     const wheel = new WheelEvent('wheel', {
       deltaY: -300,
@@ -1433,7 +1327,7 @@ describe('Player — YouTube projects', () => {
       shell.dispatchEvent(wheel);
     });
 
-    expect((container.querySelector('.player-waveform') as HTMLElement).style.width).toBe(before);
+    expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe(before);
     // Not preventDefault'd either: the page keeps its own zoom over the embed.
     expect(wheel.defaultPrevented).toBe(false);
     storage.close();
@@ -1464,7 +1358,7 @@ describe('Player — YouTube projects', () => {
     // length, and it arrives with the load result.
     const storage = await testStorage();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372.5 })),
+      load: vi.fn(async () => ({ duration: 372.5 })),
     });
     const record = projectRecord({ duration: 0 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
@@ -1484,7 +1378,7 @@ describe('Player — YouTube projects', () => {
 
       const split = document.querySelector('.player-practice-split') as HTMLElement;
       // The shell and the readout are the split's two panes.
-      expect(split.querySelector('.player-waveform-shell')).not.toBeNull();
+      expect(split.querySelector('.player-ruler-shell')).not.toBeNull();
       expect(within(split).getByRole('region', { name: 'Practice readout' })).toBeInTheDocument();
       storage.close();
     });
@@ -1518,7 +1412,7 @@ describe('Player — YouTube projects', () => {
 
       // The shell carries the posture; the CSS pins the overlays to the ruler
       // band's height, so nothing overlays the video.
-      expect(document.querySelector('.player-waveform-shell')).toHaveClass('youtube-shell');
+      expect(document.querySelector('.player-ruler-shell')).toHaveClass('youtube-shell');
       storage.close();
     });
   });

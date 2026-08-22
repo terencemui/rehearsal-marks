@@ -23,7 +23,7 @@ import { ProjectsScreen } from './ui/ProjectsScreen';
 import './ui/app.css';
 
 export interface AppProps {
-  /** Test seam: overrides the wavesurfer-backed controller. */
+  /** Test seam: overrides the audio controller. */
   controllerFactory?: () => AudioController;
   /** Test seam: an already-opened storage; the app opens its own when absent. */
   storage?: Storage;
@@ -259,7 +259,7 @@ function App({
 
   useEffect(() => {
     // Mount and every tab switch invalidate an in-flight open: the player
-    // must never yank the user off a tab they navigated to while a decode
+    // must never yank the user off a tab they navigated to while a read
     // was still running.
     openTokenRef.current += 1;
   }, [tab]);

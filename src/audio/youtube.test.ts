@@ -5,10 +5,10 @@ import { YouTubePlaybackError } from './errors';
 
 /**
  * The YouTube backend's tests drive a faked `window.YT` global — the IFrame
- * API surface, faked the way the wavesurfer-backed controller's tests fake
- * wavesurfer: no real iframe loading, no network. The seam stays the
- * controller's public interface: every test loads through `load` and reads
- * the same playback state the player subscribes to.
+ * API surface, faked like the rest of the audio layer's seams: no real iframe
+ * loading, no network. The seam stays the controller's public interface: every
+ * test loads through `load` and reads the same playback state the player
+ * subscribes to.
  */
 
 /** The canonical URL form every YouTube project stores. */
@@ -134,7 +134,7 @@ describe('AudioController YouTube playback', () => {
     const container = document.createElement('div');
     const { result, player } = await loadReady(container);
 
-    expect(result).toEqual({ mode: 'ruler', duration: 42 });
+    expect(result).toEqual({ duration: 42 });
     // The video stays visible inside the container, per the API's terms.
     expect(container.querySelector('.rm-youtube-player iframe')).not.toBeNull();
     // The embed is constructed with the video id from the canonical URL. The
@@ -214,7 +214,7 @@ describe('AudioController YouTube playback', () => {
     player.dispatch('onError', { data: 101 });
     const result = await pending;
 
-    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result).toMatchObject({ duration: 0 });
     expect(result.error).toBeInstanceOf(YouTubePlaybackError);
     expect(result.error?.code).toBe(101);
   });
@@ -324,7 +324,7 @@ describe('AudioController YouTube playback', () => {
     player.dispatch('onError', 101);
     const result = await pending;
 
-    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result).toMatchObject({ duration: 0 });
     expect(result.error).toBeInstanceOf(YouTubePlaybackError);
     expect(result.error?.code).toBe(101);
     // The ruler still renders (a single zero tick) — the timeline survives.
@@ -341,7 +341,7 @@ describe('AudioController YouTube playback', () => {
     player.dispatch('onError', 101);
     const result = await pending;
 
-    expect(result).toMatchObject({ mode: 'ruler', duration: 604.2 });
+    expect(result).toMatchObject({ duration: 604.2 });
     expect(result.error?.code).toBe(101);
     expect(controller.getPlaybackState().duration).toBe(604.2);
     // A real timeline, not the zero tick: multiple labeled ticks render.
@@ -363,7 +363,7 @@ describe('AudioController YouTube playback', () => {
 
     player.dispatch('onError', 100);
     await flush();
-    expect(outcome).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(outcome).toMatchObject({ duration: 0 });
     expect((outcome as { error: YouTubePlaybackError }).error.code).toBe(100);
   });
 
@@ -383,7 +383,7 @@ describe('AudioController YouTube playback', () => {
     player.duration = 42;
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(outcome).toMatchObject({ mode: 'ruler', duration: 42 });
+    expect(outcome).toMatchObject({ duration: 42 });
     expect(controller.getPlaybackState().duration).toBe(42);
   });
 
@@ -396,7 +396,7 @@ describe('AudioController YouTube playback', () => {
     await vi.advanceTimersByTimeAsync(10_100);
 
     const result = await pending;
-    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result).toMatchObject({ duration: 0 });
     expect(result.error).toBeInstanceOf(YouTubePlaybackError);
     expect(result.error?.code).toBe(0);
   });
@@ -406,7 +406,7 @@ describe('AudioController YouTube playback', () => {
     const { pending } = await loadYouTube(container, 'not a youtube link');
 
     const result = await pending;
-    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result).toMatchObject({ duration: 0 });
     expect(result.error).toBeInstanceOf(YouTubePlaybackError);
     expect(result.error?.code).toBe(2);
     expect(players).toHaveLength(0); // no embed was ever constructed
@@ -439,7 +439,7 @@ describe('AudioController YouTube playback', () => {
     player.duration = 42;
     player.dispatch('onReady');
 
-    expect(await pending).toEqual({ mode: 'ruler', duration: 42 });
+    expect(await pending).toEqual({ duration: 42 });
   });
 
   it('surfaces a load failure when the API never arrives', async () => {
@@ -452,7 +452,7 @@ describe('AudioController YouTube playback', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     const result = await pending;
 
-    expect(result).toMatchObject({ mode: 'ruler', duration: 0 });
+    expect(result).toMatchObject({ duration: 0 });
     expect(result.error).toBeInstanceOf(YouTubePlaybackError);
     expect(result.error?.code).toBe(0);
     expect(container.querySelector('.rm-ruler')).not.toBeNull();
@@ -513,7 +513,7 @@ describe('AudioController YouTube playback', () => {
     player.duration = 604.2;
     player.dispatch('onReady');
 
-    expect(await secondLoad).toEqual({ mode: 'ruler', duration: 604.2 });
+    expect(await secondLoad).toEqual({ duration: 604.2 });
   });
 
   it('stops the API deadline once the API arrives, however slow the player is', async () => {
@@ -534,6 +534,6 @@ describe('AudioController YouTube playback', () => {
     player.duration = 42;
     player.dispatch('onReady');
 
-    expect(await pending).toEqual({ mode: 'ruler', duration: 42 });
+    expect(await pending).toEqual({ duration: 42 });
   });
 });

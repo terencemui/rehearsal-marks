@@ -38,8 +38,6 @@ Label mode adds the editing tools to everything above:
 | Key | Action |
 |---|---|
 | `M` (or the Add marker button) | Add a marker at the playhead, without pausing |
-| Double-click the waveform | Add a marker at that position |
-| Long-press (touch) | Add a marker at that position |
 | Click a marker flag | Jump to it **and select it** for editing |
 | `Alt`+`←` / `Alt`+`→` | Nudge the selected marker ∓0.1 seconds |
 | `Delete` / `Backspace` | Delete the selected marker (undo toast for 5 seconds) |

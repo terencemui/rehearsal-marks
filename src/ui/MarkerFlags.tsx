@@ -58,10 +58,6 @@ export function MarkerFlags({ markers, duration, selectedId, onFlagClick, width 
               // it) instead of meaning play/pause.
               event.currentTarget.blur();
             }}
-            // A flag owns its double-clicks and long-presses: two clicks on a
-            // flag are two selections, never a new marker on the surface below.
-            onDoubleClick={(event) => event.stopPropagation()}
-            onTouchStart={(event) => event.stopPropagation()}
             title={
               marker.aliases.length > 0 ? `${marker.label} — ${marker.aliases.join(', ')}` : marker.label
             }

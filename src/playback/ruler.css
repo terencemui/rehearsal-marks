@@ -1,4 +1,4 @@
-/* Ruler-only timeline — the degraded view when the waveform cannot decode. */
+/* Ruler timeline — the one timeline every project renders. */
 
 :root {
   /* The timeline band's height. The YouTube player's flags and playhead

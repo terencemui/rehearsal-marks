@@ -67,7 +67,7 @@ describe('App create from a YouTube link', () => {
     // read-only, or there is no visible way to place the first mark.
     const user = userEvent.setup();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+      load: vi.fn(async () => ({ duration: 372 })),
     });
     const { storage } = await renderApp(controller);
 
@@ -87,7 +87,7 @@ describe('App create from a YouTube link', () => {
     // marks render, the posture is Playback, and no editing tools show.
     const user = userEvent.setup();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+      load: vi.fn(async () => ({ duration: 604.2 })),
     });
     const community: CommunityLabelSet = {
       markers: [{ id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 }],
@@ -136,7 +136,7 @@ describe('App create from a YouTube link', () => {
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+      load: vi.fn(async () => ({ duration: 604.2 })),
     });
     const opened = await testStorage();
     render(
@@ -179,7 +179,7 @@ describe('App create from a YouTube link', () => {
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+      load: vi.fn(async () => ({ duration: 372 })),
     });
     const opened = await testStorage();
     render(
@@ -203,7 +203,7 @@ describe('App create from a YouTube link', () => {
   it('lands in the same player session an upload does', async () => {
     const user = userEvent.setup();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+      load: vi.fn(async () => ({ duration: 372 })),
     });
     const { storage } = await renderApp(controller);
 
@@ -215,8 +215,7 @@ describe('App create from a YouTube link', () => {
     expect(screen.getByLabelText('Volume')).toBeInTheDocument();
     expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
 
-    // Nothing was decoded — there is no audio on this path at all.
-    expect(controller.extractPeaks).not.toHaveBeenCalled();
+    // A YouTube record stores no audio bytes — the URL is the whole input.
     const [stored] = await storage.projects.list();
     expect(stored.name).toBe(VIDEO_TITLE);
     expect((await storage.projects.get(stored.id))!.videoId).toBe(VIDEO_ID);
@@ -284,25 +283,24 @@ describe('App create from a YouTube link', () => {
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
   });
 
-  it('reopens a stored YouTube project without trying to decode it', async () => {
+  it('reopens a stored YouTube project', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(
       projectRecord({ name: 'Brahms on YouTube', videoId: VIDEO_ID, duration: 372 }),
     );
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 372 })),
+      load: vi.fn(async () => ({ duration: 372 })),
     });
     const { container } = await renderApp(controller, storage);
 
     await user.click(await screen.findByRole('button', { name: /Brahms on YouTube/ }));
 
     await screen.findByRole('heading', { name: 'Brahms on YouTube' });
-    // Reopening is the other way into a YouTube session, and it must reach the
-    // same arm of the seam — there is no blob here to decode or play.
-    expect(controller.extractPeaks).not.toHaveBeenCalled();
+    // Reopening is the other way into a YouTube session: the same arm of the
+    // seam, loading the stored URL — there is no blob on this path.
     expect(youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]).url).toBe(YOUTUBE_CANONICAL);
-    expect(container.querySelector('.player-waveform')).toBeInTheDocument();
+    expect(container.querySelector('.player-ruler')).toBeInTheDocument();
   });
 
   it('offers the YouTube link input on the create surface, and no file picker', async () => {
@@ -349,7 +347,7 @@ describe('App Projects workspace', () => {
     const record = projectRecord();
     await storage.projects.save(record);
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 123.456 })),
+      load: vi.fn(async () => ({ duration: 123.456 })),
     });
     await renderApp(controller, storage);
 
@@ -359,7 +357,6 @@ describe('App Projects workspace', () => {
     // the load is the YouTube arm's canonical URL, and the stored markers
     // come with the record.
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
-    expect(controller.extractPeaks).not.toHaveBeenCalled();
     const loadOptions = youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(loadOptions.url).toBe(`https://www.youtube.com/watch?v=${record.videoId}`);
     expect(await storage.projects.get(record.id)).toEqual(
@@ -488,7 +485,7 @@ describe('App Projects workspace', () => {
       releaseRead = resolve;
     });
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 123.456 })),
+      load: vi.fn(async () => ({ duration: 123.456 })),
     });
     const slowStorage: Storage = {
       ...storage,
@@ -534,7 +531,7 @@ describe('App Projects workspace', () => {
     };
     const controller = mockController({
       // A different duration guarantees the player schedules a write.
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 42 })),
+      load: vi.fn(async () => ({ duration: 42 })),
     });
     await renderApp(controller, flaky);
     await pasteLink(user, YOUTUBE_CANONICAL);
@@ -738,7 +735,7 @@ describe('App Commons submission', () => {
     commons: ReturnType<typeof mockCommonsWrite>,
   ): Promise<string> {
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+      load: vi.fn(async () => ({ duration: 604.2 })),
     });
     const { storage, auth } = await renderApp(
       controller,
@@ -781,7 +778,7 @@ describe('App Commons submission', () => {
     const user = userEvent.setup();
     const commons = mockCommonsWrite();
     const controller = mockController({
-      load: vi.fn(async () => ({ mode: 'ruler' as const, duration: 604.2 })),
+      load: vi.fn(async () => ({ duration: 604.2 })),
     });
     const { auth } = await renderApp(controller, undefined, undefined, undefined, commons);
     await pasteLink(user, YOUTUBE_CANONICAL);
