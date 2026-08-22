@@ -17,18 +17,19 @@ export function PrivacyPolicy() {
 
       <h3>Your projects stay in your browser</h3>
       <p>
-        Projects — your recordings, markers, and aliases — live in this browser's storage and
-        never leave it. There are no accounts for projects and no server uploads; nothing about
-        a project is transmitted. Browser storage is not permanent storage, though — see{' '}
-        <strong>Storage eviction</strong> in Help, and use Export to hold a copy nothing in the
-        browser can touch.
+        Projects — your markers, aliases, and the YouTube links they're pinned to — live in this
+        browser's storage and never leave it. There are no accounts for projects and no server
+        uploads; nothing about a project is transmitted. Browser storage is not permanent
+        storage, though — see <strong>Storage eviction</strong> in Help. The Commons is the only
+        durable home for your markers: a published label set lives on the server, and is public by
+        definition.
       </p>
 
       <h3>YouTube playback streams from Google</h3>
       <p>
         A YouTube project plays its video from YouTube itself. Playing a video sends Google the
         usual data a video player sends, under{' '}
-        <a href="https://policies.google.com/privacy">Google's privacy policy</a>. Your marks
+        <a href="https://policies.google.com/privacy">Google's privacy policy</a>. Your markers
         stay in your browser — Google never sees them.
       </p>
 
@@ -87,14 +88,15 @@ export function TermsOfService() {
 
       <h3>Your projects are your responsibility</h3>
       <p>
-        Keep an export of anything you can't afford to lose. Browser storage can be evicted at
-        any time — by disk pressure, privacy settings, or policy — and the app can't restore
-        what a browser removes.
+        Publish anything you can't afford to lose. Browser storage can be evicted at any time —
+        by disk pressure, privacy settings, or policy — and the app can't restore what a browser
+        removes. The Commons is the only durable home for your markers; a published label set is
+        public.
       </p>
 
       <h3>Contributions</h3>
       <p>
-        When you publish a label set, you confirm that you placed the marks yourself on the
+        When you publish a label set, you confirm that you placed the markers yourself on the
         exact performance the set describes and that you're allowed to share them. A published
         label set is public and attributed to you; your account deletion removes your sets.
       </p>

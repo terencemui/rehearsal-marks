@@ -4,16 +4,16 @@ import './help.css';
 
 /**
  * The Help tab: the discoverable home for everything the player keeps off the
- * visible chrome — the keyboard scheme, the accepted formats and their limits,
- * how storage works, what eviction can do, and the label-set contribution
- * workflow. Static reference content; the only state is which legal document
- * (T26) is showing behind the privacy-policy and terms links, swapped in for
- * the reference content and back again. No storage access.
+ * visible chrome — the keyboard scheme, the marker rules, how storage works,
+ * what eviction can do, and the label-set contribution workflow. Static
+ * reference content; the only state is which legal document (T26) is showing
+ * behind the privacy-policy and terms links, swapped in for the reference
+ * content and back again. No storage access.
  *
  * Keep the facts here in sync with their sources of truth: the keyboard
- * reference mirrors docs/keyboard-reference.md, the format rules live in
- * src/upload/upload.ts, the contribution workflow matches CONTRIBUTING.md,
- * and the legal documents live in src/ui/Legal.tsx.
+ * reference mirrors docs/keyboard-reference.md, the marker rules live in
+ * src/domain, the contribution workflow matches CONTRIBUTING.md, and the
+ * legal documents live in src/ui/Legal.tsx.
  */
 export function HelpTab() {
   // Which document is showing: null is the reference content itself.
@@ -58,10 +58,9 @@ export function HelpTab() {
           The player has two postures, switched from the <strong>Playback | Label</strong>{' '}
           segmented control in the transport bar. <strong>Playback mode</strong> is the practice
           posture: navigation tools with read-only markers. <strong>Label mode</strong> keeps
-          every navigation tool and adds the editing tools. Uploads open in Label mode; YouTube
-          projects open in Playback mode when community labels load for the video, in Label mode
-          otherwise; library-seeded projects open in Playback mode. The last-used mode is
-          remembered per project.
+          every navigation tool and adds the editing tools. A project opens in Playback mode
+          when it already has markers — its community label set loaded — and in Label mode
+          otherwise. The last-used mode is remembered per project.
         </p>
         <h4>Both modes</h4>
         <table>
@@ -151,14 +150,9 @@ export function HelpTab() {
         </p>
       </section>
 
-      <section aria-labelledby="help-formats">
-        <h3 id="help-formats">Formats and limits</h3>
+      <section aria-labelledby="help-markers">
+        <h3 id="help-markers">Markers and limits</h3>
         <ul>
-          <li>
-            Uploads accept <strong>MP3</strong> and <strong>M4A</strong> recordings. WAV and FLAC
-            are rejected with conversion guidance — convert with e.g.{' '}
-            <code>ffmpeg -i recording.wav -b:a 192k recording.mp3</code>.
-          </li>
           <li>
             Marker times accept loose input: <code>5:10.5</code>, <code>310.5</code>, or{' '}
             <code>5 10</code>. They display as <code>mm:ss.mmm</code> (<code>h:mm:ss.mmm</code> for
@@ -179,10 +173,10 @@ export function HelpTab() {
         <h3 id="help-storage">Storage</h3>
         <ul>
           <li>
-            Projects live entirely in this browser: your markers and your uploaded recordings{' '}
-            <strong>stay in your browser</strong>. There are no accounts for projects and no
-            server uploads — the app is your hard drive. Local projects{' '}
-            <strong>never leave your browser</strong>, not even to the Commons.
+            Projects live entirely in this browser: your markers, aliases, and the YouTube links
+            they're pinned to <strong>stay in your browser</strong>. There are no accounts for
+            projects and no server uploads. Local projects <strong>never leave your browser</strong>,
+            not even to the Commons.
           </li>
           <li>
             The Commons is the one hosted surface. A label set you contribute there is stored on
@@ -190,19 +184,14 @@ export function HelpTab() {
             it, and it is attributed to you.
           </li>
           <li>
-            A <strong>YouTube project</strong> plays its video from YouTube itself: playback
-            streams from Google's servers while the video stays visible, per YouTube's terms.
-            The project still lives entirely in this browser — its marks stay in it, and
-            Google never sees them.
+            A project plays its video from YouTube itself: playback <strong>streams from
+            Google's</strong> servers while the video stays visible, per YouTube's terms. Your
+            markers sit on a <strong>ruler</strong> under the video — labeled ticks you click to
+            seek — and stay in your browser: <strong>Google never sees them</strong>.
           </li>
           <li>
             Everything is saved <strong>automatically</strong> as you work (no save button), with a
             Saved / Saving status line in the player.
-          </li>
-          <li>
-            <strong>Export is the backstop.</strong> Each project row has an Export button: it
-            downloads a single zip (your markers plus the audio) and you hold a copy nothing in
-            the browser can touch — re-import it any time, on any machine.
           </li>
         </ul>
       </section>
@@ -221,8 +210,10 @@ export function HelpTab() {
             Screen) — installed apps are exempt from the 7-day iOS eviction.
           </li>
           <li>
-            <strong>Export your projects.</strong> The zip export is the only guarantee that
-            survives any eviction; treat the browser copy as a cache, the zip as the truth.
+            <strong>The Commons is the only durable home for your markers.</strong> A published
+            label set lives on the server, not in this browser — submit your label set if you
+            can't afford to lose it. That copy is public, though; the markers you keep to
+            yourself survive only as long as this browser does.
           </li>
         </ul>
       </section>
@@ -230,20 +221,19 @@ export function HelpTab() {
       <section aria-labelledby="help-contribute">
         <h3 id="help-contribute">Contribute a label set</h3>
         <p>
-          Label sets are the community's shared marks for a performance — contributed two ways,
-          depending on the recording. YouTube performances are published from inside the app,
-          with nothing to download or set up; CC0 Library recordings keep the repo's
-          pull-request flow.
+          Label sets are the community's shared markers for a performance. Publishing one happens
+          entirely in the app — sign in with Google, submit, and await review. There is nothing
+          to download or set up.
         </p>
 
-        <h4>From the app — YouTube performances</h4>
+        <h4>From the app</h4>
         <p>
           If you marked a public performance on YouTube and want every student to start from
-          your marks, the whole path is in the app:
+          your markers, the whole path is in the app:
         </p>
         <ol>
           <li>
-            Create a project from the performance's YouTube link and place your marks — labels
+            Create a project from the performance's YouTube link and place your markers — labels
             come out A, B, C… in time order automatically.
           </li>
           <li>
@@ -256,54 +246,18 @@ export function HelpTab() {
           </li>
           <li>
             A rejected set comes back to you: the row shows <strong>Rejected</strong>, your
-            marks were never public, and submitting the edited set again returns it to review.
-            Once <strong>published</strong>, anyone who opens this video gets your marks, and
+            markers were never public, and submitting the edited set again returns it to review.
+            Once <strong>published</strong>, anyone who opens this video gets your markers, and
             you can update them any time — updates return the set to pending and go through
             review again.
           </li>
         </ol>
         <p>
           A published label set is <strong>public by definition</strong> — anyone who opens
-          this video reads your marks, and the set is attributed to you (your Google account).
-          Publish only marks you placed yourself on this exact performance. Submissions are
+          this video reads your markers, and the set is attributed to you (your Google account).
+          Publish only markers you placed yourself on this exact performance. Submissions are
           limited to three label sets in any 7 days.
         </p>
-
-        <h4>The CC0 Library — through the repo</h4>
-        <p>
-          Label sets for Library recordings go through the repo's pull-request flow, which
-          needs a GitHub account — the Library's rows promise license and attribution, so
-          contributions are reviewed in git. The GitHub-facing version with the review rules
-          is <code>CONTRIBUTING.md</code>; the path is:
-        </p>
-        <ol>
-          <li>
-            Open the library recording in the app and place your markers — labels come out
-            A, B, C… in time order automatically.
-          </li>
-          <li>
-            On the Projects screen, choose <strong>Export labels</strong> on that project's row.
-            This downloads one JSON file carrying your markers and the recording's identity
-            (sha256, duration, source, license, attribution) — the facts that make the set
-            applicable to exactly one recording.
-          </li>
-          <li>
-            Fork the{' '}
-            <a href="https://github.com/terencemui/rehearsal-marks">rehearsal-marks repo</a> and
-            add the exported file, renamed to <code>&lt;entry-id&gt;.json</code>, at{' '}
-            <code>library/labelsets/</code> — one file, one recording, nothing else.
-          </li>
-          <li>
-            Open a pull request with that single file. Reviewers verify the checklist in
-            docs/maintainer-catalog.md — recording identity, marker sanity, and the CC0-only
-            rule.
-          </li>
-          <li>
-            Once merged, your label set ships in the Library for every student. Only label sets
-            for library recordings can be contributed this way: your own uploads never leave
-            your browser.
-          </li>
-        </ol>
       </section>
     </section>
   );

@@ -1,6 +1,6 @@
 # Rehearsal Marks
 
-A classical music student pins their score's rehearsal marks to a recording, so they can jump straight to "rehearsal C" instead of scrubbing by ear. Projects live entirely in the browser; the community contributes label sets for shared recordings.
+A classical music student pins their score's rehearsal marks to a recording, so they can jump straight to "rehearsal C" instead of scrubbing by ear. Projects live entirely in the browser; the community contributes label sets that apply to the same recordings.
 
 ## Language
 
@@ -29,19 +29,15 @@ A self-contained, editable unit: one recording plus its markers.
 _Avoid_: file, document, track
 
 **Recording**:
-The performance a project is built on — an uploaded audio file or a YouTube video.
+The performance a project is built on — a YouTube video, streamed from Google.
 _Avoid_: audio, media, clip
 
-**Source**:
-Where a project's recording comes from: an upload or a YouTube link.
-_Avoid_: origin, kind, type
-
 **Recording identity**:
-The facts that make a label set applicable to exactly one recording: sha256 (uploads) or the canonical URL (YouTube), with duration as a soft check.
+The facts that make a label set applicable to exactly one recording: the video ID (stored as its canonical URL), with duration as a soft check.
 _Avoid_: fingerprint, checksum
 
 **Canonical URL**:
-The normalized YouTube URL form a YouTube project stores as its recording identity; every accepted link form matches it by video ID.
+The normalized YouTube URL form a project stores as its recording identity; every accepted link form matches it by video ID.
 _Avoid_: permalink, normalized link
 
 **Video ID**:
@@ -50,12 +46,8 @@ _Avoid_: youtube key, video key
 
 ### The player
 
-**Waveform**:
-The amplitude graph of a recording, rendered from a one-time decode pass; the click-to-seek and double-click-to-add surface.
-_Avoid_: wave graph, visualizer
-
 **Ruler**:
-The timeline drawn when no waveform is available (a failed decode, or a YouTube project): labeled ticks over a click-to-seek surface.
+The labeled-ticks, click-to-seek surface under the video.
 _Avoid_: timeline, tick bar
 
 **Playback mode**:
@@ -72,17 +64,13 @@ _Avoid_: edit mode
 Markers plus recording identity for one recording — the community contribution format, copied into a project when loaded.
 _Avoid_: labels file, markers file, annotation set
 
-**Library**:
-The curated catalog of CC0 recordings with pre-applied label sets, and the tab that browses them. Holds the recordings themselves; the Commons holds only marks.
-_Avoid_: catalog, store
-
 **Commons**:
 The hosted collection of community-contributed label sets, keyed by recording identity — readable by anyone, writable only by a contributor.
 _Avoid_: store, database, backend, catalog
 
 **Contributor**:
 A signed-in person who publishes label sets to the Commons and owns the ones they publish; reading the Commons never requires being one.
-_Avoid_: user, author, uploader
+_Avoid_: user, author
 
 **Publication status**:
 Whether a label set in the Commons is visible to anonymous readers: pending until a maintainer reviews it, then published — or rejected, when a maintainer denies a pending set (visible to its contributor, who can edit and resubmit). A contributor with a track record is trusted: their submissions and edits publish without review.

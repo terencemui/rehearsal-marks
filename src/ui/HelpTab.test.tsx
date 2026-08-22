@@ -5,8 +5,8 @@ import { HelpTab } from './HelpTab';
 
 /**
  * The Help tab is a static reference: these tests pin the discoverable homes
- * the ticket promises — keyboard reference, formats and limits, storage,
- * eviction, and the contribution workflow — as facts, not as layout.
+ * the ticket promises — keyboard reference, marker limits, storage, eviction,
+ * and the contribution workflow — as facts, not as layout.
  */
 describe('HelpTab', () => {
   it('documents the keyboard reference', () => {
@@ -21,15 +21,14 @@ describe('HelpTab', () => {
     expect(keyboard).toHaveTextContent('Esc');
   });
 
-  it('states the accepted formats and their limits', () => {
+  it('states the marker rules and their limits', () => {
     render(<HelpTab />);
 
-    const formats = screen.getByRole('heading', { name: /formats/i }).closest('section')!;
-    expect(formats).toHaveTextContent('MP3');
-    expect(formats).toHaveTextContent('M4A');
-    expect(formats).toHaveTextContent('WAV');
-    expect(formats).toHaveTextContent('FLAC');
-    expect(formats).toHaveTextContent('16');
+    const markers = screen.getByRole('heading', { name: /markers/i }).closest('section')!;
+    expect(markers).toHaveTextContent('5:10.5');
+    expect(markers).toHaveTextContent('310.5');
+    expect(markers).toHaveTextContent('16');
+    expect(markers).toHaveTextContent('AA');
   });
 
   it('explains storage honestly, including the stays-in-your-browser guarantee', () => {
@@ -38,7 +37,7 @@ describe('HelpTab', () => {
     const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
     expect(storage).toHaveTextContent('stay in your browser');
     expect(storage).toHaveTextContent('automatically');
-    expect(storage).toHaveTextContent(/export/i);
+    expect(storage).toHaveTextContent('Commons');
   });
 
   it('keeps the privacy promise honest about YouTube streaming', () => {
@@ -56,7 +55,7 @@ describe('HelpTab', () => {
     const eviction = screen.getByRole('heading', { name: 'Storage eviction' }).closest('section')!;
     expect(eviction).toHaveTextContent('7');
     expect(eviction).toHaveTextContent('home screen');
-    expect(eviction).toHaveTextContent('export');
+    expect(eviction).toHaveTextContent('durable');
   });
 
   it('walks through the in-app contribution flow without any git or GitHub', () => {
@@ -72,18 +71,6 @@ describe('HelpTab', () => {
     // The in-app flow is the musician's path: no pull requests, no GitHub.
     expect(text).not.toMatch(/pull request/i);
     expect(text).not.toMatch(/github/i);
-  });
-
-  it('keeps the Library contribution flow on the repo pull-request path', () => {
-    render(<HelpTab />);
-
-    const workflow = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
-    const steps = withinOrderedList(workflow, 1);
-    const text = steps.map((step) => step.textContent).join('\n');
-    expect(text).toMatch(/export/i);
-    expect(text).toMatch(/labelsets/i);
-    expect(text).toMatch(/pull request/i);
-    expect(text).toMatch(/one file/i);
   });
 
   it('distinguishes local projects from contributed label sets', () => {

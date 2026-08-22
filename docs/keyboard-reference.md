@@ -7,9 +7,9 @@ never seeks, jumps, or deletes.
 The player has two postures, switched from the **Playback | Label** segmented
 control in the transport bar. **Playback mode** is the practice posture:
 navigation tools with read-only markers. **Label mode** keeps every
-navigation tool and adds the editing tools. Uploads open in Label mode;
-YouTube and library-seeded projects open in Playback mode. The last-used
-mode is remembered per project.
+navigation tool and adds the editing tools. A project opens in Playback mode
+when it already has markers — its community label set loaded — and in Label mode
+otherwise. The last-used mode is remembered per project.
 
 ## Both modes
 
