@@ -1,9 +1,7 @@
-import type { ProjectSummary } from '../storage';
-
 /**
- * Pure helpers for the Projects screen: display formatting, list aggregation,
- * and the rename rule. Facts in, strings out — no storage or React knowledge,
- * so every piece is testable in isolation.
+ * Pure helpers for the Projects screen: display formatting and the rename
+ * rule. Facts in, strings out — no storage or React knowledge, so every piece
+ * is testable in isolation.
  */
 
 /**
@@ -24,19 +22,6 @@ export function formatDuration(seconds: number): string {
   return hours > 0 ? `${hours}:${mm}:${ss}.${mmm}` : `${minutes}:${ss}.${mmm}`;
 }
 
-/** Byte counts in SI units with one decimal from 1000 up: "4 B", "1.5 KB", "12.3 MB". */
-export function formatBytes(bytes: number): string {
-  const clamped = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
-  if (clamped < 1000) return `${Math.round(clamped)} B`;
-  let value = clamped / 1000;
-  let unit = 'KB';
-  while (value >= 1000 && unit !== 'GB') {
-    value /= 1000;
-    unit = unit === 'KB' ? 'MB' : 'GB';
-  }
-  return `${value.toFixed(1)} ${unit}`;
-}
-
 /**
  * Last-modified as a relative stamp — "Just now", "5m ago", "3h ago",
  * "2d ago", "3w ago" — falling back to an ISO date once the stamp is eight
@@ -55,11 +40,6 @@ export function formatUpdatedAt(epochMs: number, now: number): string {
   if (age < WEEK) return `${Math.floor(age / DAY)}d ago`;
   if (age < 8 * WEEK) return `${Math.floor(age / WEEK)}w ago`;
   return new Date(epochMs).toISOString().slice(0, 10);
-}
-
-/** The "Total used" line: the sum of every project's stored-size estimate. */
-export function totalUsageBytes(summaries: readonly Pick<ProjectSummary, 'sizeBytes'>[]): number {
-  return summaries.reduce((total, summary) => total + summary.sizeBytes, 0);
 }
 
 export type ProjectNameValidation = { ok: true; name: string } | { ok: false };

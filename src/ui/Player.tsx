@@ -10,6 +10,7 @@ import {
 import type { AudioController } from '../audio';
 import {
   addMarker,
+  canonicalYouTubeUrl,
   createMarker,
   deriveLabels,
   errorMessage,
@@ -28,17 +29,7 @@ import { MarkerInspector } from './MarkerInspector';
 import { PracticeReadout } from './PracticeReadout';
 import { STATUS_TEXT } from './status';
 import { UndoToast } from './UndoToast';
-import {
-  ZOOM_STEP,
-  clampScrollLeft,
-  contentWidth,
-  fitPxPerSec,
-  minPxPerSec,
-  scrollLeftForTime,
-  wheelNotches,
-  zoomAround,
-  type ZoomView,
-} from './zoom';
+import { contentWidth, fitPxPerSec, scrollLeftForTime } from './zoom';
 import './player.css';
 
 export interface PlayerProps {
@@ -55,10 +46,6 @@ export interface PlayerProps {
 
 /** The undo toast's window — the spec's five seconds, no dialog. */
 const UNDO_WINDOW_MS = 5000;
-/** Movement beyond this — a clearly horizontal drag — is a pan, not a tap. */
-const PAN_SLOP_PX = 10;
-/** A pinch with fingers closer than this has no trustworthy anchor yet. */
-const PINCH_MIN_START_PX = 20;
 
 /**
  * What a YouTube project's ruler says about its clock. The embed reports its
@@ -88,11 +75,11 @@ const YOUTUBE_NO_LABELS_NOTE =
  * problem, shows the video's URL with an "Open on YouTube" link, and offers
  * a retry, so a temporary outage or a restored video recovers without
  * recreating the project. The marks stay visible on the stored-duration
- * timeline, and the project still exports.
+ * timeline.
  */
 const YOUTUBE_FAILED_EXPLANATION =
   'This YouTube video couldn’t be played — it may be private, removed, region-blocked, ' +
-  'or unavailable for embedding. Your marks are still here, and the project still exports.';
+  'or unavailable for embedding. Your marks are still here.';
 
 /** A deletion held for undo: the marker, its label, and any restore failure. */
 interface UndoState {
@@ -114,23 +101,22 @@ interface UndoState {
  * marker state persists through the shell-owned `autosave` (T09), which also
  * feeds the status line.
  *
- * T08 zoom: the shell is a horizontally scrollable window over the content
- * (`pxPerSec × duration` px wide). The zoom level lives here as `pxPerSec`,
- * and the content width is applied to the controller's container — the ruler
- * renders to whatever width it is given, and its percentage ticks stretch
- * with it — so the audio seam never learns about zoom. Ctrl/cmd+scroll and
- * two-finger pinch adjust the level around the cursor; jumps scroll the
- * target into view. Click-to-seek lives on the ruler itself.
+ * The timeline is always fitted to the viewport: `pxPerSec` settles at the
+ * level that spans it exactly and never changes, so there is nothing to
+ * scroll or zoom. The level is applied to the controller's container as the
+ * content width, the ruler's percentage ticks stretch with it, and the audio
+ * seam never learns about zoom. Jumps bring the target into view through
+ * `revealTime`, which a fitted view clamps to a no-op.
  *
  * T18 modes: every project has a Playback | Label posture, seeded from the
- * record's persisted `playerMode` (each source's default on first open) and
- * written back on every switch. Playback mode is navigation-only — the
- * read-only posture of a practice session — so every editing tool (M, the
- * Add marker button, nudges, typed times, aliases, delete with undo, Esc
- * deselect, flag-click selection) is gated behind Label mode; the keyboard
- * scheme, flag jumps, and the volume slider work in both. A selection made
- * in Label mode survives a posture switch but stays hidden — and Delete
- * cannot reach it — while practicing.
+ * record's persisted `playerMode` (the default on first open) and written
+ * back on every switch. Playback mode is navigation-only — the read-only
+ * posture of a practice session — so every editing tool (M, the Add marker
+ * button, nudges, typed times, aliases, delete with undo, Esc deselect,
+ * flag-click selection) is gated behind Label mode; the keyboard scheme,
+ * flag jumps, and the volume slider work in both. A selection made in Label
+ * mode survives a posture switch but stays hidden — and Delete cannot reach
+ * it — while practicing.
  */
 export function Player({
   autosave,
@@ -151,16 +137,16 @@ export function Player({
   /** Bumped by the failure card's Retry — re-runs the load effect. */
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
-  // The record's identity — name, source, and audio — never changes in the player.
+  // The record's identity — name and recording — never changes in the player.
   const record = autosave.get();
   /**
-   * A YouTube project: the video is the main item and the ruler sits under it,
-   * so the timeline is always fitted to the viewport — never zoomed, which
-   * would stretch the embed off-screen. Its canonical URL is the recording
-   * identity the audio layer plays from.
+   * Every project is a YouTube project: the video is the main item and the
+   * ruler sits under it, so the timeline is always fitted to the viewport —
+   * never zoomed, which would stretch the embed off-screen. The canonical URL
+   * derived from the stored video ID is the recording identity the audio layer
+   * plays from.
    */
-  const isYouTube = record.source === 'youtube';
-  const youtubeUrl = record.audioMeta.source;
+  const youtubeUrl = canonicalYouTubeUrl(record.videoId);
   // The record as React state. Every mutation goes through `update`, which
   // applies it to the autosave and mirrors the result back here, so flags,
   // labels, and the inspector render from the same record that persists.
@@ -168,11 +154,11 @@ export function Player({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // T18. The player's posture, seeded from the record's last-used mode and
   // persisted on every switch. A record saved before the field existed has
-  // none — its first open applies the source-dependent default, exactly as
-  // creation stamps it. `editing` is the one gate every editing tool reads;
-  // navigation never does.
+  // none — its first open applies the default, exactly as creation stamps
+  // it. `editing` is the one gate every editing tool reads; navigation never
+  // does.
   const [playerMode, setPlayerMode] = useState<PlayerMode>(
-    record.playerMode ?? defaultPlayerMode(record.source, record.markers.length),
+    record.playerMode ?? defaultPlayerMode(record.markers.length),
   );
   const editing = playerMode === 'label';
   const [undo, setUndo] = useState<UndoState | null>(null);
@@ -181,39 +167,23 @@ export function Player({
   const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
 
   const labeled = useMemo(() => deriveLabels(current.markers), [current.markers]);
-  const duration = playback.duration > 0 ? playback.duration : current.audioMeta.duration;
+  const duration = playback.duration > 0 ? playback.duration : current.duration;
   const selected = labeled.find((marker) => marker.id === selectedId) ?? null;
 
   // T08 zoom. `pxPerSec` is null until the duration is known, then settles at
-  // the floor (or fit-to-view for short recordings) — the precision view the
-  // issue calls for. Scroll stays in the DOM (`shell.scrollLeft`); the view
-  // re-renders only when the level changes, and the flags overlay scrolls
-  // natively with the content.
+  // fit-to-view — the only level a fitted (YouTube) timeline ever uses. Scroll
+  // stays in the DOM (`shell.scrollLeft`); the view re-renders only when the
+  // level changes, and the flags overlay scrolls natively with the content.
   const [pxPerSec, setPxPerSec] = useState<number | null>(null);
-  // The zoom state as the window-level gesture listeners see it: fresh values
-  // through a ref, the same pattern as the keydown handler below.
+  // The zoom state as the gesture listeners see it: fresh values through a
+  // ref, the same pattern as the keydown handler below.
   const viewRef = useRef<{ pxPerSec: number; duration: number } | null>(null);
   viewRef.current =
     pxPerSec !== null && duration > 0 ? { pxPerSec, duration } : null;
-  const pinchRef = useRef<{
-    startView: ZoomView;
-    startDistance: number;
-    cursorOffset: number;
-  } | null>(null);
   // A zoom's scroll, held until the new width has committed (see the layout
   // effect below) — the CSSOM clamps scrollLeft against the current content
   // width at assignment time, so writing it early would drop the anchor.
   const pendingScrollRef = useRef<number | null>(null);
-  // A one-finger horizontal pan: the browser keeps vertical page scroll
-  // (`touch-action: pan-y`), this content scroll is ours.
-  const panRef = useRef<{
-    startX: number;
-    startY: number;
-    startScrollLeft: number;
-    pxPerSec: number;
-    duration: number;
-    active: boolean;
-  } | null>(null);
 
   // A layout effect, not a passive one: the initial level must be set before
   // the first painted frame, or that frame shows the flags overlay collapsed
@@ -223,8 +193,8 @@ export function Player({
     const shell = shellRef.current;
     if (shell === null || duration <= 0) return;
     const width = shell.getBoundingClientRect().width;
-    setPxPerSec(isYouTube ? fitPxPerSec(width, duration) : minPxPerSec(width, duration));
-  }, [duration, isYouTube, pxPerSec]);
+    setPxPerSec(fitPxPerSec(width, duration));
+  }, [duration, pxPerSec]);
 
   // Applies the zoom's scroll once the content width for the committed level
   // is in the DOM. Also re-fits when the window widens past the current
@@ -244,18 +214,13 @@ export function Player({
     const observer = new ResizeObserver(() => {
       setPxPerSec((level) => {
         if (level === null || duration <= 0) return level;
-        const width = shell.getBoundingClientRect().width;
-        // A YouTube timeline is always exactly the viewport, so a resize
-        // re-fits in both directions; a zoomable one only ever rises to the
-        // new minimum, leaving the user's chosen level alone.
-        if (isYouTube) return fitPxPerSec(width, duration);
-        const min = minPxPerSec(width, duration);
-        return level < min ? min : level;
+        // The timeline is always exactly the viewport, so a resize re-fits.
+        return fitPxPerSec(shell.getBoundingClientRect().width, duration);
       });
     });
     observer.observe(shell);
     return () => observer.disconnect();
-  }, [duration, isYouTube]);
+  }, [duration]);
 
   /** Applies a mutation: the autosave gets it, React mirrors it back. */
   const update = useCallback(
@@ -435,8 +400,8 @@ export function Player({
       if (target === null) return;
       event.preventDefault();
       controller.seek(target.time);
-      // Jumps always bring the target into view (T08) — the zoomed view
-      // must never leave the jumped-to marker off-screen.
+      // Jumps always bring the target into view (T08) — the fitted view must
+      // never leave the jumped-to marker off-screen.
       revealTime(target.time);
       return;
     }
@@ -484,39 +449,22 @@ export function Player({
     return () => window.removeEventListener('keydown', listener);
   }, []);
 
-  // The record's blob, read through a ref so the load effect's dependencies
-  // don't include the record object (which changes on every marker edit):
-  // the audio is fixed for the life of a session, so a fresh record identity
-  // must never re-run the load and restart playback.
-  const audioBlobRef = useRef(record.audio);
-  audioBlobRef.current = record.audio;
-
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) return;
     let cancelled = false;
     controller
-      .load(
-        // The load options are source-discriminated exactly like the record:
-        // a YouTube project has only its canonical URL to play from — no blob
-        // — and the audio layer owns everything after that.
-        isYouTube
-          ? {
-              source: 'youtube',
-              url: youtubeUrl,
-              container,
-              // The stored duration is the failure state's timeline: a dead
-              // embed reports nothing, so the ruler and the marks that ride
-              // on it render from the last honest length the record has.
-              duration: autosave.get().audioMeta.duration,
-            }
-          : {
-              source: 'upload',
-              blob: audioBlobRef.current,
-              url: null,
-              container,
-            },
-      )
+      .load({
+        // A project has only its canonical URL to play from — no blob, no
+        // peaks — and the audio layer owns everything after that.
+        source: 'youtube',
+        url: youtubeUrl,
+        container,
+        // The stored duration is the failure state's timeline: a dead
+        // embed reports nothing, so the ruler and the marks that ride on it
+        // render from the last honest length the record has.
+        duration: autosave.get().duration,
+      })
       .then((result) => {
         if (cancelled) return;
         setLoaded(true);
@@ -524,36 +472,26 @@ export function Player({
         // No decode supplies a duration; the record's 0 is a placeholder.
         // The media element's metadata is the recording's true duration —
         // persisting it keeps the project list (T09) and exports honest, so
-        // the one write outside the upload path earns its place. The
-        // epsilon keeps media-element measurement noise from dirtying the
-        // record — a no-op rewrite would re-stamp updatedAt and reorder the
-        // list for a change no one made.
-        if (
-          result.duration > 0 &&
-          Math.abs(result.duration - autosave.get().audioMeta.duration) > 0.001
-        ) {
-          update((current) => ({
-            ...current,
-            audioMeta: { ...current.audioMeta, duration: result.duration },
-          }));
+        // the one write outside the create path earns its place. The epsilon
+        // keeps media-element measurement noise from dirtying the record — a
+        // no-op rewrite would re-stamp updatedAt and reorder the list for a
+        // change no one made.
+        if (result.duration > 0 && Math.abs(result.duration - autosave.get().duration) > 0.001) {
+          update((current) => ({ ...current, duration: result.duration }));
         }
       })
       .catch(() => {
         if (!cancelled) {
           setLoaded(true);
-          // A rejected YouTube load is a dead source, not a ruler fallback —
-          // the card must return rather than leaving live-looking controls
-          // over an embed that failed again. Uploads never set the flag (their
-          // rejection path falls back to a playing ruler).
-          if (isYouTube) setLoadFailed(true);
+          setLoadFailed(true);
         }
       });
     return () => {
       cancelled = true;
     };
-    // The source and its URL are fixed for the life of a session; `loadAttempt`
-    // is the failure card's retry, the one deliberate re-run of the whole load.
-  }, [autosave, controller, isYouTube, loadAttempt, update, youtubeUrl]);
+    // The URL is fixed for the life of a session; `loadAttempt` is the failure
+    // card's retry, the one deliberate re-run of the whole load.
+  }, [autosave, controller, loadAttempt, update, youtubeUrl]);
 
   /** The failure card's retry: back to loading, then a fresh load attempt. */
   function retryLoad(): void {
@@ -583,13 +521,10 @@ export function Player({
   // The content's width — the flags and ruler span it.
   const viewWidth = pxPerSec !== null && duration > 0 ? contentWidth(pxPerSec, duration) : undefined;
 
-  // The seek surface plus its overlays, shared by both layouts: the
-  // practice split view on a YouTube project, or the plain shell elsewhere.
+  // The seek surface plus its overlays: the ruler (with its flags and playhead
+  // overlays, confined to the ruler band by the `youtube-shell` modifier).
   const timelineShell = (
-    <div
-      ref={shellRef}
-      className={isYouTube ? 'player-ruler-shell youtube-shell' : 'player-ruler-shell'}
-    >
+    <div ref={shellRef} className="player-ruler-shell youtube-shell">
       <div
         ref={containerRef}
         className="player-ruler"
@@ -611,177 +546,6 @@ export function Player({
     </div>
   );
 
-  // Zoom gestures register as native listeners: React's root-level wheel and
-  // touchmove handlers are passive, so their synthetic events cannot cancel
-  // the browser's scroll/pinch. The handlers read fresh zoom state through
-  // `viewRef` (reassigned every render) and stay registered once.
-  useEffect(() => {
-    const shell = shellRef.current;
-    if (shell === null) return;
-    // A YouTube timeline has no zoom to gesture at — it is always exactly the
-    // viewport — so the listeners are never registered and the browser keeps
-    // its own pinch and scroll over the embed.
-    if (isYouTube) return;
-
-    /**
-     * Commits a zoom: the level through React, the scroll through the DOM —
-     * but only after the new width commits, since the CSSOM clamps scrollLeft
-     * against the *current* content width at assignment time and never
-     * re-expands the clamp. A level that did not change needs no commit and
-     * can apply its scroll directly.
-     */
-    const applyZoom = (next: ZoomView, current: number): void => {
-      if (next.pxPerSec !== current) {
-        setPxPerSec(next.pxPerSec);
-        pendingScrollRef.current = next.scrollLeft;
-      } else {
-        shell.scrollLeft = next.scrollLeft;
-      }
-    };
-
-    const onWheel = (event: WheelEvent): void => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-      // Ctrl/cmd+scroll is this app's zoom — never the page's, even while
-      // the recording is still loading.
-      event.preventDefault();
-      const view = viewRef.current;
-      if (view === null) return;
-      const rect = shell.getBoundingClientRect();
-      const factor = Math.pow(ZOOM_STEP, -wheelNotches(event.deltaY, event.deltaMode));
-      applyZoom(
-        zoomAround(
-          { pxPerSec: view.pxPerSec, scrollLeft: shell.scrollLeft },
-          factor,
-          event.clientX - rect.left,
-          rect.width,
-          view.duration,
-        ),
-        view.pxPerSec,
-      );
-    };
-
-    /** Begins a pinch anchored at the current midpoint, once the fingers are
-     * far enough apart that the anchor means something. */
-    const beginPinch = (touches: TouchList): void => {
-      const view = viewRef.current;
-      if (view === null) return;
-      const rect = shell.getBoundingClientRect();
-      const [a, b] = [touches[0], touches[1]];
-      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      if (distance < PINCH_MIN_START_PX) return;
-      const midX = (a.clientX + b.clientX) / 2;
-      pinchRef.current = {
-        startView: { pxPerSec: view.pxPerSec, scrollLeft: shell.scrollLeft },
-        startDistance: distance,
-        cursorOffset: midX - rect.left,
-      };
-    };
-
-    const onPinchStart = (event: TouchEvent): void => {
-      if (event.touches.length < 2) {
-        pinchRef.current = null;
-        return;
-      }
-      panRef.current = null;
-      // Three-plus fingers: leave any running pinch untouched and ignore the
-      // extras — an accidental extra touch must not freeze the zoom.
-      if (event.touches.length === 2) beginPinch(event.touches);
-    };
-
-    const onPinchMove = (event: TouchEvent): void => {
-      if (event.touches.length === 2) {
-        // Two fingers belong to the pinch, whatever the browser was about to
-        // do with them (page zoom included).
-        event.preventDefault();
-        if (pinchRef.current === null) {
-          // Fingers that landed too close to anchor now have room — restart
-          // from here instead of slamming the level from a 5 px base.
-          beginPinch(event.touches);
-        }
-        const pinch = pinchRef.current;
-        const view = viewRef.current;
-        if (pinch === null || view === null) return;
-        const rect = shell.getBoundingClientRect();
-        const [a, b] = [event.touches[0], event.touches[1]];
-        const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-        // Recompute from the gesture's start each move, so the level follows
-        // the finger spread absolutely — no per-event drift.
-        applyZoom(
-          zoomAround(
-            pinch.startView,
-            distance / pinch.startDistance,
-            pinch.cursorOffset,
-            rect.width,
-            view.duration,
-          ),
-          view.pxPerSec,
-        );
-        return;
-      }
-      if (event.touches.length === 1) {
-        // One finger pans the content (the browser keeps vertical page
-        // scroll; the horizontal content scroll is ours). The pan engages on
-        // a clearly horizontal drag — the slop that separates a pan from a
-        // tap — and a pan is not a tap, so no trailing click-seek.
-        const pan = panRef.current;
-        if (pan === null) return;
-        const touch = event.touches[0];
-        const dx = touch.clientX - pan.startX;
-        const dy = touch.clientY - pan.startY;
-        if (!pan.active) {
-          if (Math.abs(dx) <= PAN_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
-          pan.active = true;
-        }
-        event.preventDefault();
-        shell.scrollLeft = clampScrollLeft(
-          pan.startScrollLeft - dx,
-          shell.getBoundingClientRect().width,
-          pan.duration,
-          pan.pxPerSec,
-        );
-      }
-      // Three-plus fingers: keep the running gesture; nothing to do.
-    };
-
-    const onPinchEnd = (event: TouchEvent): void => {
-      if (event.touches.length < 2) {
-        pinchRef.current = null;
-        panRef.current = null;
-      }
-    };
-
-    // The single-finger pan's origin — armed on every one-finger touchstart.
-    const onPanStart = (event: TouchEvent): void => {
-      if (event.touches.length !== 1) return;
-      const view = viewRef.current;
-      if (view === null) return;
-      const touch = event.touches[0];
-      panRef.current = {
-        startX: touch.clientX,
-        startY: touch.clientY,
-        startScrollLeft: shell.scrollLeft,
-        pxPerSec: view.pxPerSec,
-        duration: view.duration,
-        active: false,
-      };
-    };
-
-    shell.addEventListener('wheel', onWheel, { passive: false });
-    shell.addEventListener('touchstart', onPinchStart, { passive: false });
-    shell.addEventListener('touchstart', onPanStart);
-    shell.addEventListener('touchmove', onPinchMove, { passive: false });
-    shell.addEventListener('touchend', onPinchEnd);
-    shell.addEventListener('touchcancel', onPinchEnd);
-    return () => {
-      shell.removeEventListener('wheel', onWheel);
-      shell.removeEventListener('touchstart', onPinchStart);
-      shell.removeEventListener('touchstart', onPanStart);
-      shell.removeEventListener('touchmove', onPinchMove);
-      shell.removeEventListener('touchend', onPinchEnd);
-      shell.removeEventListener('touchcancel', onPinchEnd);
-    };
-  }, [isYouTube]);
-
   return (
     <main>
       <header>
@@ -793,7 +557,7 @@ export function Player({
           {STATUS_TEXT[status]}
         </p>
       </header>
-      {loadFailed && isYouTube && (
+      {loadFailed && (
         <div role="alert" className="player-youtube-error">
           <p>{YOUTUBE_FAILED_EXPLANATION}</p>
           <p>
@@ -806,22 +570,19 @@ export function Player({
           </button>
         </div>
       )}
-      {isYouTube ? (
-        // T27: the practice split view — the video (with its ruler and
-        // markers below, and the `youtube-shell` class confining flags and
-        // playhead to the ruler band) in roughly the left half, the practice
-        // readout following the live playhead beside it.
-        <div className="player-practice-split">
-          {timelineShell}
-          <PracticeReadout
-            markers={labeled}
-            currentTime={playback.currentTime}
-            duration={duration}
-          />
-        </div>
-      ) : (
-        timelineShell
-      )}
+      {/* T27: the practice split view — the video (with its ruler and markers
+          below, and the `youtube-shell` class confining flags and playhead to
+          the ruler band) in roughly the left half, the practice readout
+          following the live playhead beside it. Every project is a YouTube
+          project, so the split view is unconditional. */}
+      <div className="player-practice-split">
+        {timelineShell}
+        <PracticeReadout
+          markers={labeled}
+          currentTime={playback.currentTime}
+          duration={duration}
+        />
+      </div>
       <div className="player-transport">
         <button
           type="button"
@@ -884,9 +645,8 @@ export function Player({
         <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
       )}
       {/* The failure card carries the explanation when the video cannot play;
-      a precision note about working playback would be a lie beside it. The
-      note is YouTube-only: an upload's ruler needs no qualifier. */}
-      {loaded && isYouTube && !loadFailed && (
+      a precision note about working playback would be a lie beside it. */}
+      {loaded && !loadFailed && (
         <p className="ruler-note">
           {editing && current.markers.length === 0
             ? // One note, both truths: the missing labels and the coarse

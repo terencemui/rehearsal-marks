@@ -12,11 +12,7 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     name: 'Brahms Op. 118 No. 2',
     duration: 123.456,
     markerCount: 2,
-    sizeBytes: 285,
     updatedAt: 1_700_000_000_000,
-    source: 'upload',
-    audioUrl: '',
-    sha256: 'abc123',
     ...overrides,
   };
 }
@@ -40,38 +36,18 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
 }
 
 describe('ProjectsScreen list', () => {
-  it('shows name, duration, marker count, size, last-modified, and total usage', () => {
+  it('shows name, duration, marker count, and last-modified', () => {
     renderScreen();
     const row = screen.getByRole('listitem');
     expect(within(row).getByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
     // 1_700_000_000_000 ms is more than eight weeks old — the date fallback.
-    expect(within(row).getByText(/2:03\.456 · 2 markers · 285 B · 2023-11-14/)).toBeInTheDocument();
-    expect(screen.getByText(/Total used: 285 B/)).toBeInTheDocument();
+    expect(within(row).getByText(/2:03\.456 · 2 markers · 2023-11-14/)).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
   });
 
-  it('marks a YouTube project with a badge; an upload gets none', () => {
-    const { rerender } = renderScreen({
-      projects: [summary({ source: 'youtube', sizeBytes: 156 })],
-    });
+  it('badges every row as YouTube — every project is a YouTube project', () => {
+    renderScreen();
     expect(screen.getByText('YouTube')).toBeInTheDocument();
-    // The honest size: only the serialized data, since no audio is stored.
-    expect(screen.getByText(/· 156 B ·/)).toBeInTheDocument();
-
-    rerender(
-      <ProjectsScreen
-        projects={[summary()]}
-        status="idle"
-        onOpen={vi.fn()}
-        onRename={vi.fn()}
-        onDelete={vi.fn()}
-        authKind="signed-in"
-        commonsRows={null}
-        onSubmitToCommons={vi.fn()}
-        onSignIn={vi.fn()}
-      />,
-    );
-    expect(screen.queryByText('YouTube')).not.toBeInTheDocument();
   });
 
   it('uses singular "marker" for one marker', () => {
@@ -207,19 +183,14 @@ describe('ProjectsScreen delete', () => {
 });
 
 describe('ProjectsScreen Commons submission', () => {
-  const youtube = () => summary({ source: 'youtube' });
+  const youtube = () => summary();
 
-  it('offers the submit action on a YouTube project to a signed-in contributor', async () => {
+  it('offers the submit action to a signed-in contributor — every project is a YouTube project', async () => {
     const user = userEvent.setup();
     const { props } = renderScreen({ projects: [youtube()] });
 
     await user.click(screen.getByRole('button', { name: 'Submit to Commons' }));
     expect(props.onSubmitToCommons).toHaveBeenCalledWith('project-1');
-  });
-
-  it('offers no submit action on an uploaded project — only YouTube label sets publish', () => {
-    renderScreen();
-    expect(screen.queryByRole('button', { name: /submit/i })).not.toBeInTheDocument();
   });
 
   it('re-labels the action "Update submission" once the project has a Commons row', () => {

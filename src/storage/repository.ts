@@ -1,6 +1,5 @@
 import { PROJECTS_STORE, openDatabase, requestResult, transactionDone } from './db';
 import { translateError } from './errors';
-import { estimateStoredSize } from './records';
 import type { ProjectRecord, ProjectSummary } from './records';
 
 /** Persistence for user projects — the store that is never auto-evicted. */
@@ -47,15 +46,9 @@ function summarizeProject(record: ProjectRecord): ProjectSummary {
   return {
     id: record.id,
     name: record.name,
-    duration: record.audioMeta.duration,
+    duration: record.duration,
     markerCount: record.markers.length,
-    sizeBytes: estimateStoredSize(record),
     updatedAt: record.updatedAt,
-    // A record saved before the discriminator existed reads back without it;
-    // every such record is an upload, so the summary's type stays honest.
-    source: record.source ?? 'upload',
-    audioUrl: record.audioMeta.source,
-    sha256: record.audioMeta.sha256,
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDuration, formatUpdatedAt, totalUsageBytes, validateProjectName } from './summary';
+import { formatDuration, formatUpdatedAt, validateProjectName } from './summary';
 
 describe('formatDuration', () => {
   it('renders mm:ss.mmm below an hour, whole or fractional', () => {
@@ -21,27 +21,6 @@ describe('formatDuration', () => {
   it('clamps negative and non-finite durations to zero', () => {
     expect(formatDuration(-5)).toBe('0:00.000');
     expect(formatDuration(Number.NaN)).toBe('0:00.000');
-  });
-});
-
-describe('formatBytes', () => {
-  it('renders whole bytes under 1000', () => {
-    expect(formatBytes(0)).toBe('0 B');
-    expect(formatBytes(4)).toBe('4 B');
-    expect(formatBytes(999)).toBe('999 B');
-  });
-
-  it('renders SI units with one decimal from 1000 up', () => {
-    expect(formatBytes(1000)).toBe('1.0 KB');
-    expect(formatBytes(1500)).toBe('1.5 KB');
-    expect(formatBytes(1_000_000)).toBe('1.0 MB');
-    expect(formatBytes(12_345_678)).toBe('12.3 MB');
-    expect(formatBytes(4_500_000_000)).toBe('4.5 GB');
-  });
-
-  it('clamps negative and non-finite sizes to zero', () => {
-    expect(formatBytes(-1)).toBe('0 B');
-    expect(formatBytes(Number.NaN)).toBe('0 B');
   });
 });
 
@@ -71,15 +50,6 @@ describe('formatUpdatedAt', () => {
     expect(formatUpdatedAt(NOW - 7 * DAY, NOW)).toBe('1w ago');
     expect(formatUpdatedAt(NOW - 7 * 7 * DAY, NOW)).toBe('7w ago');
     expect(formatUpdatedAt(NOW - 8 * 7 * DAY, NOW)).toBe('2023-09-19');
-  });
-});
-
-describe('totalUsageBytes', () => {
-  it('sums per-project sizes and is zero for no projects', () => {
-    expect(totalUsageBytes([])).toBe(0);
-    expect(
-      totalUsageBytes([{ sizeBytes: 4 }, { sizeBytes: 285 }, { sizeBytes: 1_000_000 }]),
-    ).toBe(1_000_289);
   });
 });
 

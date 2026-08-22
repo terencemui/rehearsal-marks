@@ -383,7 +383,7 @@ function App({
     }
   }
 
-  /** Reopens a stored project into the ruler-only player. */
+  /** Reopens a stored project straight into the player — no decode, no hash. */
   async function openProject(id: string): Promise<void> {
     if (storage === null || session !== null || workingRef.current) return;
     workingRef.current = true;
@@ -397,15 +397,13 @@ function App({
         await refreshProjects(storage);
         return;
       }
-      const controller = controllerFactory();
       if (token !== openTokenRef.current) {
         // The user switched tabs while the read ran — drop the open.
-        controller.destroy();
         return;
       }
       setSession({
         autosave: createAutosave(record, { save: (next) => storage.projects.save(next) }),
-        controller,
+        controller: controllerFactory(),
       });
     } catch {
       setNotice("Couldn't open that project. Try again.");

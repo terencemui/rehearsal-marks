@@ -21,7 +21,7 @@ import {
   parseYouTubeLink,
   youtubeAudioMeta,
 } from '../domain';
-import type { Marker, ProjectFileData } from '../domain';
+import type { AudioMeta, Marker, ProjectFileData } from '../domain';
 import type { ProjectRecord } from '../storage';
 
 export const PUBLICATION_STATUSES = ['pending', 'published', 'rejected'] as const;
@@ -120,9 +120,10 @@ export function parseLabelSetReadRow(value: unknown): LabelSetReadRow {
  * The table row a project file publishes: the recording identity resolved to
  * its video ID, the project's name and duration, and the markers themselves.
  * Everything the row parser would reject on the way out is rejected here on
- * the way in — a row no reader can parse never gets written. Only YouTube
- * label sets exist in the Commons today — an uploaded recording's identity
- * is a sha256, which the Commons does not yet hold.
+ * the way in — a row no reader can parse never gets written. Every project is
+ * a YouTube project, so the recording identity is always a video ID — the
+ * guard below still rejects an upload-sourced file for a hand-edited or
+ * legacy file's sake, but the app itself can no longer produce one.
  */
 export function labelSetValuesFromProjectFile(data: ProjectFileData): LabelSetValues {
   // The file's own discriminator decides; only a YouTube file publishes.
@@ -187,19 +188,10 @@ export function projectFileFromLabelSetRow(row: LabelSetRow): ProjectFileData {
       source: 'youtube',
     },
     markers: row.markers,
-    // The same youtubeAudioMeta the export path passes through, so the row
-    // direction and the export direction can never drift apart on which
+    // The same youtubeAudioMetaFrom the export path passes through, so the
+    // row direction and the export direction can never drift apart on which
     // fields describe stored bytes and which carry identity.
-    audioMeta: youtubeAudioMeta({
-      sha256: '',
-      duration: row.duration,
-      mimeType: '',
-      filename: row.title,
-      sizeBytes: 0,
-      source: canonicalYouTubeUrl(row.video_id),
-      license: '',
-      attribution: '',
-    }),
+    audioMeta: youtubeAudioMetaFrom({ name: row.title, duration: row.duration, videoId: row.video_id }),
   };
 }
 
@@ -207,7 +199,9 @@ export function projectFileFromLabelSetRow(row: LabelSetRow): ProjectFileData {
  * The record's data fields, as the project-file format wants them — the
  * shared conversion behind the Commons submission, so the record direction
  * and the row direction never drift apart on which fields carry recording
- * identity and which describe stored bytes.
+ * identity and which describe stored bytes. Every record is a YouTube record,
+ * so the file it produces always is too: the canonical URL is derived from the
+ * stored video ID, and the upload-only facts are left empty.
  */
 export function projectFileFromRecord(record: ProjectRecord): ProjectFileData {
   return {
@@ -216,14 +210,34 @@ export function projectFileFromRecord(record: ProjectRecord): ProjectFileData {
       name: record.name,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
-      source: record.source,
+      source: 'youtube',
     },
     markers: record.markers,
-    // A YouTube file carries the recording identity that applies — the
-    // canonical URL, the known duration, and the title — and leaves empty
-    // everything that describes stored bytes, whatever the record carries.
-    audioMeta: record.source === 'youtube' ? youtubeAudioMeta(record.audioMeta) : record.audioMeta,
+    audioMeta: youtubeAudioMetaFrom({ name: record.name, duration: record.duration, videoId: record.videoId }),
   };
+}
+
+/**
+ * The upload-only audio facts a YouTube project file carries, left empty —
+ * recording identity lives in the canonical URL and the known duration, nowhere
+ * else. Both the record direction and the row direction build through this one
+ * function, so neither can drift apart on which fields describe stored bytes.
+ */
+function youtubeAudioMetaFrom(identity: {
+  name: string;
+  duration: number;
+  videoId: string;
+}): AudioMeta {
+  return youtubeAudioMeta({
+    sha256: '',
+    duration: identity.duration,
+    mimeType: '',
+    filename: identity.name,
+    sizeBytes: 0,
+    source: canonicalYouTubeUrl(identity.videoId),
+    license: '',
+    attribution: '',
+  });
 }
 
 type JsonObject = Record<string, unknown>;

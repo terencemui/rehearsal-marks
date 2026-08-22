@@ -1,7 +1,8 @@
 import { StorageError, translateError } from './errors';
+import { slimRecordFromStored } from './records';
 
 export const DB_NAME = 'rehearsal-marks';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 /** Self-contained user projects — never auto-evicted. */
 export const PROJECTS_STORE = 'projects';
 /** Community audio + label sets — evictable independently of projects. */
@@ -17,12 +18,35 @@ function createV1(db: IDBDatabase): void {
 }
 
 /**
+ * v2 — YouTube-only projects. Uploads are retired, so every stored upload
+ * record (source `'upload'`, or absent — a missing discriminator always meant
+ * upload) is deleted in this one cut, and every surviving YouTube record is
+ * rewritten to its slim shape: video ID and duration as identity, and nothing
+ * else. Runs inside the versionchange transaction, so the cursor's deletes and
+ * updates commit together with the version bump.
+ */
+function migrateV2(_db: IDBDatabase, tx: IDBTransaction): void {
+  const request = tx.objectStore(PROJECTS_STORE).openCursor();
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (cursor === null) return;
+    const slim = slimRecordFromStored(cursor.value);
+    if (slim === null) {
+      cursor.delete();
+    } else {
+      cursor.update(slim);
+    }
+    cursor.continue();
+  };
+}
+
+/**
  * One entry per database version, in order: `MIGRATIONS[i]` migrates from
  * version `i` to `i + 1`. Appending here — never editing an entry — is the
  * migration path; `onupgradeneeded` runs the tail of the list for existing
  * databases and the whole list for fresh ones.
  */
-export const MIGRATIONS: Migration[] = [createV1];
+export const MIGRATIONS: Migration[] = [createV1, migrateV2];
 
 export interface OpenDatabaseOptions {
   name?: string;

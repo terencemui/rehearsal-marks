@@ -6,6 +6,7 @@ import {
   labelSetValuesFromProjectFile,
   parseLabelSetRow,
   projectFileFromLabelSetRow,
+  projectFileFromRecord,
 } from './labelSet';
 
 const VIDEO_ID = 'dQw4w9WgXcQ';
@@ -229,6 +230,44 @@ describe('projectFileFromLabelSetRow', () => {
   it('derives the canonical URL from the video ID and leaves upload facts empty', () => {
     const file = projectFileFromLabelSetRow(parseLabelSetRow(validRow()));
 
+    expect(file.audioMeta.source).toBe(CANONICAL);
+    expect(file.audioMeta.sha256).toBe('');
+    expect(file.audioMeta.mimeType).toBe('');
+    expect(file.audioMeta.sizeBytes).toBe(0);
+    expect(file.audioMeta.license).toBe('');
+    expect(file.audioMeta.attribution).toBe('');
+  });
+});
+
+describe('projectFileFromRecord', () => {
+  it('renders a slim record as the same YouTube project file the row direction builds', () => {
+    const file = projectFileFromRecord({
+      id: PROJECT_ID,
+      name: 'Brahms Symphony No. 4, mov. I',
+      createdAt: CREATED_MS,
+      updatedAt: UPDATED_MS,
+      videoId: VIDEO_ID,
+      duration: 754.2,
+      markers: [marker('m1', 10, ['Recap']), marker('m2', 20)],
+      playerMode: 'label',
+    });
+
+    expect(file).toEqual(youtubeFileData());
+  });
+
+  it('derives the canonical URL from the video ID and leaves upload facts empty', () => {
+    const file = projectFileFromRecord({
+      id: PROJECT_ID,
+      name: 'Brahms Symphony No. 4, mov. I',
+      createdAt: CREATED_MS,
+      updatedAt: UPDATED_MS,
+      videoId: VIDEO_ID,
+      duration: 754.2,
+      markers: [],
+      playerMode: 'label',
+    });
+
+    expect(file.project.source).toBe('youtube');
     expect(file.audioMeta.source).toBe(CANONICAL);
     expect(file.audioMeta.sha256).toBe('');
     expect(file.audioMeta.mimeType).toBe('');

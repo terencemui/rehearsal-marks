@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { projectRecord, youtubeProjectRecord } from '../test/project-fixture';
+import { projectRecord } from '../test/project-fixture';
 import { createAutosave } from './autosave';
 import type { Autosave, SaveStatus } from './autosave';
 import { StorageError } from './errors';
@@ -185,21 +185,6 @@ describe('createAutosave', () => {
     const storage = await createStorage({ name });
     const loaded = await storage.projects.get('project-1');
     expect(loaded!.markers.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
-    storage.close();
-  });
-
-  it('persists a YouTube project through the real repository with null audio intact', async () => {
-    const { autosave, name } = await integrationAutosave(youtubeProjectRecord());
-
-    autosave.mutate((c) => ({ ...c, name: 'Renamed YouTube' }));
-    await autosave.flush();
-
-    const storage = await createStorage({ name });
-    const loaded = await storage.projects.get('project-1');
-    expect(loaded!.name).toBe('Renamed YouTube');
-    expect(loaded!.source).toBe('youtube');
-    expect(loaded!.audio).toBeNull();
-    expect(loaded!.playerMode).toBe('playback');
     storage.close();
   });
 });

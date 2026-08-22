@@ -1,13 +1,7 @@
 import { useRef, useState } from 'react';
 import type { PublicationStatus } from '../commons/labelSet';
 import type { LabelSetRow } from '../commons/labelSet';
-import {
-  formatBytes,
-  formatDuration,
-  formatUpdatedAt,
-  totalUsageBytes,
-  validateProjectName,
-} from '../projects/summary';
+import { formatDuration, formatUpdatedAt, validateProjectName } from '../projects/summary';
 import type { SaveStatus, ProjectSummary } from '../storage';
 import { STATUS_TEXT } from './status';
 import './projects.css';
@@ -66,9 +60,9 @@ export interface ProjectsScreenProps {
 
 /**
  * The Projects workspace: the list every project lives in, with inline
- * rename, a two-step delete, the save-state line, storage usage, and the
- * first-run empty state. All persistence happens in the caller — this screen
- * only owns the edit interactions (which row is renaming or confirming).
+ * rename, a two-step delete, the save-state line, and the first-run empty
+ * state. All persistence happens in the caller — this screen only owns the
+ * edit interactions (which row is renaming or confirming).
  */
 export function ProjectsScreen({
   projects,
@@ -134,9 +128,6 @@ export function ProjectsScreen({
         </section>
       ) : (
         <>
-          <p className="projects-total">
-            Total used: {formatBytes(totalUsageBytes(projects))}
-          </p>
           <ul className="projects-list">
             {projects.map((project) => {
               const commonsRow = commonsRows?.[project.id];
@@ -153,11 +144,9 @@ export function ProjectsScreen({
                 >
                   <span className="projects-name">
                     {project.name}
-                    {project.source === 'youtube' && (
-                      <span className="projects-badge" title="Plays from YouTube — no audio stored in this browser">
-                        YouTube
-                      </span>
-                    )}
+                    <span className="projects-badge" title="Plays from YouTube — no audio stored in this browser">
+                      YouTube
+                    </span>
                     {commonsRow !== undefined && (
                       <span
                         className={`projects-badge projects-badge-${commonsRow.publication_status}`}
@@ -169,8 +158,7 @@ export function ProjectsScreen({
                   </span>
                   <span className="projects-meta">
                     {formatDuration(project.duration)} · {project.markerCount} marker
-                    {project.markerCount === 1 ? '' : 's'} · {formatBytes(project.sizeBytes)} ·{' '}
-                    {formatUpdatedAt(project.updatedAt, Date.now())}
+                    {project.markerCount === 1 ? '' : 's'} · {formatUpdatedAt(project.updatedAt, Date.now())}
                   </span>
                 </button>
                 {editingId === project.id ? (
@@ -223,10 +211,9 @@ export function ProjectsScreen({
                     Delete
                   </button>
                 )}
-                {project.source === 'youtube' && (
-                  <button
-                    type="button"
-                    disabled={busy || submittingId !== null || authKind === 'unavailable'}
+                <button
+                  type="button"
+                  disabled={busy || submittingId !== null || authKind === 'unavailable'}
                     title={
                       authKind === 'unavailable'
                         ? "Contributing isn't set up for this deployment yet"
@@ -243,8 +230,7 @@ export function ProjectsScreen({
                         : authKind === 'signed-in'
                           ? 'Submit to Commons'
                           : 'Sign in to submit'}
-                  </button>
-                )}
+                </button>
               </li>
               );
             })}
