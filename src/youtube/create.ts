@@ -1,8 +1,8 @@
 /**
- * The YouTube path: turning a pasted link into a persisted project. The mirror
- * of the upload pipeline — validate, name, save — minus everything that needs
- * bytes: no decode, no peaks, no hash, and no audio to store. The link rules
- * themselves live in the domain module; this owns only the record they produce.
+ * The YouTube path: turning a pasted link into a persisted project — validate,
+ * name, save. Nothing needs bytes: no decode, no peaks, no hash, and no audio
+ * to store. The link rules themselves live in the domain module; this owns only
+ * the record they produce.
  */
 
 import { DomainError, errorMessage, newId, parseYouTubeLink } from '../domain';
@@ -77,31 +77,20 @@ export async function createProjectFromYouTubeLink(
     name,
     createdAt,
     updatedAt: createdAt,
-    source: 'youtube',
-    // The app never holds YouTube audio: no blob, no bytes, no hash. The
-    // canonical URL carries the recording identity in `source` instead.
-    audio: null,
-    audioMeta: {
-      sha256: '',
-      // The embed reports the real duration once it is ready and the player
-      // persists it through the same metadata-duration path uploads use; the
-      // community set's duration seeds the record, so a project with marks
-      // has an honest timeline even before the embed reports its own.
-      duration: community?.duration ?? 0,
-      mimeType: '',
-      filename: name,
-      sizeBytes: 0,
-      source: link.canonicalUrl,
-      license: '',
-      attribution: '',
-    },
+    // The video ID is the recording's identity; the canonical URL the player
+    // plays from is derived from it. The embed reports the real duration once
+    // it is ready and the player persists it through the metadata-duration
+    // path; the community set's duration seeds the record, so a project with
+    // marks has an honest timeline even before the embed reports its own.
+    videoId: link.videoId,
+    duration: community?.duration ?? 0,
     // The community set's marks are copied in as the project's own editable
     // copy — editing them never touches the shared set.
     markers,
-    // The source's own rule decides the posture: marks in hand means
+    // The project's own rule decides the posture: marks in hand means
     // immediately practiceable (Playback); a bare link arrives with an empty
     // timeline and lands in Label with the marking tools in reach.
-    playerMode: defaultPlayerMode('youtube', markers.length),
+    playerMode: defaultPlayerMode(markers.length),
   };
   await save(project);
   return { ok: true, project };
