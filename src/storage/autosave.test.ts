@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { projectRecord } from '../test/project-fixture';
 import { createAutosave } from './autosave';
 import type { Autosave, SaveStatus } from './autosave';
-import { StorageError } from './errors';
 import type { ProjectRecord } from './records';
 import { createStorage } from './repository';
 
@@ -108,7 +107,7 @@ describe('createAutosave', () => {
     expect(autosave.status()).toBe('saved');
   });
 
-  it('surfaces a quota failure as storage-full, then recovers on the next save', async () => {
+  it('surfaces a quota failure as a generic error, then recovers on the next save', async () => {
     const quotaError = new DOMException('Quota exceeded', 'QuotaExceededError');
     const save = vi.fn<(record: ProjectRecord) => Promise<void>>(async () => {
       throw quotaError;
@@ -120,12 +119,12 @@ describe('createAutosave', () => {
     autosave.mutate((c) => ({ ...c, name: 'Too big' }));
     await vi.advanceTimersByTimeAsync(500);
 
-    expect(seen).toEqual(['dirty', 'saving', 'storage-full']);
-    expect(autosave.status()).toBe('storage-full');
-    expect(autosave.error()).toBeInstanceOf(StorageError);
-    expect((autosave.error() as StorageError).code).toBe('storage-full');
+    expect(seen).toEqual(['dirty', 'saving', 'error']);
+    expect(autosave.status()).toBe('error');
+    // Quota no longer maps to a storage-full code — it is just a failure.
+    expect(autosave.error()).toBeInstanceOf(Error);
 
-    // The user freed space; the next mutation must retry and succeed.
+    // The next mutation must retry and succeed.
     save.mockImplementation(async () => undefined);
     autosave.mutate((c) => ({ ...c, name: 'Fits now' }));
     await vi.advanceTimersByTimeAsync(500);
@@ -169,8 +168,8 @@ describe('createAutosave', () => {
     const autosave = createAutosave(projectRecord(), { save });
 
     autosave.mutate((c) => ({ ...c, name: 'Too big' }));
-    await expect(autosave.flush()).rejects.toMatchObject({ code: 'storage-full' });
-    expect(autosave.status()).toBe('storage-full');
+    await expect(autosave.flush()).rejects.toBeInstanceOf(Error);
+    expect(autosave.status()).toBe('error');
   });
 
   it('persists through the real repository', async () => {

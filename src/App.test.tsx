@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { labelSetRow } from './test/commons-fixture';
-import { createStorage, StorageError } from './storage';
+import { createStorage } from './storage';
 import type { Storage } from './storage';
 import { createAuthController } from './auth';
 import { mockAuth } from './test/auth-fixture';
@@ -259,24 +259,24 @@ describe('App create from a YouTube link', () => {
     expect(await storage.projects.list()).toHaveLength(1);
   });
 
-  it('surfaces a full-storage failure on the link input', async () => {
+  it('surfaces a save failure on the link input', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
-    const fullStorage: Storage = {
+    const brokenStorage: Storage = {
       ...storage,
       projects: {
         ...storage.projects,
         save: async () => {
-          throw new StorageError('Browser storage is full.', 'storage-full');
+          throw new Error('IndexedDB unavailable');
         },
       },
     };
-    await renderApp(mockController(), fullStorage);
+    await renderApp(mockController(), brokenStorage);
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/storage is full/i);
+    expect(alert).toHaveTextContent(/something went wrong creating the project/i);
     // The guidance belongs to the field that produced it: the link input is
     // marked invalid.
     expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
@@ -425,20 +425,20 @@ describe('App Projects workspace', () => {
     expect(await storage.projects.list()).toEqual([]);
   });
 
-  it('shows the storage-full state when a rename hits a full store', async () => {
+  it('shows the save-failed state when a rename hits a failing store', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(projectRecord());
-    const fullStorage: Storage = {
+    const brokenStorage: Storage = {
       ...storage,
       projects: {
         ...storage.projects,
         save: async () => {
-          throw new StorageError('Browser storage is full.', 'storage-full');
+          throw new Error('IndexedDB unavailable');
         },
       },
     };
-    await renderApp(mockController(), fullStorage);
+    await renderApp(mockController(), brokenStorage);
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
@@ -447,9 +447,7 @@ describe('App Projects workspace', () => {
     await user.clear(input);
     await user.type(input, 'New Name{enter}');
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Storage full — free up space to keep saving.',
-    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Save failed.');
   });
 
   it('persists projects across a page reload', async () => {
@@ -517,14 +515,14 @@ describe('App Projects workspace', () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     let saves = 0;
-    // The create's first save succeeds; every later save hits a full store.
+    // The create's first save succeeds; every later save hits a failing store.
     const flaky: Storage = {
       ...storage,
       projects: {
         ...storage.projects,
         save: async (record) => {
           saves += 1;
-          if (saves > 1) throw new StorageError('Browser storage is full.', 'storage-full');
+          if (saves > 1) throw new Error('IndexedDB unavailable');
           await storage.projects.save(record);
         },
       },
@@ -537,13 +535,11 @@ describe('App Projects workspace', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     // Wait for the debounced write to fail inside the player first.
-    await screen.findByText('Storage full — free up space to keep saving.');
+    await screen.findByText('Save failed.');
 
     await user.click(screen.getByRole('button', { name: 'Projects' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Storage full — free up space to keep saving.',
-    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Save failed.');
   });
 
   it('reports a failed delete as its own notice, not as a save error', async () => {

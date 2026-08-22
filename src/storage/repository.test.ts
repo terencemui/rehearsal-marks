@@ -77,7 +77,7 @@ describe('project repository', () => {
     second.close();
   });
 
-  it('surfaces QuotaExceededError as a storage-full StorageError', async () => {
+  it('turns a quota failure into a generic error — no storage-full code', async () => {
     const storage = await testStorage();
     // fake-indexeddb cannot provoke QuotaExceededError; throwing it from `put`
     // is the only way to exercise the quota path at the storage seam.
@@ -88,9 +88,8 @@ describe('project repository', () => {
       });
 
     const error = await storage.projects.save(projectRecord()).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(StorageError);
-    expect((error as StorageError).code).toBe('storage-full');
-    expect((error as StorageError).message).toMatch(/export/i);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(StorageError);
 
     putSpy.mockRestore();
     storage.close();

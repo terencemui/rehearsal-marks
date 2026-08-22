@@ -134,14 +134,14 @@ describe('createProjectFromYouTubeLink', () => {
     expect(deps.fetchTitle).not.toHaveBeenCalled();
   });
 
-  it('propagates a storage failure instead of reporting a project that was never saved', async () => {
+  it('propagates a save failure instead of reporting a project that was never saved', async () => {
     const { deps } = await dependencies({
       save: async () => {
-        throw new Error('storage-full');
+        throw new Error('save failed');
       },
     });
 
-    await expect(createProjectFromYouTubeLink(CANONICAL, deps)).rejects.toThrow('storage-full');
+    await expect(createProjectFromYouTubeLink(CANONICAL, deps)).rejects.toThrow('save failed');
   });
 
   it('copies a loaded community label set into the project as its own marks', async () => {

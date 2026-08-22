@@ -45,9 +45,9 @@ describe('ProjectsScreen list', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
   });
 
-  it('badges every row as YouTube — every project is a YouTube project', () => {
+  it('shows no per-row YouTube badge — every project is a YouTube project', () => {
     renderScreen();
-    expect(screen.getByText('YouTube')).toBeInTheDocument();
+    expect(screen.queryByText('YouTube')).not.toBeInTheDocument();
   });
 
   it('uses singular "marker" for one marker', () => {
@@ -70,13 +70,6 @@ describe('ProjectsScreen list', () => {
   it('renders the status line vocabulary', () => {
     renderScreen({ status: 'saving' });
     expect(screen.getByRole('status')).toHaveTextContent('Saving…');
-  });
-
-  it('surfaces the storage-full state honestly', () => {
-    renderScreen({ status: 'storage-full' });
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Storage full — free up space to keep saving.',
-    );
   });
 
   it('shows a notice as an alert when one is set', () => {
