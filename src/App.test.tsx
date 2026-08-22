@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { labelSetRow } from './test/commons-fixture';
 import { createStorage, StorageError } from './storage';
-import type { ProjectRecord, Storage } from './storage';
+import type { Storage } from './storage';
 import { createAuthController } from './auth';
 import { mockAuth } from './test/auth-fixture';
 import { mockCommonsWrite } from './test/commons-write-fixture';
