@@ -52,7 +52,7 @@ function summarizeProject(record: ProjectRecord): ProjectSummary {
   };
 }
 
-/** One readwrite transaction around a single operation, quota and abort translated. */
+/** One readwrite transaction around a single operation, failures translated. */
 async function write<T>(
   db: IDBDatabase,
   storeName: string,

@@ -11,7 +11,7 @@ import { createDefaultCommonsWrite } from './commons/write';
 import type { CommonsWriteController } from './commons/write';
 import { projectFileFromRecord } from './commons/labelSet';
 import { validateProjectName } from './projects/summary';
-import { createAutosave, createStorage, saveStatusFor, StorageError } from './storage';
+import { createAutosave, createStorage } from './storage';
 import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
 import { createProjectFromYouTubeLink, fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
@@ -370,13 +370,9 @@ function App({
         }),
         controller,
       });
-    } catch (error) {
+    } catch {
       controller.destroy();
-      setLinkError(
-        error instanceof StorageError && error.code === 'storage-full'
-          ? 'Browser storage is full — free up space, then try the link again.'
-          : 'Something went wrong creating the project. Please try again.',
-      );
+      setLinkError('Something went wrong creating the project. Please try again.');
     } finally {
       workingRef.current = false;
       setCreatingFromLink(false);
@@ -427,7 +423,7 @@ function App({
     }
     setSession(null);
     setTab('projects');
-    setStatus(exitFailure === null ? 'idle' : saveStatusFor(exitFailure));
+    setStatus(exitFailure === null ? 'idle' : 'error');
     await refreshProjects(storage);
   }
 
@@ -452,8 +448,8 @@ function App({
       try {
         await storage.projects.save({ ...record, name: validation.name, updatedAt: Date.now() });
         setStatus('saved');
-      } catch (error) {
-        setStatus(saveStatusFor(error));
+      } catch {
+        setStatus('error');
       }
       await refreshProjects(storage);
     } finally {
@@ -471,8 +467,7 @@ function App({
         setStatus('saved');
       } catch {
         // A delete is not a save — report it as its own thing rather than
-        // through the save vocabulary (whose storage-full branch can never
-        // fire here: deletes consume no quota).
+        // through the save vocabulary.
         setStatus('idle');
         setNotice('Something went wrong deleting the project. Try again.');
       }

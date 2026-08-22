@@ -10,6 +10,5 @@ export const STATUS_TEXT: Record<SaveStatus, string> = {
   dirty: 'Saving…',
   saving: 'Saving…',
   saved: 'Saved',
-  'storage-full': 'Storage full — free up space to keep saving.',
   error: 'Save failed.',
 };

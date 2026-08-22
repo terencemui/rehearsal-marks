@@ -144,9 +144,6 @@ export function ProjectsScreen({
                 >
                   <span className="projects-name">
                     {project.name}
-                    <span className="projects-badge" title="Plays from YouTube — no audio stored in this browser">
-                      YouTube
-                    </span>
                     {commonsRow !== undefined && (
                       <span
                         className={`projects-badge projects-badge-${commonsRow.publication_status}`}

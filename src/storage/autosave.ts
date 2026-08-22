@@ -1,30 +1,20 @@
-import { StorageError, translateError } from './errors';
+import { translateError } from './errors';
 import type { ProjectRecord } from './records';
 
 /**
  * The save-state line's vocabulary: `dirty` and `saving` both read as
- * "Saving…" in the UI; `storage-full` and `error` are the two failure states
- * the user must see. There is no user-facing save anywhere — `flush` settles
- * pending writes on session exit, page teardown, and in tests.
+ * "Saving…" in the UI; `error` is the one failure state the user must see.
+ * There is no user-facing save anywhere — `flush` settles pending writes on
+ * session exit, page teardown, and in tests.
  */
-export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'storage-full' | 'error';
-
-/**
- * The SaveStatus a failed write surfaces as: quota failures are the one
- * failure class the user can act on; everything else is a generic error.
- * One translation for every screen that writes — the player's autosave and
- * the workspace's rename/delete paths.
- */
-export function saveStatusFor(error: unknown): SaveStatus {
-  return error instanceof StorageError && error.code === 'storage-full' ? 'storage-full' : 'error';
-}
+export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 /**
  * Debounced autosave over one project record: every mutation is applied to
  * the in-memory record immediately, stamped with `updatedAt`, and written
  * ~500ms after the last one. Writes that overlap a mutation re-save the newer
- * state; a quota failure parks the controller in `storage-full` until the
- * next mutation retries (so freeing space recovers without a reload).
+ * state; a failed write parks the controller in `error` until the next
+ * mutation retries.
  */
 export interface Autosave {
   /** The current in-memory record — the pending state. */
@@ -33,7 +23,7 @@ export interface Autosave {
   mutate(fn: (current: ProjectRecord) => ProjectRecord): ProjectRecord;
   status(): SaveStatus;
   subscribe(listener: (status: SaveStatus) => void): () => void;
-  /** The failure behind `storage-full` or `error`, if any. */
+  /** The failure behind an `error` status, if any. */
   error(): Error | null;
   /**
    * Cancels the debounce and writes everything pending now. Resolves once
@@ -73,7 +63,7 @@ export function createAutosave(
     timer = setTimeout(() => {
       timer = undefined;
       // The timer path retries on success only: a failed write stays failed
-      // until the next mutation, so a full store is never hammered.
+      // until the next mutation, so a failing store is never hammered.
       void performSave()
         .then(() => {
           if (currentVersion > savedVersion) schedule();
@@ -98,7 +88,7 @@ export function createAutosave(
       savedVersion = version;
     } catch (error) {
       lastError = translateError(error);
-      setStatus(saveStatusFor(lastError));
+      setStatus('error');
       throw lastError;
     }
     setStatus(currentVersion > savedVersion ? 'dirty' : 'saved');

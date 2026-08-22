@@ -200,10 +200,6 @@ export function HelpTab() {
             Saved / Saving status line in the player.
           </li>
           <li>
-            If browser storage fills up, the app tells you honestly and shows each project's size,
-            so you can free space deliberately.
-          </li>
-          <li>
             <strong>Export is the backstop.</strong> Each project row has an Export button: it
             downloads a single zip (your markers plus the audio) and you hold a copy nothing in
             the browser can touch — re-import it any time, on any machine.
