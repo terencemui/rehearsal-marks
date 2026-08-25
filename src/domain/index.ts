@@ -17,7 +17,7 @@ export {
   removeMarker,
   setAliases,
 } from './markers';
-export { formatTime, parseTime } from './time';
+export { formatTime, formatWholeSeconds, parseTime } from './time';
 export { canonicalYouTubeUrl, isVideoId, parseYouTubeLink } from './youtube';
 export type { YouTubeLink } from './youtube';
 export { SCHEMA_VERSION, parseMarkers, parseProjectFile, serializeProjectFile, youtubeAudioMeta } from './projectFile';
