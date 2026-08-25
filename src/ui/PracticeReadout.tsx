@@ -1,6 +1,6 @@
 import type { LabeledMarker } from '../domain';
 import { practiceReadout } from '../domain';
-import { formatTime } from '../domain/time';
+import { formatWholeSeconds } from '../domain/time';
 
 export interface PracticeReadoutProps {
   /** Markers with derived labels, in time order. */
@@ -22,8 +22,13 @@ const END = 'End';
  * marker — letter and first alias, the name a student actually calls it —
  * with a progress bar toward the next marker, and the timestamps of both
  * anchors under the bar's two ends. Before the first mark the left slot
- * reads Start at 00:00.000; after the last mark the right slot reads End at
+ * reads Start at 00:00; after the last mark the right slot reads End at
  * the recording's duration, with the bar spanning the last mark to the end.
+ *
+ * The head is the T36 metro arrangement: the two captions share the first
+ * row, the values the second — the passed marker in large display type on
+ * the left, the next marker smaller and right-aligned on the same line.
+ * Times read in whole seconds (T35); full precision stays in the marker.
  */
 export function PracticeReadout({ markers, currentTime, duration }: PracticeReadoutProps) {
   const { passed, passedTime, next, nextTime, progress } = practiceReadout(
@@ -44,16 +49,18 @@ export function PracticeReadout({ markers, currentTime, duration }: PracticeRead
   return (
     <section className="player-practice-readout" aria-label="Practice readout">
       <div className="player-practice-head">
+        <p className="player-practice-label">Current marker</p>
         <span
           className={
-            passed === null ? 'player-practice-marker practice-placeholder' : 'player-practice-marker'
+            passed === null ? 'player-practice-now practice-placeholder' : 'player-practice-now'
           }
         >
           {passedLabel}
         </span>
+        <p className="player-practice-label">Next</p>
         <span
           className={
-            next === null ? 'player-practice-marker practice-placeholder' : 'player-practice-marker'
+            next === null ? 'player-practice-next practice-placeholder' : 'player-practice-next'
           }
         >
           {nextLabel}
@@ -73,8 +80,8 @@ export function PracticeReadout({ markers, currentTime, duration }: PracticeRead
         />
       </div>
       <div className="player-practice-times">
-        <span>{formatTime(passedTime, duration)}</span>
-        <span>{formatTime(nextTime, duration)}</span>
+        <span>{formatWholeSeconds(passedTime, duration)}</span>
+        <span>{formatWholeSeconds(nextTime, duration)}</span>
       </div>
     </section>
   );

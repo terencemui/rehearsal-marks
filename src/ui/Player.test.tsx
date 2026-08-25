@@ -1398,8 +1398,9 @@ describe('Player — YouTube projects', () => {
       expect(within(readout()).getByText('A')).toBeInTheDocument();
       expect(within(readout()).getByText('B')).toBeInTheDocument();
       expect(within(readout()).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0.5');
-      expect(within(readout()).getByText('00:10.000')).toBeInTheDocument();
-      expect(within(readout()).getByText('00:20.000')).toBeInTheDocument();
+      // The metro console reads in whole seconds, not twitching milliseconds.
+      expect(within(readout()).getByText('00:10')).toBeInTheDocument();
+      expect(within(readout()).getByText('00:20')).toBeInTheDocument();
 
       act(() => controller.seek(25));
       expect(within(readout()).getByText('B')).toBeInTheDocument();
