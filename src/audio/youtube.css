@@ -5,9 +5,16 @@
   margin-bottom: 8px;
 }
 
-.rm-youtube-player iframe {
+/* The IFrame API replaces the host element with the embed itself, transferring
+   the .rm-youtube-player class onto the iframe — so size the element whether
+   it sits inside the host (jsdom tests) or *is* the host (real browsers).
+   `height: auto` lets the aspect-ratio rule size the box instead of the API's
+   fixed 360px height stamp, which would otherwise letterbox the video. */
+.rm-youtube-player iframe,
+iframe.rm-youtube-player {
   display: block;
   width: 100%;
+  height: auto;
   aspect-ratio: 16 / 9;
   border: 0;
 }

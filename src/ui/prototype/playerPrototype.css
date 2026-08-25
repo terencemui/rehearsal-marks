@@ -1,0 +1,427 @@
+/* ==========================================================================
+   PROTOTYPE — throwaway UI variations for the Player redesign.
+   Remove this file with the prototype. It is not the app's design.
+   ========================================================================== */
+
+/* --- Nav bar -------------------------------------------------------------- */
+
+.proto-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 14px clamp(16px, 3vw, 48px);
+  box-sizing: border-box;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.proto-nav-projects {
+  flex: none;
+  border: 0;
+  background: none;
+  color: #0f766e;
+  font: 600 14px/20px system-ui, sans-serif;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+.proto-nav-projects:hover {
+  background: #f0fdfa;
+}
+
+/* The project title in its own band above the video — full content width,
+   separate from the nav's Projects/Suggest-edits chrome. */
+.proto-title {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 24px clamp(16px, 3vw, 48px) 0;
+  box-sizing: border-box;
+  font: 700 28px/1.15 system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.proto-suggest {
+  margin-left: auto;
+  flex: none;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  font: 500 13px/20px system-ui, sans-serif;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.proto-suggest:hover {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
+/* --- The video column: standard 16:9, whole-video timeline beneath it. --- */
+
+.proto-stage {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #0b1220;
+}
+.proto-stage .player-ruler-shell {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.proto-stage .player-ruler {
+  min-width: 0;
+}
+
+/* The embed fills the stage at exactly 16:9 — `height: auto` lets the
+   aspect-ratio rule size the box instead of the iframe's fixed 360px height,
+   which the IFrame API stamps on it and would otherwise letterbox the video.
+   The API replaces the host div with the iframe (moving the class onto it), so
+   the sizing rule also targets iframe.rm-youtube-player itself, not just a
+   nested iframe. */
+.proto-stage .rm-youtube-player,
+.proto-stage iframe.rm-youtube-player {
+  margin-bottom: 0;
+}
+.proto-stage .rm-youtube-player iframe,
+.proto-stage iframe.rm-youtube-player {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+/* The timeline band — ruler, flags, playhead — lives in the full-width strip
+   below the split (`.proto-timeline`), not in the video column. */
+.proto-stage .rm-youtube-ruler,
+.proto-stage .player-markers,
+.proto-stage .player-playhead {
+  display: none;
+}
+
+/* The numbered time ticks go — the ruler keeps its band, markers, and
+   playhead, nothing else. */
+.proto-root .rm-ruler-tick,
+.proto-root .rm-ruler-tick-label {
+  display: none;
+}
+
+/* --- The readout (passed/next markers, progress bar, times) -------------- */
+
+.proto-readout-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.proto-readout-marker {
+  font: 600 16px/22px system-ui, sans-serif;
+  color: #0f766e;
+}
+.proto-readout-marker.is-placeholder {
+  color: #64748b;
+}
+
+.proto-readout-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+.proto-readout-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: #0f766e;
+}
+
+.proto-readout-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Shared page margins — the size option C had. ------------------------ */
+
+.proto-root {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 20px clamp(16px, 3vw, 48px);
+  box-sizing: border-box;
+}
+
+/* --- The full-width timeline strip, independent of the video. ------------ */
+
+/* The strip spans the whole content width (a new grid row over both columns)
+   below the video + readout. The seek surface, markers, and playhead are
+   drawn here by the prototype; the video column hides its own. */
+.proto-timeline {
+  position: relative;
+  grid-column: 1 / -1;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.proto-timeline .player-markers {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 0;
+  height: var(--ruler-height);
+  pointer-events: none;
+}
+.proto-timeline .player-playhead {
+  position: absolute;
+  top: auto;
+  bottom: 0;
+  height: var(--ruler-height);
+  width: 2px;
+  background: #0f766e;
+  pointer-events: none;
+}
+
+/* --- Variant A — Split rail ---------------------------------------------- */
+
+.proto-root-a {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.proto-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 8px 4px;
+}
+
+/* --- Variant B — Floating deck ------------------------------------------- */
+
+.proto-root-b {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.proto-root-b .proto-stage {
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+}
+
+.proto-deck-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.proto-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
+  background: #fff;
+}
+.proto-card-label {
+  margin: 0 0 8px;
+  font: 600 11px/16px system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.proto-root-b .proto-card .proto-readout-marker {
+  font: 600 42px/50px system-ui, sans-serif;
+  color: #0f172a;
+}
+.proto-root-b .proto-card + .proto-card .proto-readout-marker {
+  font: 500 22px/30px system-ui, sans-serif;
+  color: #475569;
+}
+.proto-root-b .proto-readout-times {
+  margin-top: 10px;
+}
+.proto-root-b .proto-readout-bar {
+  margin-top: 14px;
+}
+
+/* --- Variant C — Metro console ------------------------------------------- */
+
+.proto-root-c {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.proto-ticker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+.proto-ticker-label {
+  margin: 8px 0 0;
+  font: 600 11px/16px system-ui, sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.proto-ticker-label:first-child {
+  margin-top: 0;
+}
+.proto-ticker-now {
+  font: 700 72px/1 system-ui, sans-serif;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.proto-ticker-now.is-placeholder {
+  color: #64748b;
+}
+.proto-ticker-next {
+  font: 500 26px/34px system-ui, sans-serif;
+  color: #475569;
+}
+.proto-ticker-next.is-placeholder {
+  color: #94a3b8;
+}
+.proto-ticker .proto-readout-bar {
+  height: 12px;
+  border-radius: 6px;
+}
+.proto-ticker .proto-readout-times {
+  font-size: 13px;
+}
+
+/* The console's headline: the Current-marker and Next slots side by side on
+   shared rows — labels on one line, values on the line below, not stacked. */
+.proto-ticker-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 16px;
+  row-gap: 8px;
+  align-items: end;
+}
+.proto-ticker-head .proto-ticker-label:first-child {
+  grid-row: 1;
+  grid-column: 1;
+}
+.proto-ticker-head .proto-ticker-now {
+  grid-row: 2;
+  grid-column: 1;
+}
+.proto-ticker-head .proto-ticker-label:nth-child(3) {
+  grid-row: 1;
+  grid-column: 2;
+  justify-self: end;
+}
+.proto-ticker-head .proto-ticker-next {
+  grid-row: 2;
+  grid-column: 2;
+  justify-self: end;
+}
+.proto-ticker-head .proto-ticker-label {
+  margin-top: 0;
+}
+
+/* --- Responsive: stack, keep margins, never let the page scroll sideways. */
+
+@media (max-width: 920px) {
+  .proto-root-a,
+  .proto-root-b,
+  .proto-root-c {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .proto-ticker {
+    justify-content: flex-start;
+  }
+  .proto-ticker-now {
+    font-size: 52px;
+  }
+}
+
+/* --- Floating prototype switcher (production builds never import it) ----- */
+
+.proto-switcher {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #0b1220;
+  color: #e2e8f0;
+  box-shadow: 0 8px 30px rgba(2, 6, 23, 0.45);
+  font: 600 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.proto-switcher-label.is-default {
+  color: #94a3b8;
+}
+.proto-switcher button {
+  border: 0;
+  background: none;
+  color: #fff;
+  font: 600 16px/18px system-ui, sans-serif;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 999px;
+}
+.proto-switcher button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* --- Stub note for "Suggest edits" (the edit page is out of scope) ------- */
+
+.proto-stub-note {
+  position: fixed;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 49;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(2, 6, 23, 0.35);
+  white-space: nowrap;
+}
+
+/* --- The YouTube failure card, restyled for the prototype ----------------- */
+
+.proto-youtube-error {
+  max-width: 1600px;
+  margin: 12px auto 0;
+  padding: 12px clamp(16px, 3vw, 48px);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #7f1d1d;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.proto-youtube-error p {
+  margin: 0;
+}
+.proto-youtube-error a {
+  color: #7f1d1d;
+  word-break: break-all;
+}

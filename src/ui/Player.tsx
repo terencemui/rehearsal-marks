@@ -30,6 +30,9 @@ import { PracticeReadout } from './PracticeReadout';
 import { STATUS_TEXT } from './status';
 import { UndoToast } from './UndoToast';
 import { contentWidth, fitPxPerSec, scrollLeftForTime } from './zoom';
+import { PrototypePlayer } from './prototype/playerVariants';
+import { PrototypeSwitcher } from './prototype/PrototypeSwitcher';
+import { VARIANTS, useVariant } from './prototype/useVariant';
 import './player.css';
 
 export interface PlayerProps {
@@ -160,7 +163,30 @@ export function Player({
   const [playerMode, setPlayerMode] = useState<PlayerMode>(
     record.playerMode ?? defaultPlayerMode(record.markers.length),
   );
-  const editing = playerMode === 'label';
+  // The UI prototype (T-prototype): when `?variant=A|B|C` is present the
+  // player renders the throwaway redesign, where every project is always in
+  // playback mode — `editing` is forced false so M-add, delete, the
+  // inspector, and Esc-deselect all fall through like a read-only session.
+  const { variant, setVariant } = useVariant();
+  const editing = variant === null && playerMode === 'label';
+
+  /**
+   * The floating switcher's cycle — wraps through the three variants. With no
+   * variant set (the current player), the arrows enter the prototype: → A,
+   * ← C.
+   */
+  const cycleVariant = useCallback(
+    (direction: 1 | -1): void => {
+      let next: number;
+      if (variant === null) {
+        next = direction === 1 ? 0 : VARIANTS.length - 1;
+      } else {
+        next = (VARIANTS.indexOf(variant) + direction + VARIANTS.length) % VARIANTS.length;
+      }
+      setVariant(VARIANTS[next]);
+    },
+    [setVariant, variant],
+  );
   const [undo, setUndo] = useState<UndoState | null>(null);
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // The playback store lives behind the seam; React subscribes to it directly.
@@ -546,8 +572,38 @@ export function Player({
     </div>
   );
 
+  // The prototype branch: a `?variant=` param swaps the whole layout while
+  // keeping every bit of player state and the timeline shell above. The
+  // floating switcher is dev-only — a stray merge can never ship it.
+  if (variant !== null) {
+    return (
+      <>
+        <PrototypePlayer
+          variant={variant}
+          record={current}
+          labeled={labeled}
+          duration={duration}
+          currentTime={playback.currentTime}
+          loadFailed={loadFailed}
+          youtubeUrl={youtubeUrl}
+          timelineShell={timelineShell}
+          onRetry={retryLoad}
+          onExit={onExit}
+          onSeekTo={(time) => {
+            controller.seek(time);
+            revealTime(time);
+          }}
+        />
+        {import.meta.env.DEV && (
+          <PrototypeSwitcher current={variant} onCycle={cycleVariant} />
+        )}
+      </>
+    );
+  }
+
   return (
-    <main>
+    <>
+      <main>
       <header>
         <button type="button" onClick={onExit}>
           Projects
@@ -656,6 +712,11 @@ export function Player({
             : YOUTUBE_RULER_NOTE}
         </p>
       )}
-    </main>
+      </main>
+      {/* The prototype bar is always reachable in dev, even while the player
+      still shows the current design — that's the entry point into the
+      variants. */}
+      {import.meta.env.DEV && <PrototypeSwitcher current={variant} onCycle={cycleVariant} />}
+    </>
   );
 }
