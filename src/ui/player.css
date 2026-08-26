@@ -81,14 +81,21 @@ the video. */
   }
 }
 
-/* The flags and the playhead belong to the timeline, never the video: on a
-YouTube project they stay inside the ruler band, whose height the ruler
-stylesheet owns as --ruler-height. */
-.player-ruler-shell.youtube-shell .player-markers,
-.player-ruler-shell.youtube-shell .player-playhead {
-  top: auto;
-  bottom: 0;
-  height: var(--ruler-height);
+/* The split's left pane: the recording fills its column. The audio layer
+loads the embed into the .player-ruler container inside (the class an
+app-level test asserts on); the embed sizes itself to the column at 16:9
+(youtube.css). */
+.player-video-column {
+  min-width: 0;
+}
+
+/* The video column shows only the recording: its own ruler band — drawn by
+the audio layer under the embed — is hidden, because the recording's clock
+moved to the full-width strip below the split (T38). The band is still drawn
+(one hidden element, leaving the audio layer and its tests alone) and this
+rule is scoped to the player. */
+.player-video-column .rm-youtube-ruler {
+  display: none;
 }
 
 /* The practice readout (T36): the metro console — the passed marker in large
@@ -192,17 +199,31 @@ these name the recording's boundaries instead. */
 
 /* Playback transport and the playhead overlay. */
 
-/* The zoomed view: a horizontally scrollable window over the content. The
-content width (flags, ruler) is set inline from the zoom state.
-`touch-action: pan-y` keeps native vertical page scroll for one finger while
-leaving the horizontal content scroll and the two-finger pinch to the
-player's own handlers — with pan-x allowed, the browser would claim a
-two-finger pan mid-pinch and the handlers could no longer cancel it. */
-.player-ruler-shell {
+/* The full-width timeline strip (T38): the recording's clock, below the
+split, spanning the content width. It carries its own seek surface — the
+shared ruler-drawing module, whose numbered ticks are hidden below — the
+marker flags, and the live playhead. */
+.player-timeline-strip {
   position: relative;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  touch-action: pan-y;
+  margin-top: 24px;
+}
+
+/* The strip's seek surface: the shared ruler's band and teal baseline. The
+numbered ticks are hidden — students navigate by rehearsal marks, not clock
+time (the drawing module itself is untouched). */
+.player-timeline-strip .rm-ruler-tick,
+.player-timeline-strip .rm-ruler-tick-label {
+  display: none;
+}
+
+/* The flags and the playhead belong to the timeline, never the video: on the
+strip they stay inside the ruler band, whose height the ruler stylesheet owns
+as --ruler-height. */
+.player-timeline-strip .player-markers,
+.player-timeline-strip .player-playhead {
+  top: auto;
+  bottom: 0;
+  height: var(--ruler-height);
 }
 
 /* The moving playhead: a pass-through line over the seek surface. */
@@ -260,8 +281,8 @@ a glance without adding another visual language to the transport. */
 
 /* Marker flags: a pass-through overlay whose flags alone take pointer input,
 so empty space still reaches the seek surface underneath. The overlay spans
-the zoomed content (inline width), so `left: time/duration` flags land at
-`time × pxPerSec` pixels at every zoom level. */
+the strip (its inline width is the measured strip width), so a flag's
+`left: time/duration` percentage lands at the right place across it. */
 
 .player-markers {
   position: absolute;
