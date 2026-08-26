@@ -49,20 +49,7 @@ export function HelpTab() {
 
       <section aria-labelledby="help-keyboard">
         <h3 id="help-keyboard">Keyboard reference</h3>
-        <p>
-          The player is fully keyboard-operable. Every shortcut below is suppressed while focus
-          is in a text field (the marker time or aliases inputs), so typing never seeks, jumps,
-          or deletes.
-        </p>
-        <p>
-          The player has two postures, switched from the <strong>Playback | Label</strong>{' '}
-          segmented control in the transport bar. <strong>Playback mode</strong> is the practice
-          posture: navigation tools with read-only markers. <strong>Label mode</strong> keeps
-          every navigation tool and adds the editing tools. A project opens in Playback mode
-          when it already has markers — its community label set loaded — and in Label mode
-          otherwise. The last-used mode is remembered per project.
-        </p>
-        <h4>Both modes</h4>
+        <p>The player is fully keyboard-operable.</p>
         <table>
           <tbody>
             <tr>
@@ -87,66 +74,26 @@ export function HelpTab() {
               <td>
                 <kbd>A</kbd>–<kbd>Z</kbd>
               </td>
-              <td>Jump straight to that marker</td>
+              <td>
+                Jump straight to that marker — <kbd>M</kbd> is just the letter for the marker
+                labelled M
+              </td>
             </tr>
             <tr>
               <td>Click a marker flag</td>
               <td>Jump to it</td>
             </tr>
-            <tr>
-              <td>The volume slider</td>
-              <td>Adjust playback level</td>
-            </tr>
           </tbody>
         </table>
         <p>
-          Markers are labeled A, B, C… by time order. Jumping never selects a marker — selection
-          exists only for editing — and never interrupts playback. Labels continue past{' '}
-          <kbd>Z</kbd> (<kbd>AA</kbd>, <kbd>AB</kbd>, …); the arrow keys reach every marker,
-          including those a single letter key cannot.
+          Markers are labeled A, B, C… by time order. Jumping never selects a marker and never
+          interrupts playback. Labels continue past <kbd>Z</kbd> (<kbd>AA</kbd>, <kbd>AB</kbd>,{' '}
+          …); the arrow keys reach every marker, including those a single letter key cannot.
         </p>
         <p>
-          <kbd>M</kbd> means different things per posture: in Label mode it adds a marker (the
-          marker labeled M is reached with the arrow keys there); in Playback mode it jumps to
-          the marker labeled M like every other letter.
-        </p>
-        <h4>Label mode</h4>
-        <table>
-          <tbody>
-            <tr>
-              <td>
-                <kbd>M</kbd> (or the Add marker button)
-              </td>
-              <td>Add a marker at the playhead, without pausing</td>
-            </tr>
-            <tr>
-              <td>Click a marker flag</td>
-              <td>Jump to it and select it for editing</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd>
-              </td>
-              <td>Nudge the selected marker ∓0.1 seconds</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>Delete</kbd> / <kbd>Backspace</kbd>
-              </td>
-              <td>Delete the selected marker (undo toast for 5 seconds)</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>Esc</kbd>
-              </td>
-              <td>Deselect</td>
-            </tr>
-          </tbody>
-        </table>
-        <p>
-          The same nudges exist as ±0.1s and ±1s buttons in the inspector, next to the time field
-          (accepts <code>5:10.5</code>, <code>310.5</code>, <code>5 10</code>) and the aliases
-          field (non-empty, ≤16 characters, unique per project).
+          Play, pause, and volume come from the recording's own controls.{' '}
+          <kbd>Alt</kbd>+<kbd>←</kbd> is the browser's Back — the marker nudge that used to
+          intercept it is gone.
         </p>
       </section>
 
@@ -154,13 +101,14 @@ export function HelpTab() {
         <h3 id="help-markers">Markers and limits</h3>
         <ul>
           <li>
-            Marker times accept loose input: <code>5:10.5</code>, <code>310.5</code>, or{' '}
-            <code>5 10</code>. They display as <code>mm:ss.mmm</code> (<code>h:mm:ss.mmm</code> for
-            recordings an hour or longer).
+            The readout shows marker times in whole seconds — easy to read from a music stand —
+            while each marker keeps its full precision for seeking.
           </li>
           <li>
-            Aliases are non-empty, trimmed, at most <strong>16 characters</strong>, and unique
-            across all labels and aliases in a project.
+            A marker can carry an alias — a second name beside its letter, like{' '}
+            <strong>Recap</strong> — which the readout and the marker's flag show. Aliases are
+            non-empty, trimmed, at most <strong>16 characters</strong>, and unique across all
+            labels and aliases in a project.
           </li>
           <li>
             Marker labels run A, B, C… and continue past Z as AA, AB, … — you never run out, and
@@ -186,12 +134,12 @@ export function HelpTab() {
           <li>
             A project plays its video from YouTube itself: playback <strong>streams from
             Google's</strong> servers while the video stays visible, per YouTube's terms. Your
-            markers sit on a <strong>ruler</strong> under the video — labeled ticks you click to
-            seek — and stay in your browser: <strong>Google never sees them</strong>.
+            markers sit on a full-width <strong>timeline</strong> below the video — click
+            anywhere to seek — and stay in your browser: <strong>Google never sees them</strong>.
           </li>
           <li>
-            Everything is saved <strong>automatically</strong> as you work (no save button), with a
-            Saved / Saving status line in the player.
+            Everything is saved <strong>automatically</strong> as you work — there is no save
+            button.
           </li>
         </ul>
       </section>
@@ -225,6 +173,12 @@ export function HelpTab() {
           entirely in the app — sign in with Google, submit, and await review. There is nothing
           to download or set up.
         </p>
+        <p>
+          <strong>Markers can't be written in the app yet.</strong> The player is read-only over
+          your markers, and the label-editing page that lets you place, move, and rename them
+          hasn't been built. Until it lands, only a project that already carries a label set —
+          one that loaded a set from the Commons — can be submitted.
+        </p>
 
         <h4>From the app</h4>
         <p>
@@ -233,8 +187,9 @@ export function HelpTab() {
         </p>
         <ol>
           <li>
-            Create a project from the performance's YouTube link and place your markers — labels
-            come out A, B, C… in time order automatically.
+            Open the project you want to contribute — a video that already carries its markers,
+            for example a community label set loaded from the Commons. Labels are A, B, C… in
+            time order automatically.
           </li>
           <li>
             Sign in with Google — the only account the app ever asks for. Reading label sets

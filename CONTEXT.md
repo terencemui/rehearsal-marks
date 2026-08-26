@@ -46,17 +46,9 @@ _Avoid_: youtube key, video key
 
 ### The player
 
-**Ruler**:
-The labeled-ticks, click-to-seek surface under the video.
-_Avoid_: timeline, tick bar
-
-**Playback mode**:
-The player posture for practicing: navigation tools with read-only markers.
-_Avoid_: practice mode, read-only mode
-
-**Label mode**:
-The player posture for editing: navigation tools plus every marking tool.
-_Avoid_: edit mode
+**Timeline**:
+The full-width, tick-free, click-to-seek clock below the split — the recording's own strip, with a flag at every marker and a live playhead.
+_Avoid_: ruler, tick bar
 
 ### Community
 
