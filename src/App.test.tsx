@@ -511,7 +511,7 @@ describe('App Projects workspace', () => {
     expect(screen.queryByRole('heading', { name: 'Brahms Op. 118 No. 2' })).not.toBeInTheDocument();
   });
 
-  it('surfaces a failed final save on exit instead of claiming Saved', async () => {
+  it('surfaces a failed final save on exit', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     let saves = 0;
@@ -534,8 +534,10 @@ describe('App Projects workspace', () => {
     await renderApp(controller, flaky);
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    // Wait for the debounced write to fail inside the player first.
-    await screen.findByText('Save failed.');
+    // The player's only write — the measured-duration stamp — fails against
+    // the flaky store. With the in-player status line gone (T37), wait on the
+    // write itself before leaving the player.
+    await vi.waitFor(() => expect(saves).toBeGreaterThanOrEqual(2));
 
     await user.click(screen.getByRole('button', { name: 'Projects' }));
 

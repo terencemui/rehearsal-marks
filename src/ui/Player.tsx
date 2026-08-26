@@ -23,11 +23,10 @@ import {
 } from '../domain';
 import type { LabeledMarker, Marker } from '../domain';
 import { defaultPlayerMode } from '../storage';
-import type { Autosave, PlayerMode, ProjectRecord, SaveStatus } from '../storage';
+import type { Autosave, PlayerMode, ProjectRecord } from '../storage';
 import { MarkerFlags } from './MarkerFlags';
 import { MarkerInspector } from './MarkerInspector';
 import { PracticeReadout } from './PracticeReadout';
-import { STATUS_TEXT } from './status';
 import { UndoToast } from './UndoToast';
 import { contentWidth, fitPxPerSec, scrollLeftForTime } from './zoom';
 import './player.css';
@@ -98,8 +97,13 @@ interface UndoState {
  * keyboard-only practice flow: ↑/↓ and A–Z jump between markers, ←/→ seek
  * ∓5s — all suppressed while typing. Jumping never selects; selection exists
  * only for nudge and delete. Everything audible goes through the `controller`;
- * marker state persists through the shell-owned `autosave` (T09), which also
- * feeds the status line.
+ * marker state persists through the shell-owned `autosave` (T09).
+ *
+ * The outer chrome is the T37 practice-surface frame: a nav bar carrying only
+ * the Projects control — no back arrow, no title, no save status — the project
+ * name in its own band above the recording, and a shared page rail (a maximum
+ * content width with fluid side margins) so content is never jammed against
+ * the window edge and the page never scrolls sideways when the window narrows.
  *
  * The timeline is always fitted to the viewport: `pxPerSec` settles at the
  * level that spans it exactly and never changes, so there is nothing to
@@ -136,7 +140,6 @@ export function Player({
   const [loadFailed, setLoadFailed] = useState(false);
   /** Bumped by the failure card's Retry — re-runs the load effect. */
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [status, setStatus] = useState<SaveStatus>(() => autosave.status());
   // The record's identity — name and recording — never changes in the player.
   const record = autosave.get();
   /**
@@ -501,10 +504,10 @@ export function Player({
   }
 
   useEffect(() => {
-    const unsubscribe = autosave.subscribe(setStatus);
+    // Page teardown: write anything still pending, then release. The shell
+    // flushes before returning to the Projects screen, so this is normally a
+    // no-op; it is the safety net for a session torn down any other way.
     return () => {
-      unsubscribe();
-      // Page teardown: write anything still pending, then release.
       void autosave.flush().catch(() => {});
       autosave.dispose();
       controller.destroy();
@@ -548,114 +551,117 @@ export function Player({
 
   return (
     <main>
-      <header>
-        <button type="button" onClick={onExit}>
-          Projects
-        </button>
-        <h1>{record.name}</h1>
-        <p role="status" data-save-status={status}>
-          {STATUS_TEXT[status]}
-        </p>
-      </header>
-      {loadFailed && (
-        <div role="alert" className="player-youtube-error">
-          <p>{YOUTUBE_FAILED_EXPLANATION}</p>
-          <p>
-            <a href={youtubeUrl} target="_blank" rel="noreferrer">
-              {youtubeUrl}
-            </a>
-          </p>
-          <button type="button" onClick={retryLoad}>
-            Retry
+      {/* T37 frame: the nav carries only the Projects control, the title sits
+          in its own band, and the rail wraps the split below. */}
+      <nav className="player-nav">
+        <div className="player-rail">
+          <button type="button" onClick={onExit}>
+            Projects
           </button>
         </div>
-      )}
-      {/* T27: the practice split view — the video (with its ruler and markers
-          below, and the `youtube-shell` class confining flags and playhead to
-          the ruler band) in roughly the left half, the practice readout
-          following the live playhead beside it. Every project is a YouTube
-          project, so the split view is unconditional. */}
-      <div className="player-practice-split">
-        {timelineShell}
-        <PracticeReadout
-          markers={labeled}
-          currentTime={playback.currentTime}
-          duration={duration}
-        />
-      </div>
-      <div className="player-transport">
-        <button
-          type="button"
-          aria-pressed={playback.playing}
-          // A source that reported it cannot play has an inert transport;
-          // leaving Play enabled would promise something no click delivers.
-          disabled={!loaded || loadFailed}
-          onClick={() => controller.togglePlay()}
-        >
-          {playback.playing ? 'Pause' : 'Play'}
-        </button>
-        <div className="player-modes" role="group" aria-label="Player mode">
-          <button type="button" aria-pressed={!editing} onClick={() => changeMode('playback')}>
-            Playback
-          </button>
-          <button type="button" aria-pressed={editing} onClick={() => changeMode('label')}>
-            Label
-          </button>
+      </nav>
+      <div className="player-rail player-page">
+        <h1 className="player-title">{record.name}</h1>
+        {loadFailed && (
+          <div role="alert" className="player-youtube-error">
+            <p>{YOUTUBE_FAILED_EXPLANATION}</p>
+            <p>
+              <a href={youtubeUrl} target="_blank" rel="noreferrer">
+                {youtubeUrl}
+              </a>
+            </p>
+            <button type="button" onClick={retryLoad}>
+              Retry
+            </button>
+          </div>
+        )}
+        {/* T27: the practice split view — the video (with its ruler and markers
+            below, and the `youtube-shell` class confining flags and playhead to
+            the ruler band) in roughly the left half, the practice readout
+            following the live playhead beside it. Every project is a YouTube
+            project, so the split view is unconditional. */}
+        <div className="player-practice-split">
+          {timelineShell}
+          <PracticeReadout
+            markers={labeled}
+            currentTime={playback.currentTime}
+            duration={duration}
+          />
         </div>
-        {editing && (
+        <div className="player-transport">
           <button
             type="button"
-            // A dead source has no honest playhead to mark from — the button
-            // stays visible (the mode is still Label) but promises nothing.
+            aria-pressed={playback.playing}
+            // A source that reported it cannot play has an inert transport;
+            // leaving Play enabled would promise something no click delivers.
             disabled={!loaded || loadFailed}
-            title="Shortcut: M"
-            onClick={() => addAtPlayhead()}
+            onClick={() => controller.togglePlay()}
           >
-            Add marker
+            {playback.playing ? 'Pause' : 'Play'}
           </button>
-        )}
-        <label className="player-volume">
-          <span>Volume</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={playback.volume}
-            onChange={(event) => controller.setVolume(Number(event.target.value))}
+          <div className="player-modes" role="group" aria-label="Player mode">
+            <button type="button" aria-pressed={!editing} onClick={() => changeMode('playback')}>
+              Playback
+            </button>
+            <button type="button" aria-pressed={editing} onClick={() => changeMode('label')}>
+              Label
+            </button>
+          </div>
+          {editing && (
+            <button
+              type="button"
+              // A dead source has no honest playhead to mark from — the button
+              // stays visible (the mode is still Label) but promises nothing.
+              disabled={!loaded || loadFailed}
+              title="Shortcut: M"
+              onClick={() => addAtPlayhead()}
+            >
+              Add marker
+            </button>
+          )}
+          <label className="player-volume">
+            <span>Volume</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={playback.volume}
+              onChange={(event) => controller.setVolume(Number(event.target.value))}
+            />
+          </label>
+        </div>
+        {editing && selected !== null && (
+          <MarkerInspector
+            marker={selected}
+            duration={duration}
+            onNudge={nudge}
+            onSetTime={setTime}
+            onSetAliases={applyAliases}
+            onDelete={deleteSelected}
+            onDeselect={() => setSelectedId(null)}
           />
-        </label>
+        )}
+        {/* The toast answers the Label-mode delete that opened its window; it
+        deliberately survives a posture switch. Dismissing it there would
+        silently finalize the delete — practice flow switches modes constantly,
+        and an undo that evaporates on the switch is a trap, not read-only. */}
+        {undo !== null && (
+          <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
+        )}
+        {/* The failure card carries the explanation when the video cannot play;
+        a precision note about working playback would be a lie beside it. */}
+        {loaded && !loadFailed && (
+          <p className="ruler-note">
+            {editing && current.markers.length === 0
+              ? // One note, both truths: the missing labels and the coarse
+                // clock the first mark will inherit — stacked hint paragraphs
+                // would read as one warning doubled.
+                `${YOUTUBE_NO_LABELS_NOTE} ${YOUTUBE_RULER_NOTE}`
+              : YOUTUBE_RULER_NOTE}
+          </p>
+        )}
       </div>
-      {editing && selected !== null && (
-        <MarkerInspector
-          marker={selected}
-          duration={duration}
-          onNudge={nudge}
-          onSetTime={setTime}
-          onSetAliases={applyAliases}
-          onDelete={deleteSelected}
-          onDeselect={() => setSelectedId(null)}
-        />
-      )}
-      {/* The toast answers the Label-mode delete that opened its window; it
-      deliberately survives a posture switch. Dismissing it there would
-      silently finalize the delete — practice flow switches modes constantly,
-      and an undo that evaporates on the switch is a trap, not read-only. */}
-      {undo !== null && (
-        <UndoToast label={undo.label} error={undo.error} onUndo={undoDelete} />
-      )}
-      {/* The failure card carries the explanation when the video cannot play;
-      a precision note about working playback would be a lie beside it. */}
-      {loaded && !loadFailed && (
-        <p className="ruler-note">
-          {editing && current.markers.length === 0
-            ? // One note, both truths: the missing labels and the coarse
-              // clock the first mark will inherit — stacked hint paragraphs
-              // would read as one warning doubled.
-              `${YOUTUBE_NO_LABELS_NOTE} ${YOUTUBE_RULER_NOTE}`
-            : YOUTUBE_RULER_NOTE}
-        </p>
-      )}
     </main>
   );
 }
