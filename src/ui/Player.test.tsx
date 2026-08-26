@@ -6,7 +6,6 @@ import { YouTubePlaybackError } from '../audio/errors';
 import { canonicalYouTubeUrl } from '../domain';
 import { createAutosave } from '../storage';
 import type { PlayerMode } from '../storage';
-import type { MockController } from '../test/controller-fixture';
 import { mockController } from '../test/controller-fixture';
 import { youtubeLoad } from '../test/load-fixture';
 import { marker } from '../test/marker-fixture';
@@ -17,31 +16,13 @@ import { Player } from './Player';
 afterEach(closeTestStorages);
 
 /**
- * Renders a loaded player whose load result matches the record's duration.
- *
- * jsdom has no layout, so a shell reports 0×0 and the fit-to-viewport level
- * would land at 0 px/s. Both shared render helpers mock a shell exactly as
- * wide as the fitted content before mount, so the level settles at the
- * familiar 8 px/s — the scale the shared x↔time math divides by.
+ * Renders a loaded player whose load result matches the record's duration —
+ * the same render the marking tests use, surfaced with the autosave handle
+ * for the transport tests that only need the controller and the view.
  */
-async function renderLoadedPlayer(controller: MockController = mockController()) {
-  const storage = await testStorage();
-  const record = projectRecord();
-  // Match the record's own duration so the load triggers no autosave write.
-  controller.load = vi.fn(async () => ({ duration: 123.456 }));
-  // Settle the mount duration before the fit runs (the mock's 10s default
-  // would fit a 98 px shell instead).
-  controller.emitPlayback({ duration: 123.456 });
-  const rectSpy = vi
-    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-    .mockReturnValue(shellRect(123.456 * 8));
-  const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
-  const view = render(
-    <Player autosave={autosave} controller={controller} onExit={vi.fn()} />,
-  );
-  await screen.findByRole('button', { name: 'Play' });
-  rectSpy.mockRestore();
-  return { ...view, controller, storage, autosave };
+async function renderLoadedPlayer() {
+  const { autosave, ...rest } = await renderMarkingPlayer();
+  return { ...rest, autosave };
 }
 
 describe('Player', () => {
@@ -262,16 +243,17 @@ describe('Player playback controls', () => {
     const { controller, container } = await renderLoadedPlayer();
     const playhead = container.querySelector('.player-playhead') as HTMLElement;
     expect(playhead).not.toBeNull();
-    expect(playhead.style.left).toBe('0px');
+    // The playhead is a percentage of the recording — anchored at time zero.
+    expect(playhead.style.left).toBe('0%');
 
     act(() => controller.emitPlayback({ currentTime: 5, duration: 10 }));
-    // 5 s at the default 8 px/s floor.
-    expect(playhead.style.left).toBe('40px');
+    // 5 s of a 10 s recording is halfway across the strip.
+    expect(playhead.style.left).toBe('50%');
 
     // A playhead past the end (seeks are clamped by the controller, but the
     // view still guards) pins to the recording's end instead of overflowing.
     act(() => controller.emitPlayback({ currentTime: 15 }));
-    expect(playhead.style.left).toBe('80px');
+    expect(playhead.style.left).toBe('100%');
   });
 });
 
@@ -383,15 +365,18 @@ describe('Player modes', () => {
   it('leaves every editing tool behind in Playback mode', async () => {
     const user = userEvent.setup();
     const { container, controller } = await renderPlaybackPlayer();
-    mockShellRect(container, 800);
-    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
+    stubRulerBounds(container, 200);
     act(() => controller.emitPlayback({ currentTime: 15 }));
 
     await user.keyboard('m');
     expect(flags(container)).toHaveLength(2); // M adds nothing here
 
-    fireEvent.doubleClick(shell, { clientX: 200 });
-    expect(flags(container)).toHaveLength(2); // double-click adds nothing
+    // A click on the strip seeks — it never drops a marker while practicing.
+    fireEvent.click(container.querySelector('.player-timeline-strip .rm-ruler') as HTMLElement, {
+      clientX: 100,
+    });
+    expect(flags(container)).toHaveLength(2); // click adds nothing
+    expect(controller.seek).toHaveBeenLastCalledWith((100 / 200) * RECORD_SECONDS);
 
     fireEvent.keyDown(document.body, { key: 'Delete' });
     expect(flags(container)).toHaveLength(2); // no selection to delete
@@ -467,26 +452,23 @@ describe('Player modes', () => {
 const RECORD_SECONDS = 123.456;
 
 /**
- * Renders a player whose playback duration matches the record. The shell is
- * mocked as wide as the fitted content (see the note at renderLoadedPlayer),
- * so the fit lands at 8 px/s and the gesture math below divides by it.
+ * Renders a player whose playback duration matches the record. The strip is
+ * not geometry-mocked: jsdom reports no layout, so its measured width never
+ * lands and the flags render without the edge-overhang correction — the one
+ * test that needs a width mocks it for itself.
  */
 async function renderMarkingPlayer(record = projectRecord()) {
   const controller = mockController();
   const storage = await testStorage();
   controller.load = vi.fn(async () => ({ duration: RECORD_SECONDS }));
-  // Settle the mount duration before the fit runs.
+  // Settle the mount duration before the strip draws its seek surface.
   controller.emitPlayback({ duration: RECORD_SECONDS });
-  const rectSpy = vi
-    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-    .mockReturnValue(shellRect(RECORD_SECONDS * 8));
   const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
   const view = render(
     <Player autosave={autosave} controller={controller} onExit={vi.fn()} />,
   );
   await screen.findByRole('button', { name: 'Play' });
-  rectSpy.mockRestore();
-  return { ...view, controller, storage, record };
+  return { ...view, controller, storage, record, autosave };
 }
 
 /** The marker flag buttons, in DOM order (which is time order). */
@@ -494,8 +476,8 @@ function flags(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll('.player-flag'));
 }
 
-/** A shell-sized DOMRect — jsdom has no layout, so tests own the geometry. */
-function shellRect(width: number): DOMRect {
+/** A strip-sized DOMRect — jsdom has no layout, so tests own the geometry. */
+function stripRect(width: number): DOMRect {
   return {
     x: 0,
     y: 0,
@@ -509,10 +491,12 @@ function shellRect(width: number): DOMRect {
   } as DOMRect;
 }
 
-/** Gives the shell (the scrollable viewport) a predictable geometry. */
-function mockShellRect(container: HTMLElement, width: number): void {
-  const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
-  vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue(shellRect(width));
+/** Gives the strip's seek surface a fixed box so clicks land at known ratios. */
+function stubRulerBounds(container: HTMLElement, width: number): void {
+  const ruler = container.querySelector('.player-timeline-strip .rm-ruler') as HTMLElement;
+  Object.defineProperty(ruler, 'getBoundingClientRect', {
+    value: () => stripRect(width),
+  });
 }
 
 describe('Player marking — adding', () => {
@@ -579,22 +563,12 @@ describe('Player marking — flags and selection', () => {
 
   it('selects a marker and jumps to it when its flag is clicked', async () => {
     const { container, controller } = await renderMarkingPlayer();
-    mockShellRect(container, 200);
-    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
 
     fireEvent.click(flags(container)[1]); // B at 20s
 
     expect(controller.seek).toHaveBeenCalledWith(20);
     expect(screen.getByRole('region', { name: 'Marker B' })).toBeInTheDocument();
     expect(flags(container)[1]).toHaveAttribute('aria-pressed', 'true');
-    // The jump scrolls the marker into view, centered in the 200 px
-    // viewport: 20 s × 8 px/s = 160 px of content, centered → 60.
-    expect(shell.scrollLeft).toBe(60);
-
-    // Jumping to a marker before the scroll (A at 10 s wants 80 − 100 = −20)
-    // pins to the content start instead of scrolling past it.
-    fireEvent.click(flags(container)[0]);
-    expect(shell.scrollLeft).toBe(0);
   });
 
   it('deselects with Escape', async () => {
@@ -1095,62 +1069,144 @@ describe('Player navigation — suppression in text inputs', () => {
   });
 });
 
-/* T08 zoom. Every timeline fits the viewport — the video is the main item and
-a zoomed timeline would stretch the embed off-screen — so the level is always
-fit, never gestured. The gesture machinery is gone; these tests cover the
-layout that remains: the fitted width, reveal-on-add, and the loaded-player fit.
-jsdom has no layout, so the shell's rect is mocked (see renderMarkingPlayer). */
+/* T38. The recording's clock is a single full-width strip below the split —
+never a zoomed, scrolling timeline. Marker positions and the playhead are
+percentages of the recording, so the strip is always exactly the content width
+and never needs a scroll shell or reveal-on-jump: the fit-to-viewport zoom
+machinery (pixels-per-second, content-width fit, scroll anchoring) is retired.
+The one geometry the strip still owns is its measured width, kept solely to
+pull a flag at time zero back on screen. */
 
-describe('Player zoom', () => {
-  it('fits the timeline to the shell: ruler and flags span the viewport', async () => {
+describe('Player timeline strip (T38)', () => {
+  it('moves the timeline out of the video column into a full-width strip below the split', async () => {
     const { container } = await renderMarkingPlayer();
-    const waveform = container.querySelector('.player-ruler') as HTMLElement;
-    const overlay = container.querySelector('.player-markers') as HTMLElement;
 
-    // The helper's shell is as wide as the fitted content: 123.456 s × 8 px/s.
-    expect(waveform.style.width).toBe('987.648px');
-    expect(overlay.style.width).toBe('987.648px');
-    // Flags keep their duration-relative percentages; the overlay's width
-    // puts them at time × 8 px.
-    expect(flags(container)[1].style.left).toBe(`${(20 / RECORD_SECONDS) * 100}%`);
+    const split = container.querySelector('.player-practice-split') as HTMLElement;
+    const strip = container.querySelector('.player-timeline-strip') as HTMLElement;
+
+    // The strip is the split's own sibling, below it — a block spanning the
+    // rail's content width, not one of the split's panes.
+    expect(split.nextElementSibling).toBe(strip);
+
+    // The video column keeps only the recording's mount — no flags, no
+    // playhead, no seek surface of its own.
+    const videoColumn = split.querySelector('.player-video-column') as HTMLElement;
+    expect(videoColumn.querySelector('.player-ruler')).not.toBeNull();
+    expect(videoColumn.querySelector('.player-flag')).toBeNull();
+    expect(videoColumn.querySelector('.player-playhead')).toBeNull();
+
+    // The strip carries the seek surface, the flags, and the playhead.
+    expect(strip.querySelector('.rm-ruler')).not.toBeNull();
+    expect(strip.querySelectorAll('.player-flag')).toHaveLength(2);
+    expect(strip.querySelector('.player-playhead')).not.toBeNull();
   });
 
-  it('scrolls a new playhead marker into view while paused', async () => {
-    const user = userEvent.setup();
-    const { container, controller } = await renderMarkingPlayer();
-    mockShellRect(container, 200);
-    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
+  it('draws its seek surface from the shared ruler module, ticks included', async () => {
+    const { container } = await renderMarkingPlayer();
+    const strip = container.querySelector('.player-timeline-strip') as HTMLElement;
 
-    act(() => controller.emitPlayback({ currentTime: 40 }));
-    await user.keyboard('m');
-
-    // 40 s × 8 px/s = 320 px; centered in the 200 px viewport → 220.
-    expect(shell.scrollLeft).toBe(220);
-    expect(flags(container)).toHaveLength(3);
+    // The surface is the shared ruler-drawing module's `.rm-ruler` — role and
+    // aria contract intact, its numbered ticks drawn. The ticks are hidden by
+    // player.css (`.player-timeline-strip .rm-ruler-tick { display: none }`),
+    // since students navigate by rehearsal marks, not clock time; the drawing
+    // module itself is untouched. (jsdom applies no CSS, so the hiding rule is
+    // asserted where it lives — the stylesheet.)
+    const ruler = strip.querySelector('.rm-ruler') as HTMLElement;
+    expect(ruler.getAttribute('role')).toBe('slider');
+    expect(ruler.getAttribute('aria-label')).toBe('Recording timeline');
+    expect(strip.querySelectorAll('.rm-ruler-tick').length).toBeGreaterThan(1);
   });
 
-  it('fits the timeline width once the recording loads', async () => {
-    const storage = await testStorage();
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 50 })),
+  it('sizes by percentages only — no pixel offsets, no inline widths', async () => {
+    const { container } = await renderMarkingPlayer();
+
+    // The seek surface spans the strip with no pixel sizing of its own. The
+    // flag overlay's inline width is set only once the strip is actually
+    // measured; jsdom measures no layout, so it stays unset here.
+    expect((container.querySelector('.player-timeline-surface') as HTMLElement).style.width).toBe(
+      '',
+    );
+    expect((container.querySelector('.player-markers') as HTMLElement).style.width).toBe('');
+    // The playhead is a percentage of the recording too.
+    expect((container.querySelector('.player-playhead') as HTMLElement).style.left).toMatch(/%$/);
+  });
+
+  it('seeks anywhere on the strip, and a flag click jumps without selecting in Playback', async () => {
+    const { container, controller } = await renderPlaybackPlayer();
+    stubRulerBounds(container, 200);
+
+    // Clicking empty strip space seeks to the clicked ratio of the recording.
+    fireEvent.click(container.querySelector('.player-timeline-strip .rm-ruler') as HTMLElement, {
+      clientX: 50,
     });
-    // Give the shell a real width and settle the mount duration first, so the
-    // fit lands where the width assertion below can read it.
-    controller.emitPlayback({ duration: 50 });
+    expect(controller.seek).toHaveBeenLastCalledWith((50 / 200) * RECORD_SECONDS);
+
+    // A flag click jumps to its marker — and never selects in Playback mode.
+    fireEvent.click(flags(container)[1]);
+    expect(controller.seek).toHaveBeenLastCalledWith(20);
+    expect(screen.queryByRole('region', { name: 'Marker B' })).not.toBeInTheDocument();
+    expect(flags(container)[1]).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('keeps a flag at time zero on screen — the edge overhang is pulled inward', async () => {
+    // jsdom measures no strip width, so the correction never lands in most
+    // tests; this one gives the strip a real width to see it work.
     const rectSpy = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockReturnValue(shellRect(400));
-    const record = projectRecord({ duration: 50 });
+      .mockReturnValue(stripRect(800));
+    try {
+      const { container } = await renderMarkingPlayer(
+        projectRecord({ markers: [marker('m0', 0), marker('m1', 10)] }),
+      );
+
+      // A flag centered on the strip's left edge would hang half its chip off
+      // screen, where nothing can reach it; it is pulled inward instead.
+      expect(flags(container)[0].style.transform).toBe('translateX(calc(-50% + 16px))');
+      // A marker deep in the recording centers normally — no correction.
+      expect(flags(container)[1].style.transform).toBe('');
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('retires the zoom machinery: no scroll shell, no content-width fit, no reveal-on-jump', async () => {
+    const { container } = await renderMarkingPlayer();
+
+    // The player renders no scroll shell and sizes no timeline to a fitted
+    // content width.
+    expect(container.querySelector('.player-ruler-shell')).toBeNull();
+    expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
+
+    // A jump reveals nothing by scrolling — the strip is never scrolled.
+    fireEvent.click(flags(container)[1]);
+    expect((container.querySelector('.player-timeline-strip') as HTMLElement).scrollLeft).toBe(0);
+  });
+
+  it('renders the markers even when playback has failed', async () => {
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({
+        duration: 0,
+        error: new YouTubePlaybackError(150),
+      })),
+    });
+    // The dead embed publishes the record's stored length before failing —
+    // exactly what the YouTube backend's failure paths do — so the strip
+    // renders on the last honest number the app has.
+    controller.emitPlayback({ duration: RECORD_SECONDS });
+    const record = projectRecord({ playerMode: 'label', duration: RECORD_SECONDS });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
     const { container } = render(
       <Player autosave={autosave} controller={controller} onExit={vi.fn()} />,
     );
-    await screen.findByText(/Playing from YouTube/);
-    rectSpy.mockRestore();
+    await screen.findByRole('alert');
 
-    const waveform = container.querySelector('.player-ruler') as HTMLElement;
-    expect(waveform.style.width).toBe('400px'); // fit — 50 s in a 400 px shell
+    // The failure card names the problem; the strip still renders the marks on
+    // the stored-duration timeline.
+    const strip = container.querySelector('.player-timeline-strip') as HTMLElement;
+    expect(strip.querySelectorAll('.player-flag')).toHaveLength(2);
+    expect(flags(container)[0].style.left).toBe(`${(10 / RECORD_SECONDS) * 100}%`);
     storage.close();
   });
 });
@@ -1164,8 +1220,7 @@ describe('Player — YouTube projects', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration })),
     });
-    // Settle the mount duration before the fit runs, so a width-mocked test
-    // sees the level for this recording rather than the mock's 10s default.
+    // Settle the mount duration before the strip draws its seek surface.
     controller.emitPlayback({ duration });
     const record = projectRecord({ name: 'Brahms — Intermezzo', duration });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
@@ -1313,26 +1368,24 @@ describe('Player — YouTube projects', () => {
     storage.close();
   });
 
-  it('fits the timeline to the viewport rather than zooming the embed off-screen', async () => {
-    // A 200 s video at the 8 px/s zoom floor would be 1600 px of content in an
-    // 800 px window — and the video is inside that content, so it would be
-    // stretched to twice the window and half of it scrolled out of sight.
-    const rectSpy = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockReturnValue(shellRect(800));
+  it('gives the timeline the full content width instead of zooming the embed off-screen', async () => {
     const { container, storage } = await renderYouTubePlayer(200);
 
-    const surface = container.querySelector('.player-ruler') as HTMLElement;
-    expect(surface.style.width).toBe('800px'); // fit — never the 1600 px floor
+    // The strip is the split's own sibling — a block that spans the rail's
+    // content width — and nothing inside it is sized in pixels. A zoomed
+    // timeline would stretch the video (it sits in the split above) off-
+    // screen; there is no fitted width to grow.
+    const split = container.querySelector('.player-practice-split') as HTMLElement;
+    const strip = container.querySelector('.player-timeline-strip') as HTMLElement;
+    expect(split.nextElementSibling).toBe(strip);
+    expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
 
-    rectSpy.mockRestore();
     storage.close();
   });
 
   it('leaves ctrl+scroll to the browser — there is no zoom to gesture at', async () => {
     const { container, storage } = await renderYouTubePlayer(200);
-    const shell = container.querySelector('.player-ruler-shell') as HTMLElement;
-    const before = (container.querySelector('.player-ruler') as HTMLElement).style.width;
+    const strip = container.querySelector('.player-timeline-strip') as HTMLElement;
 
     const wheel = new WheelEvent('wheel', {
       deltaY: -300,
@@ -1341,11 +1394,12 @@ describe('Player — YouTube projects', () => {
       cancelable: true,
     });
     act(() => {
-      shell.dispatchEvent(wheel);
+      strip.dispatchEvent(wheel);
     });
 
-    expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe(before);
-    // Not preventDefault'd either: the page keeps its own zoom over the embed.
+    // The strip has no wheel handler: nothing was resized and nothing was
+    // preventDefault'd, so the page keeps its own zoom over the embed.
+    expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
     expect(wheel.defaultPrevented).toBe(false);
     storage.close();
   });
@@ -1390,12 +1444,14 @@ describe('Player — YouTube projects', () => {
   describe('the practice split view (T27)', () => {
     const readout = () => screen.getByRole('region', { name: 'Practice readout' });
 
-    it('splits the view: the readout sits beside the timeline shell', async () => {
+    it('splits the view: the readout sits beside the recording', async () => {
       const { storage } = await renderYouTubePlayer();
 
       const split = document.querySelector('.player-practice-split') as HTMLElement;
-      // The shell and the readout are the split's two panes.
-      expect(split.querySelector('.player-ruler-shell')).not.toBeNull();
+      // The recording and the readout are the split's two panes; the timeline
+      // is the strip below the split, not one of its columns.
+      expect(split.querySelector('.player-video-column .player-ruler')).not.toBeNull();
+      expect(split.querySelector('.player-timeline-strip')).toBeNull();
       expect(within(split).getByRole('region', { name: 'Practice readout' })).toBeInTheDocument();
       storage.close();
     });
@@ -1425,12 +1481,16 @@ describe('Player — YouTube projects', () => {
       storage.close();
     });
 
-    it('confines the flags and playhead to the timeline band', async () => {
+    it('confines the flags and playhead to the timeline strip', async () => {
       const { storage } = await renderYouTubePlayer();
 
-      // The shell carries the posture; the CSS pins the overlays to the ruler
-      // band's height, so nothing overlays the video.
-      expect(document.querySelector('.player-ruler-shell')).toHaveClass('youtube-shell');
+      // The overlays belong to the timeline, never the recording's column.
+      const videoColumn = document.querySelector('.player-video-column') as HTMLElement;
+      const strip = document.querySelector('.player-timeline-strip') as HTMLElement;
+      expect(videoColumn.querySelector('.player-flag')).toBeNull();
+      expect(videoColumn.querySelector('.player-playhead')).toBeNull();
+      expect(strip.querySelector('.player-flag')).not.toBeNull();
+      expect(strip.querySelector('.player-playhead')).not.toBeNull();
       storage.close();
     });
   });

@@ -211,9 +211,12 @@ describe('App create from a YouTube link', () => {
 
     // The player, named after the video, with the transport an upload gets.
     expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
+    // The transport is live only once the load has settled — the ruler note is
+    // the loaded player's own marker, so awaiting it removes the race on the
+    // Play button below (the heading appears on mount, before the load lands).
+    expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled();
     expect(screen.getByLabelText('Volume')).toBeInTheDocument();
-    expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
 
     // A YouTube record stores no audio bytes — the URL is the whole input.
     const [stored] = await storage.projects.list();

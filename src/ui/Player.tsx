@@ -24,11 +24,11 @@ import {
 import type { LabeledMarker, Marker } from '../domain';
 import { defaultPlayerMode } from '../storage';
 import type { Autosave, PlayerMode, ProjectRecord } from '../storage';
+import { renderRuler } from '../playback/renderRuler';
 import { MarkerFlags } from './MarkerFlags';
 import { MarkerInspector } from './MarkerInspector';
 import { PracticeReadout } from './PracticeReadout';
 import { UndoToast } from './UndoToast';
-import { contentWidth, fitPxPerSec, scrollLeftForTime } from './zoom';
 import './player.css';
 
 export interface PlayerProps {
@@ -105,12 +105,15 @@ interface UndoState {
  * content width with fluid side margins) so content is never jammed against
  * the window edge and the page never scrolls sideways when the window narrows.
  *
- * The timeline is always fitted to the viewport: `pxPerSec` settles at the
- * level that spans it exactly and never changes, so there is nothing to
- * scroll or zoom. The level is applied to the controller's container as the
- * content width, the ruler's percentage ticks stretch with it, and the audio
- * seam never learns about zoom. Jumps bring the target into view through
- * `revealTime`, which a fitted view clamps to a no-op.
+ * The recording's clock is a single strip below the split (T38), spanning
+ * the full content width — a click-to-seek surface with a flag at every
+ * marker and a live playhead. Marker positions and the playhead are
+ * percentages of the recording, so the strip is always exactly the content
+ * width and never scrolls: the fit-to-viewport zoom machinery is gone. The
+ * video column keeps only the recording — the audio layer's own ruler band
+ * is hidden with CSS — and the strip draws its own seek surface with the
+ * shared ruler-drawing module, its numbered ticks hidden. A click on the
+ * strip seeks; a flag click jumps to that marker.
  *
  * T18 modes: every project has a Playback | Label posture, seeded from the
  * record's persisted `playerMode` (the default on first open) and written
@@ -127,8 +130,11 @@ export function Player({
   controller,
   onExit,
 }: PlayerProps) {
-  const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** The strip's seek surface — the shared ruler-drawing module draws into it. */
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  /** The timeline strip itself, whose width drives the flag edge correction. */
+  const stripRef = useRef<HTMLDivElement>(null);
   /** Whether the recording's load has settled — until then the transport and
    * shortcuts are inert, and the ruler has nothing to draw on. */
   const [loaded, setLoaded] = useState(false);
@@ -143,11 +149,11 @@ export function Player({
   // The record's identity — name and recording — never changes in the player.
   const record = autosave.get();
   /**
-   * Every project is a YouTube project: the video is the main item and the
-   * ruler sits under it, so the timeline is always fitted to the viewport —
-   * never zoomed, which would stretch the embed off-screen. The canonical URL
-   * derived from the stored video ID is the recording identity the audio layer
-   * plays from.
+   * Every project is a YouTube project: the video is the main item in the
+   * split's left column, and the recording's clock is its own strip below the
+   * split — never zoomed, which would stretch the embed off-screen. The
+   * canonical URL derived from the stored video ID is the recording identity
+   * the audio layer plays from.
    */
   const youtubeUrl = canonicalYouTubeUrl(record.videoId);
   // The record as React state. Every mutation goes through `update`, which
@@ -173,57 +179,40 @@ export function Player({
   const duration = playback.duration > 0 ? playback.duration : current.duration;
   const selected = labeled.find((marker) => marker.id === selectedId) ?? null;
 
-  // T08 zoom. `pxPerSec` is null until the duration is known, then settles at
-  // fit-to-view — the only level a fitted (YouTube) timeline ever uses. Scroll
-  // stays in the DOM (`shell.scrollLeft`); the view re-renders only when the
-  // level changes, and the flags overlay scrolls natively with the content.
-  const [pxPerSec, setPxPerSec] = useState<number | null>(null);
-  // The zoom state as the gesture listeners see it: fresh values through a
-  // ref, the same pattern as the keydown handler below.
-  const viewRef = useRef<{ pxPerSec: number; duration: number } | null>(null);
-  viewRef.current =
-    pxPerSec !== null && duration > 0 ? { pxPerSec, duration } : null;
-  // A zoom's scroll, held until the new width has committed (see the layout
-  // effect below) — the CSSOM clamps scrollLeft against the current content
-  // width at assignment time, so writing it early would drop the anchor.
-  const pendingScrollRef = useRef<number | null>(null);
+  // The strip's measured width, kept solely to drive the flag component's
+  // edge-overhang correction — a marker at time zero must not hang off the
+  // strip's left edge. jsdom reports no layout (0), so the measurement only
+  // lands in a real browser; the guard keeps the flags unshifted in tests.
+  const [stripWidth, setStripWidth] = useState<number | undefined>(undefined);
 
-  // A layout effect, not a passive one: the initial level must be set before
-  // the first painted frame, or that frame shows the flags overlay collapsed
-  // to nothing and the playhead at the wrong position.
+  // One measurement, taken before the first painted frame and kept honest on
+  // resize — the only geometry the strip needs.
   useLayoutEffect(() => {
-    if (pxPerSec !== null) return;
-    const shell = shellRef.current;
-    if (shell === null || duration <= 0) return;
-    const width = shell.getBoundingClientRect().width;
-    setPxPerSec(fitPxPerSec(width, duration));
-  }, [duration, pxPerSec]);
-
-  // Applies the zoom's scroll once the content width for the committed level
-  // is in the DOM. Also re-fits when the window widens past the current
-  // level: content must never be narrower than the viewport's fit.
-  useLayoutEffect(() => {
-    const scroll = pendingScrollRef.current;
-    if (scroll !== null) {
-      pendingScrollRef.current = null;
-      const shell = shellRef.current;
-      if (shell !== null) shell.scrollLeft = scroll;
-    }
-  }, [pxPerSec]);
-
-  useEffect(() => {
-    const shell = shellRef.current;
-    if (shell === null || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
-      setPxPerSec((level) => {
-        if (level === null || duration <= 0) return level;
-        // The timeline is always exactly the viewport, so a resize re-fits.
-        return fitPxPerSec(shell.getBoundingClientRect().width, duration);
-      });
-    });
-    observer.observe(shell);
+    const strip = stripRef.current;
+    if (strip === null) return;
+    const measure = () => {
+      const width = strip.getBoundingClientRect().width;
+      if (width > 0) setStripWidth(width);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(strip);
     return () => observer.disconnect();
-  }, [duration]);
+  }, []);
+
+  // The strip's own seek surface — the shared ruler-drawing module draws it
+  // once a duration is known. The strip itself stays in the layout whether or
+  // not the source can play, so markers remain visible in the failure state.
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    if (surface === null || duration <= 0) return;
+    renderRuler(surface, duration, (time) => {
+      controller.seek(time);
+      // The ruler reports the requested position; the controller clamps it.
+      return time;
+    });
+  }, [controller, duration]);
 
   /** Applies a mutation: the autosave gets it, React mirrors it back. */
   const update = useCallback(
@@ -260,29 +249,9 @@ export function Player({
     updateMarkers((markers) => addMarker(markers, marker));
   }
 
-  /**
-   * Adds a marker at the playhead — M or the visible button. When paused, the
-   * new flag is scrolled into view: a zoomed-out view must show where the
-   * mark landed. During playback the view stays put, so a marking pass never
-   * yanks the screen out from under the listener.
-   */
+  /** Adds a marker at the playhead — M or the visible button. */
   function addAtPlayhead(): void {
     addAt(playback.currentTime);
-    if (!playback.playing) revealTime(playback.currentTime);
-  }
-
-  /** Scrolls the view to `time` — centered, pinned to the content edges. */
-  function revealTime(time: number): void {
-    const shell = shellRef.current;
-    const view = viewRef.current;
-    if (shell !== null && view !== null) {
-      shell.scrollLeft = scrollLeftForTime(
-        time,
-        shell.getBoundingClientRect().width,
-        view.duration,
-        view.pxPerSec,
-      );
-    }
   }
 
   /**
@@ -292,8 +261,6 @@ export function Player({
    */
   function handleFlagClick(marker: LabeledMarker): void {
     controller.seek(marker.time);
-    // Jumps always bring the target into view.
-    revealTime(marker.time);
     if (editing) setSelectedId(marker.id);
   }
 
@@ -403,9 +370,6 @@ export function Player({
       if (target === null) return;
       event.preventDefault();
       controller.seek(target.time);
-      // Jumps always bring the target into view (T08) — the fitted view must
-      // never leave the jumped-to marker off-screen.
-      revealTime(target.time);
       return;
     }
     if (plain && /^[a-z]$/i.test(event.key)) {
@@ -417,7 +381,6 @@ export function Player({
       if (target !== null) {
         event.preventDefault();
         controller.seek(target.time);
-        revealTime(target.time);
       }
       return;
     }
@@ -515,35 +478,31 @@ export function Player({
     };
   }, [autosave, controller]);
 
-  // The playhead in content pixels; pins to the recording's end so a trailing
-  // position can never overflow the content.
-  const playheadLeft =
-    pxPerSec !== null && duration > 0
-      ? Math.min(playback.currentTime, duration) * pxPerSec
-      : 0;
-  // The content's width — the flags and ruler span it.
-  const viewWidth = pxPerSec !== null && duration > 0 ? contentWidth(pxPerSec, duration) : undefined;
+  // The playhead as a percentage of the recording, pinned to the end so a
+  // trailing position can never overflow the strip.
+  const playheadPercent =
+    duration > 0 ? (Math.min(playback.currentTime, duration) / duration) * 100 : 0;
 
-  // The seek surface plus its overlays: the ruler (with its flags and playhead
-  // overlays, confined to the ruler band by the `youtube-shell` modifier).
-  const timelineShell = (
-    <div ref={shellRef} className="player-ruler-shell youtube-shell">
-      <div
-        ref={containerRef}
-        className="player-ruler"
-        style={viewWidth !== undefined ? { width: `${viewWidth}px` } : undefined}
-      />
+  // The full-width timeline strip (T38): the recording's clock below the
+  // split. It carries its own seek surface (the shared ruler, ticks hidden),
+  // the marker flags, and the live playhead. The strip never scrolls — marker
+  // positions and the playhead are percentages of the recording — so the only
+  // geometry it needs is the measured width that keeps a flag at time zero on
+  // screen.
+  const timelineStrip = (
+    <div ref={stripRef} className="player-timeline-strip">
+      <div ref={surfaceRef} className="player-timeline-surface" />
       <MarkerFlags
         markers={labeled}
         duration={duration}
         selectedId={editing ? selectedId : null}
         onFlagClick={handleFlagClick}
-        width={viewWidth}
+        width={stripWidth}
       />
       {/* pointer-events: none — clicks pass through to the seek surface. */}
       <div
         className="player-playhead"
-        style={{ left: `${playheadLeft}px` }}
+        style={{ left: `${playheadPercent}%` }}
         aria-hidden="true"
       />
     </div>
@@ -575,19 +534,23 @@ export function Player({
             </button>
           </div>
         )}
-        {/* T27: the practice split view — the video (with its ruler and markers
-            below, and the `youtube-shell` class confining flags and playhead to
-            the ruler band) in roughly the left half, the practice readout
-            following the live playhead beside it. Every project is a YouTube
-            project, so the split view is unconditional. */}
+        {/* T27/T38: the practice split view — the recording fills its column
+            (the audio layer loads the embed into the .player-ruler container;
+            its own ruler band is hidden) with the practice readout beside it,
+            and the recording's clock is its own full-width strip below the
+            split. Every project is a YouTube project, so the split view is
+            unconditional. */}
         <div className="player-practice-split">
-          {timelineShell}
+          <div className="player-video-column">
+            <div ref={containerRef} className="player-ruler" />
+          </div>
           <PracticeReadout
             markers={labeled}
             currentTime={playback.currentTime}
             duration={duration}
           />
         </div>
+        {timelineStrip}
         <div className="player-transport">
           <button
             type="button"

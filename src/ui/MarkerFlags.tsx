@@ -13,9 +13,10 @@ export interface MarkerFlagsProps {
    */
   onFlagClick(marker: LabeledMarker): void;
   /**
-   * The zoomed content's width in px. The overlay spans the content, so each
-   * flag's `left: time / duration` percentage lands at `time × pxPerSec`
-   * pixels — zoom repositions every flag without recomputing any of them.
+   * The strip's width in px — the overlay spans it, so each flag's
+   * `left: time / duration` percentage lands at the right place across it.
+   * The width also drives the edge-overhang correction that keeps a flag at
+   * time zero from hanging off the strip's left edge.
    */
   width: number | undefined;
 }
