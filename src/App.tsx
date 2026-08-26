@@ -4,22 +4,20 @@ import type { AudioController } from './audio';
 import { createDefaultAuthController } from './auth';
 import type { AuthController, AuthState } from './auth';
 import { CommonsError } from './commons/errors';
-import { labelSetValuesFromProjectFile } from './commons/labelSet';
+import { rowsById } from './commons/labelSet';
 import type { LabelSetRow } from './commons/labelSet';
 import { readCommonsConfig } from './commons/load';
 import { createDefaultCommonsWrite } from './commons/write';
 import type { CommonsWriteController } from './commons/write';
-import { projectFileFromRecord } from './commons/labelSet';
-import { validateProjectName } from './projects/summary';
-import { createAutosave, createStorage } from './storage';
-import type { Autosave, ProjectRecord, ProjectSummary, SaveStatus, Storage } from './storage';
-import { createProjectFromYouTubeLink, fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
+import { createStorage } from './storage';
+import type { ProjectSummary, SaveStatus, Storage } from './storage';
+import { fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
 import { ContributorControl } from './ui/Contributor';
-import { CreateProject } from './ui/CreateProject';
 import { HelpTab } from './ui/HelpTab';
 import { Player } from './ui/Player';
-import { ProjectsScreen } from './ui/ProjectsScreen';
+import { usePlayerSession } from './ui/playerSession';
+import { WorkspaceScreen } from './ui/WorkspaceScreen';
 import './ui/app.css';
 
 export interface AppProps {
@@ -48,12 +46,6 @@ export interface AppProps {
    * containment the auth and audio tests get from their fakes.
    */
   commonsWriteFactory?: () => CommonsWriteController;
-}
-
-/** One open project session: the autosave and its controller. */
-interface Session {
-  autosave: Autosave;
-  controller: AudioController;
 }
 
 type Tab = 'projects' | 'help';
@@ -95,16 +87,16 @@ function commonsFailure(): CommonsError {
   );
 }
 
-/** The submissions list as a lookup by project id — the badges' source. */
-function rowsById(rows: LabelSetRow[]): Record<string, LabelSetRow> {
-  return Object.fromEntries(rows.map((row) => [row.id, row]));
-}
-
 /**
- * The app shell: the Projects tab is home — the link-only create, the list,
- * rename, and delete; Help is the discoverable reference. Opening a project
- * drops into the player; leaving flushes the session's autosave before the
- * list is re-read, so the workspace never shows stale data.
+ * The app shell (T43): owns storage, the contributor controllers, and the
+ * workspace's durable state (the list, the save line, the notices, the create
+ * surface's rejection and busy state, and the Commons badges — everything that
+ * must survive the workspace surface's unmounts), and coordinates the two
+ * separable modules — the workspace surface (create, list, rename, delete,
+ * submission) and the imperative open-session flow. The Projects tab is home;
+ * Help is the discoverable reference. Opening a project drops into the player;
+ * leaving flushes the session's autosave before the list is re-read, so the
+ * workspace never shows stale data.
  */
 function App({
   controllerFactory = createAudioController,
@@ -129,25 +121,33 @@ function App({
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [tab, setTab] = useState<Tab>('projects');
-  const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [notice, setNotice] = useState<string | null>(null);
-  const [openingId, setOpeningId] = useState<string | null>(null);
-  /**
-   * The link field's own failure channel: the create surface shows each
-   * rejection beside the input that caused it.
-   */
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const [creatingFromLink, setCreatingFromLink] = useState(false);
   /** The contributor session — the header's sign-in state. Anonymous first paint. */
   const [authState, setAuthState] = useState<AuthState>({ kind: 'anonymous' });
   /**
+   * The link field's own failure channel: the create surface shows each
+   * rejection beside the input that caused it. Lifted with the rest of the
+   * workspace's durable state — a create rejection must survive a tab
+   * switch, or the guidance vanishes from under the bad input it explains.
+   */
+  const [linkError, setLinkError] = useState<string | null>(null);
+  /**
+   * True while a link create runs — the create surface's busy line. Lifted
+   * so the surface's buttons stay inert across its unmounts: an in-flight
+   * create holds the working lock, and re-enabling the button mid-flight
+   * would only produce a second action the lock silently drops.
+   */
+  const [creatingFromLink, setCreatingFromLink] = useState(false);
+  /**
    * The signed-in contributor's Commons rows by project id — the row badges'
    * source, refreshed on every sign-in and every submission. Null while
-   * signed out (no rows exist to show).
+   * signed out (no rows exist to show). Lifted so the badges survive the
+   * surface's unmounts — and so a re-submit always sees the existing row,
+   * keeping re-submission an UPDATE rather than a second moderation row.
    */
   const [commonsRows, setCommonsRows] = useState<Record<string, LabelSetRow> | null>(null);
-  /** The row whose Commons submission runs, if any — rows are inert then. */
+  /** The row whose Commons submission runs, if any — rows are inert then. Lifted for the same reason as creatingFromLink. */
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   /**
@@ -169,8 +169,6 @@ function App({
    * to destroy; it is dropped on unmount the same way.
    */
   const commonsWriteRef = useRef<CommonsWriteController | null>(null);
-  /** Bumped whenever the tab changes; an in-flight open checks it before committing. */
-  const openTokenRef = useRef(0);
 
   /** Re-reads the workspace list; a failed read surfaces as a notice, never a rejection. */
   async function refreshProjects(source: Storage): Promise<void> {
@@ -180,6 +178,14 @@ function App({
       setNotice('Something went wrong reading the project list. Please reload.');
     }
   }
+
+  const sessionFlow = usePlayerSession({
+    storage,
+    controllerFactory,
+    workingRef,
+    onNotice: setNotice,
+    refreshProjects,
+  });
 
   // Runs once per mount, never per render: an inline `authFactory` from a
   // re-rendering parent can't recycle the controller mid-mount and drop
@@ -215,7 +221,9 @@ function App({
   // The contributor's own submissions follow the session: loaded on every
   // sign-in (including a restored one), cleared on sign-out. The list is a
   // convenience — a failed read leaves the rows unknown (no badges) with the
-  // failure surfaced, never a crash.
+  // failure surfaced, never a crash. The rows live here, not in the workspace
+  // surface: they must survive its unmounts, and a re-submit must always see
+  // the existing row so it stays an UPDATE, never a second moderation row.
   useEffect(() => {
     if (authState.kind !== 'signed-in') {
       setCommonsRows(null);
@@ -257,11 +265,11 @@ function App({
     };
   }, [injectedStorage]);
 
+  // Mount and every tab switch invalidate an in-flight open: the player must
+  // never yank the user off a tab they navigated to while a read was running.
   useEffect(() => {
-    // Mount and every tab switch invalidate an in-flight open: the player
-    // must never yank the user off a tab they navigated to while a read
-    // was still running.
-    openTokenRef.current += 1;
+    sessionFlow.invalidateOpen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bump on tab changes only
   }, [tab]);
 
   /** Starts the Google OAuth flow; the session lands when the flow returns. */
@@ -279,219 +287,24 @@ function App({
     void authRef.current?.deleteAccount();
   }
 
-  /**
-   * Submits (or re-submits) a YouTube project's label set to the Commons —
-   * the moderation gate's intake. A signed-out contributor is routed to
-   * sign-in first: contributing prompts Sign in with Google, viewing never
-   * requires one. The submission lands `pending` (or `published` for a
-   * contributor with a track record — the server decides, and the badges
-   * refresh from its answer).
-   */
-  async function handleSubmitToCommons(id: string): Promise<void> {
-    if (authState.kind !== 'signed-in') {
-      setNotice('Sign in with Google to submit your label set.');
-      void authRef.current?.signInWithGoogle();
-      return;
-    }
-    if (storage === null || workingRef.current) return;
-    workingRef.current = true;
-    setSubmittingId(id);
-    setNotice(null);
-    try {
-      const record = await storage.projects.get(id);
-      if (record === undefined) {
-        // A stale row (another tab deleted it) — quietly re-sync the list.
-        await refreshProjects(storage);
-        return;
-      }
-      const commons = commonsWriteRef.current;
-      if (commons === null) return;
-      await commons.submit(
-        labelSetValuesFromProjectFile(projectFileFromRecord(record)),
-        commonsRows?.[id],
-      );
-      setNotice(
-        commonsRows?.[id] !== undefined
-          ? 'Submission updated.'
-          : 'Submitted to the Commons.',
-      );
-      setCommonsRows(rowsById(await commons.listMySubmissions()));
-    } catch (error) {
-      // A Commons rejection is its own message (rate limit, ban, a label set
-      // the store will not hold); everything else is the transport's failure.
-      setNotice(
-        error instanceof CommonsError
-          ? error.message
-          : 'Something went wrong submitting your label set. Please try again.',
-      );
-    } finally {
-      workingRef.current = false;
-      setSubmittingId(null);
-    }
-  }
-
-  /**
-   * The create surface's one input: a pasted YouTube link becomes a project
-   * and opens the player session. Nothing decodes and nothing is hashed —
-   * there is no audio here — so the whole path is the link rules plus one
-   * title lookup.
-   */
-  async function handleLink(url: string): Promise<void> {
-    if (storage === null || workingRef.current) return;
-    workingRef.current = true;
-    setLinkError(null);
-    setCreatingFromLink(true);
-    const controller = controllerFactory();
-    const token = openTokenRef.current;
-    try {
-      const outcome = await createProjectFromYouTubeLink(url, {
-        fetchTitle,
-        loadCommunityLabels,
-        save: (record) => storage.projects.save(record),
-      });
-      if (!outcome.ok) {
-        // The controller never entered a session — release it.
-        controller.destroy();
-        setLinkError(outcome.guidance);
-        return;
-      }
-      if (token !== openTokenRef.current) {
-        // The user switched tabs while the title lookup ran (up to ten
-        // seconds) — the project is saved and waiting in the list, but
-        // yanking them off the tab they navigated to is not ours to do.
-        controller.destroy();
-        await refreshProjects(storage);
-        return;
-      }
-      // A link create that lands is a fresh start for the surface.
-      setSession({
-        autosave: createAutosave(outcome.project, {
-          save: (record) => storage.projects.save(record),
-        }),
-        controller,
-      });
-    } catch {
-      controller.destroy();
-      setLinkError('Something went wrong creating the project. Please try again.');
-    } finally {
-      workingRef.current = false;
-      setCreatingFromLink(false);
-    }
-  }
-
-  /** Reopens a stored project straight into the player — no decode, no hash. */
-  async function openProject(id: string): Promise<void> {
-    if (storage === null || session !== null || workingRef.current) return;
-    workingRef.current = true;
-    setOpeningId(id);
-    setNotice(null);
-    const token = openTokenRef.current;
-    try {
-      const record = await storage.projects.get(id);
-      if (record === undefined) {
-        // A stale row (another tab deleted it) — quietly re-sync the list.
-        await refreshProjects(storage);
-        return;
-      }
-      if (token !== openTokenRef.current) {
-        // The user switched tabs while the read ran — drop the open.
-        return;
-      }
-      setSession({
-        autosave: createAutosave(record, { save: (next) => storage.projects.save(next) }),
-        controller: controllerFactory(),
-      });
-    } catch {
-      setNotice("Couldn't open that project. Try again.");
-    } finally {
-      workingRef.current = false;
-      setOpeningId(null);
-    }
-  }
-
-  /** Back from the player: settle pending writes, then re-read the list. */
-  async function closeSession(): Promise<void> {
-    if (session === null || storage === null) return;
-    // Settles before the player unmounts, so its teardown flush is a no-op
-    // and the list below reads the final state. A failed final write must
-    // still be heard — the workspace status line takes it over.
-    let exitFailure: unknown = null;
-    try {
-      await session.autosave.flush();
-    } catch (error) {
-      exitFailure = error;
-    }
-    setSession(null);
+  /** Back from the player: settle pending writes, then restore the workspace. */
+  async function handlePlayerExit(): Promise<void> {
+    const exitStatus = await sessionFlow.closeSession();
     setTab('projects');
-    setStatus(exitFailure === null ? 'idle' : 'error');
-    await refreshProjects(storage);
+    setStatus(exitStatus);
+    if (storage !== null) await refreshProjects(storage);
   }
 
-  async function renameProject(id: string, name: string): Promise<void> {
-    if (storage === null || workingRef.current) return;
-    workingRef.current = true;
-    try {
-      let record: ProjectRecord | undefined;
-      try {
-        record = await storage.projects.get(id);
-      } catch {
-        setNotice('Something went wrong reading that project. Please reload.');
-        return;
-      }
-      if (record === undefined) {
-        await refreshProjects(storage);
-        return;
-      }
-      const validation = validateProjectName(name, record.name);
-      if (!validation.ok) return;
-      setStatus('saving');
-      try {
-        await storage.projects.save({ ...record, name: validation.name, updatedAt: Date.now() });
-        setStatus('saved');
-      } catch {
-        setStatus('error');
-      }
-      await refreshProjects(storage);
-    } finally {
-      workingRef.current = false;
-    }
-  }
-
-  async function deleteProject(id: string): Promise<void> {
-    if (storage === null || workingRef.current) return;
-    workingRef.current = true;
-    try {
-      setStatus('saving');
-      try {
-        await storage.projects.remove(id);
-        setStatus('saved');
-      } catch {
-        // A delete is not a save — report it as its own thing rather than
-        // through the save vocabulary.
-        setStatus('idle');
-        setNotice('Something went wrong deleting the project. Try again.');
-      }
-      await refreshProjects(storage);
-    } finally {
-      workingRef.current = false;
-    }
-  }
-
-  // Every workspace pipeline holds the working lock while it runs; each
-  // control must be disabled across all of them, or an action made mid-flight
-  // is silently dropped by the lock guard.
-  const workspaceBusy = creatingFromLink || openingId !== null;
-
-  if (session !== null) {
+  if (sessionFlow.session !== null) {
     return (
       // Keyed by project: a fresh recording must start a fresh player — the
       // zoom level, marker state, and selection are per-session, never
       // carried across recordings.
       <Player
-        key={session.autosave.get().id}
-        autosave={session.autosave}
-        controller={session.controller}
-        onExit={() => void closeSession()}
+        key={sessionFlow.session.autosave.get().id}
+        autosave={sessionFlow.session.autosave}
+        controller={sessionFlow.session.controller}
+        onExit={() => void handlePlayerExit()}
       />
     );
   }
@@ -519,30 +332,34 @@ function App({
         </button>
       </div>
       {tab === 'projects' && storage !== null && (
-        <>
-          <CreateProject
-            onLink={(url) => void handleLink(url)}
-            onLinkEdit={() => setLinkError(null)}
-            linkError={linkError}
-            busy={workspaceBusy}
-            creatingFromLink={creatingFromLink}
-          />
-          <ProjectsScreen
-            projects={projects}
-            status={status}
-            openingId={openingId}
-            notice={notice}
-            busy={workspaceBusy}
-            onOpen={(id) => void openProject(id)}
-            onRename={(id, name) => void renameProject(id, name)}
-            onDelete={(id) => void deleteProject(id)}
-            authKind={authState.kind}
-            commonsRows={commonsRows}
-            submittingId={submittingId}
-            onSubmitToCommons={(id) => void handleSubmitToCommons(id)}
-            onSignIn={handleSignIn}
-          />
-        </>
+        <WorkspaceScreen
+          storage={storage}
+          projects={projects}
+          status={status}
+          notice={notice}
+          onStatus={setStatus}
+          onNotice={setNotice}
+          refreshProjects={refreshProjects}
+          controllerFactory={controllerFactory}
+          fetchTitle={fetchTitle}
+          loadCommunityLabels={loadCommunityLabels}
+          authState={authState}
+          onSignIn={handleSignIn}
+          commonsWrite={commonsWriteRef.current}
+          openingId={sessionFlow.openingId}
+          onOpen={sessionFlow.openProject}
+          onSessionCreated={sessionFlow.startSession}
+          getOpenToken={sessionFlow.getOpenToken}
+          workingRef={workingRef}
+          linkError={linkError}
+          onLinkError={setLinkError}
+          creatingFromLink={creatingFromLink}
+          onCreatingFromLink={setCreatingFromLink}
+          commonsRows={commonsRows}
+          onCommonsRows={setCommonsRows}
+          submittingId={submittingId}
+          onSubmittingId={setSubmittingId}
+        />
       )}
       {tab === 'help' && <HelpTab />}
     </main>

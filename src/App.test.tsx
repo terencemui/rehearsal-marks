@@ -809,3 +809,92 @@ describe('App Commons submission', () => {
     expect(screen.queryByText('Pending review')).not.toBeInTheDocument();
   });
 });
+
+describe('App durable workspace state (T43)', () => {
+  /** A project on the workspace and the contributor signed in over it. */
+  async function seededSubmittedProject(
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<{
+    storage: Storage;
+    commons: ReturnType<typeof mockCommonsWrite>;
+    auth: ReturnType<typeof mockAuth>['backend'];
+  }> {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const storage = await testStorage();
+    await storage.projects.save(
+      projectRecord({ id, name: 'Brahms on YouTube', videoId: VIDEO_ID, duration: 604.2 }),
+    );
+    const commons = mockCommonsWrite([
+      labelSetRow({
+        id,
+        title: 'Brahms on YouTube',
+        duration: 604.2,
+        publication_status: 'pending',
+      }),
+    ]);
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 604.2 })),
+    });
+    const { auth } = await renderApp(controller, storage, undefined, undefined, commons);
+
+    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    // The badge loads once from the seeded submissions.
+    await screen.findByText('Pending review');
+    return { storage, commons, auth };
+  }
+
+  it('keeps the contributor’s Commons badges across a player visit, without a re-fetch', async () => {
+    const user = userEvent.setup();
+    const { commons } = await seededSubmittedProject(user);
+    expect(commons.backend.listMyLabelSets).toHaveBeenCalledTimes(1);
+
+    // Into the player and back — the workspace surface unmounts and remounts.
+    await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
+    await screen.findByRole('heading', { name: 'Brahms on YouTube' });
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByRole('tablist');
+
+    // The badge and the update affordance are still there — the rows are the
+    // shell's durable state, not the surface's, so nothing re-fetched on return.
+    expect(screen.getByText('Pending review')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update submission' })).toBeInTheDocument();
+    expect(commons.backend.listMyLabelSets).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-submitting after a player visit updates the existing moderation row', async () => {
+    const user = userEvent.setup();
+    const { commons } = await seededSubmittedProject(user);
+
+    // Round-trip through the player, then re-submit.
+    await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
+    await screen.findByRole('heading', { name: 'Brahms on YouTube' });
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    await screen.findByRole('tablist');
+
+    await user.click(screen.getByRole('button', { name: 'Update submission' }));
+
+    // The rows survived the round-trip, so the submit saw the existing row and
+    // updated it — re-submission is an UPDATE, never a second moderation row.
+    await waitFor(() => expect(commons.backend.updateLabelSet).toHaveBeenCalled());
+    expect(commons.backend.insertLabelSet).not.toHaveBeenCalled();
+    expect(commons.backend.rows).toHaveLength(1);
+    expect(await screen.findByText('Submission updated.')).toBeInTheDocument();
+  });
+
+  it('keeps a create rejection’s guidance across a tab switch', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+
+    await pasteLink(user, 'https://example.com/not-a-video');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/YouTube video link/);
+
+    await user.click(screen.getByRole('tab', { name: 'Help' }));
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Projects' }));
+
+    // The rejection still explains the bad input that sits in the field.
+    expect(screen.getByRole('alert')).toHaveTextContent(/YouTube video link/);
+    expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
+  });
+});

@@ -75,6 +75,11 @@ export interface LabelSetReadRow {
   markers: Marker[];
 }
 
+/** The submissions list as a lookup by row id — the badges' source. */
+export function rowsById(rows: LabelSetRow[]): Record<string, LabelSetRow> {
+  return Object.fromEntries(rows.map((row) => [row.id, row]));
+}
+
 /**
  * Parses a `label_sets` row. Tolerates unknown fields (forward
  * compatibility) and validates everything a consumer depends on — markers
