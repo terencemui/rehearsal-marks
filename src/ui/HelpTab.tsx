@@ -91,9 +91,9 @@ export function HelpTab() {
           …); the arrow keys reach every marker, including those a single letter key cannot.
         </p>
         <p>
-          Play, pause, and volume come from the recording's own controls.{' '}
-          <kbd>Alt</kbd>+<kbd>←</kbd> is the browser's Back — the marker nudge that used to
-          intercept it is gone.
+          Play, pause, and volume come from the recording's own controls. The player no longer
+          intercepts <kbd>Alt</kbd>+arrows — the marker nudge that used to claim them is gone,
+          so <kbd>Alt</kbd>+arrows are the browser's again.
         </p>
       </section>
 
@@ -106,9 +106,9 @@ export function HelpTab() {
           </li>
           <li>
             A marker can carry an alias — a second name beside its letter, like{' '}
-            <strong>Recap</strong> — which the readout and the marker's flag show. Aliases are
-            non-empty, trimmed, at most <strong>16 characters</strong>, and unique across all
-            labels and aliases in a project.
+            <strong>Recap</strong> — which the readout shows and the marker's flag reveals on
+            hover. Aliases are non-empty, trimmed, at most <strong>16 characters</strong>, and
+            unique across all labels and aliases in a project.
           </li>
           <li>
             Marker labels run A, B, C… and continue past Z as AA, AB, … — you never run out, and
@@ -176,8 +176,8 @@ export function HelpTab() {
         <p>
           <strong>Markers can't be written in the app yet.</strong> The player is read-only over
           your markers, and the label-editing page that lets you place, move, and rename them
-          hasn't been built. Until it lands, only a project that already carries a label set —
-          one that loaded a set from the Commons — can be submitted.
+          hasn't been built. Until it lands, a project can't be given its own markers, and a
+          published set can't be changed.
         </p>
 
         <h4>From the app</h4>
@@ -187,9 +187,7 @@ export function HelpTab() {
         </p>
         <ol>
           <li>
-            Open the project you want to contribute — a video that already carries its markers,
-            for example a community label set loaded from the Commons. Labels are A, B, C… in
-            time order automatically.
+            Open the project you want to contribute.
           </li>
           <li>
             Sign in with Google — the only account the app ever asks for. Reading label sets
@@ -201,10 +199,10 @@ export function HelpTab() {
           </li>
           <li>
             A rejected set comes back to you: the row shows <strong>Rejected</strong>, your
-            markers were never public, and submitting the edited set again returns it to review.
-            Once <strong>published</strong>, anyone who opens this video gets your markers, and
-            you can update them any time — updates return the set to pending and go through
-            review again.
+            markers were never public, and submitting it again returns it to review. Once{' '}
+            <strong>published</strong>, anyone who opens this video gets your markers; updating
+            the set — once the label-editing page can change it — returns it to pending and
+            goes through review again.
           </li>
         </ol>
         <p>

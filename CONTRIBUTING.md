@@ -12,12 +12,10 @@ from your markers. The whole path is inside the app:
 
 > **Markers can't be written in the app yet.** The player is read-only over
 > markers, and the label-editing page that lets you place, move, and rename
-> them hasn't been built. Until it lands, only a project that already carries
-> a label set — one that loaded a set from the Commons — can be submitted.
+> them hasn't been built. Until it lands, a project can't be given its own
+> markers, and a published set can't be changed.
 
-1. **Open the project you want to contribute** — a video that already carries
-   its markers, for example a community label set loaded from the Commons.
-   Labels are A, B, C… in time order automatically.
+1. **Open the project you want to contribute.**
 2. **Sign in with Google.** The only account the app ever asks for. Reading
    label sets never requires one; publishing does.
 3. **Submit your label set.** One step in the app. Your markers for this
@@ -29,9 +27,9 @@ from your markers. The whole path is inside the app:
    back to you with its row marked **Rejected** — submit it again, and it
    returns to review.
 5. **Published.** Your label set loads for every student who opens the
-   video. You can update it any time — updates return the set to pending
-   and go through review again (a contributor whose past sets were accepted
-   publishes updates immediately).
+   video. Updating the set — once the label-editing page can change it —
+   returns it to pending and goes through review again (a contributor whose
+   past sets were accepted publishes updates immediately).
 
 A label set is facts about a recording (like a table of contents), not
 copyrightable expression — sharing your own markers is unproblematic. Publish

@@ -14,5 +14,6 @@ Markers are labeled A, B, C… by time order. Jumping never selects a marker and
 never interrupts playback. Labels continue past `Z` (`AA`, `AB`, …); the arrow
 keys reach every marker, including those a single letter key cannot.
 
-Play, pause, and volume come from the recording's own controls. `Alt`+`←` is
-the browser's Back — the marker nudge that used to intercept it is gone.
+Play, pause, and volume come from the recording's own controls. The player
+no longer intercepts `Alt`+arrows — the marker nudge that used to claim them
+is gone, so `Alt`+arrows are the browser's again.

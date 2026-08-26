@@ -65,5 +65,5 @@ A signed-in person who publishes label sets to the Commons and owns the ones the
 _Avoid_: user, author
 
 **Publication status**:
-Whether a label set in the Commons is visible to anonymous readers: pending until a maintainer reviews it, then published — or rejected, when a maintainer denies a pending set (visible to its contributor, who can edit and resubmit). A contributor with a track record is trusted: their submissions and edits publish without review.
+Whether a label set in the Commons is visible to anonymous readers: pending until a maintainer reviews it, then published — or rejected, when a maintainer denies a pending set (visible to its contributor, who can resubmit it). A contributor with a track record is trusted: their submissions publish without review.
 _Avoid_: state, moderation flag, approved

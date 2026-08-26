@@ -13,7 +13,7 @@ The audience is a musician at a music stand, not a technician. Editing a label s
 
 **The player is playback-only.** Every editing affordance leaves it — the Playback | Label posture switch, the Add marker control, the marker inspector, delete-with-undo, and the editing keyboard shortcuts (add-at-playhead, nudge, delete, deselect). Marker *selection* ceases to exist in the player, because selection existed only to serve nudge and delete.
 
-Play/pause and volume come from the embedded recording's own controls, not a second app-level transport. Surviving keyboard navigation: `Space` to play/pause, `←`/`→` to seek ∓5 seconds, `↑`/`↓` to walk the marks (wrapping at the ends), and `A`–`Z` to jump straight to that mark — **`M` is no longer a special case**, just the letter for the marker labelled M. A flag click jumps, never selects. `Alt`+`←` reverts to the browser's Back, an accepted consequence of the nudge leaving.
+Play/pause and volume come from the embedded recording's own controls, not a second app-level transport. Surviving keyboard navigation: `Space` to play/pause, `←`/`→` to seek ∓5 seconds, `↑`/`↓` to walk the marks (wrapping at the ends), and `A`–`Z` to jump straight to that mark — **`M` is no longer a special case**, just the letter for the marker labelled M. A flag click jumps, never selects. `Alt`+arrows are no longer intercepted — the nudge is gone, so they are the browser's again (Back on Windows and Linux) — an accepted consequence.
 
 Supporting choices:
 
@@ -32,8 +32,8 @@ Supporting choices:
 
 ### What it costs
 
-- **The app cannot author markers — accepted.** Editing moves to a label-editing page that does not exist yet. Until it ships, the app cannot create, move, rename, or delete a marker: a project is only as good as the label set it was created with, and a recording with no Commons label set opens as a permanently empty timeline. Contribution from scratch is dormant for the same reason — a new label set cannot be written in-app, only an existing one resubmitted.
-- **`Alt`+`←` is the browser's Back again.** The nudge used to intercept `Alt`+arrows in both postures; with the nudge gone, the browser gesture is exposed. Accepted, not an oversight.
+- **The app cannot author markers — accepted.** Editing moves to a label-editing page that does not exist yet. Until it ships, the app cannot create, move, rename, or delete a marker: a project is only as good as the label set it was created with, and a recording with no Commons label set opens as a permanently empty timeline. Contribution from scratch is dormant for the same reason — a new label set cannot be written in-app, and a published set cannot be changed.
+- **`Alt`+arrows are the browser's again.** The nudge used to intercept them in both postures; with the nudge gone, the browser's own behaviour (Back on Windows and Linux) is exposed. Accepted, not an oversight.
 - **A failed save is no longer visible inside the player.** With editing gone the player's only write is the one-time duration stamp, and a failure still surfaces on the projects screen after exit.
 
 ### What this invalidates
@@ -48,10 +48,11 @@ Supporting choices:
 | spec 0001 — story #32 | a visible Saved/Saving status in the player — no save-status line renders there |
 | spec 0001 — story #46 | shortcuts suppressed while typing in a text field — the player has no text field (the guard survives, future-proof) |
 | CONTEXT.md — "The player" | "Playback mode", "Label mode", and "Ruler" — replaced by a single "Timeline" term |
+| CONTEXT.md — "Publication status" | "who can edit and resubmit" / "their submissions and edits publish" — resubmission only, until the editing page lands |
 | docs/keyboard-reference.md | the two-posture introduction, "Both modes", and "Label mode" sections — collapsed to one posture |
-| The Help tab | the two-posture keyboard intro, the Label-mode table, and the "markers sit on a ruler" storage line — rewritten to the timeline vocabulary |
+| The Help tab and the projects screen | the two-posture keyboard intro, the Label-mode table, the "markers sit on a ruler" storage line, and the Rejected badge's "edit the set and submit again" — rewritten to the timeline vocabulary and resubmission |
 
-The glossary (`CONTEXT.md`), `docs/keyboard-reference.md`, and the Help tab were rewritten to match. The mode field that survives in the schema is documented above; removing it, if ever, is a later migration.
+The player section of the glossary (`CONTEXT.md`), `docs/keyboard-reference.md`, and the Help tab were rewritten to match; the projects screen's Rejected-badge copy follows. **ADR-0002 is not overridden by this decision**: its point — that the ruler/timeline *is* the view, not a fallback — stands and is reinforced. What this decision changes is the word it used: "ruler" is retired from the spoken vocabulary in favour of "Timeline", and the player's own strip hides the numbered ticks the shared drawing module still renders. The mode field that survives in the schema is documented above; removing it, if ever, is a later migration.
 
 ## Alternatives considered
 
