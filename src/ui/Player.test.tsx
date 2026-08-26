@@ -58,7 +58,6 @@ describe('Player', () => {
     render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
 
     // The canonical URL derived from the stored video ID is the whole input
     // to the seam; the container the controller renders into is the player's
@@ -71,6 +70,25 @@ describe('Player', () => {
 
     // The loaded player shows the YouTube precision note under the timeline.
     expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
+    storage.close();
+  });
+
+  it('frames the page: a nav bar with only Projects, and a title band above the split', async () => {
+    const storage = await testStorage();
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    render(<Player autosave={autosave} controller={mockController()} onExit={vi.fn()} />);
+
+    // The nav bar carries a single Projects control — no back arrow, no
+    // title, no save status (T37).
+    const nav = screen.getByRole('navigation');
+    expect(within(nav).getByRole('button', { name: 'Projects' })).toBeInTheDocument();
+    expect(within(nav).getAllByRole('button')).toHaveLength(1);
+    expect(within(nav).queryByRole('heading')).not.toBeInTheDocument();
+    expect(within(nav).queryByRole('status')).not.toBeInTheDocument();
+
+    // The project name renders in its own band above the recording.
+    expect(screen.getByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     storage.close();
   });
 
@@ -133,7 +151,7 @@ describe('Player', () => {
     storage.close();
   });
 
-  it('returns to the Projects screen from the header button', async () => {
+  it('returns to the Projects screen from the nav button', async () => {
     const user = userEvent.setup();
     const onExit = vi.fn();
     const storage = await testStorage();
@@ -162,7 +180,6 @@ describe('Player', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
 
     expect(await storage.projects.get(record.id)).toBeUndefined();
-    expect(screen.getByRole('status')).toHaveTextContent('Saved');
     storage.close();
   });
 });
@@ -195,7 +212,7 @@ describe('Player playback controls', () => {
 
     // The play button owns Space while focused — its native activation is the
     // one toggle; the window handler must not double it. (Two tabs: the
-    // Projects button sits first in the header.)
+    // Projects button sits first in the nav.)
     await user.tab();
     await user.tab();
     expect(screen.getByRole('button', { name: 'Play' })).toHaveFocus();
