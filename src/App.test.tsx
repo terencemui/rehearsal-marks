@@ -11,6 +11,7 @@ import { mockController } from './test/controller-fixture';
 import { youtubeLoad } from './test/load-fixture';
 import { projectRecord } from './test/project-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
+import { waitForPlayerSettled } from './test/settle-player';
 import type { CommunityLabelSet } from './youtube/community';
 import App from './App';
 
@@ -61,10 +62,11 @@ async function pasteLink(user: ReturnType<typeof userEvent.setup>, url: string) 
 }
 
 describe('App create from a YouTube link', () => {
-  it('opens a freshly pasted link in Label mode, with the marking tools in reach', async () => {
-    // End to end, the behaviour the stamped mode and the player's fallback
-    // have to agree on: a project with an empty timeline must not open
-    // read-only, or there is no visible way to place the first mark.
+  it('opens a freshly pasted link in Label mode, and the player is read-only over the empty timeline', async () => {
+    // End to end, the behaviour the stamped mode and the player have to agree
+    // on: a project with an empty timeline is still a label-mode record (the
+    // create pipeline stamps it), and the T39 player is read-only over markers
+    // whatever the mode — no transport, no posture toggle, no Add marker.
     const user = userEvent.setup();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
@@ -74,17 +76,19 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
 
     const [summary] = await storage.projects.list();
     expect((await storage.projects.get(summary.id))!.playerMode).toBe('label');
   });
 
-  it('copies a loaded community label set in and opens in Playback mode', async () => {
+  it('copies a loaded community label set in, and the player shows the copied marks', async () => {
     // The labeled-performance story: a video someone already marked loads its
     // label set at creation, so the project is immediately practiceable — the
-    // marks render, the posture is Playback, and no editing tools show.
+    // marks render as flags, and the T39 player is read-only over them.
     const user = userEvent.setup();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 604.2 })),
@@ -103,13 +107,11 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
     // The copied marks render as flags — the first label in time order.
     expect(await screen.findByRole('button', { name: 'A' })).toBeInTheDocument();
+    // No posture toggle, no Add marker — the transport is gone (T39).
+    expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
 
     const [summary] = await storage.projects.list();
     const stored = (await storage.projects.get(summary.id))!;
@@ -150,10 +152,6 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(screen.getByRole('button', { name: 'Playback' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
     expect(await screen.findByRole('button', { name: 'A' })).toBeInTheDocument();
     // The one query was the anonymous published read, keyed on the video ID.
     const [requested] = fetchMock.mock.calls[0] as [string];
@@ -193,8 +191,11 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(screen.getByRole('button', { name: 'Label' })).toHaveAttribute('aria-pressed', 'true');
-    expect(await screen.findByText(/no community labels loaded/i)).toBeInTheDocument();
+    // No posture toggle and no empty-timeline note — the player is read-only
+    // and the lack of labels is simply what the empty timeline is.
+    expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/no community labels loaded/i)).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     const [summary] = await opened.projects.list();
     expect((await opened.projects.get(summary.id))!.markers).toEqual([]);
@@ -209,14 +210,12 @@ describe('App create from a YouTube link', () => {
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
-    // The player, named after the video, with the transport an upload gets.
+    // The player, named after the video, with the split view an upload gets.
     expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
-    // The transport is live only once the load has settled — the ruler note is
-    // the loaded player's own marker, so awaiting it removes the race on the
-    // Play button below (the heading appears on mount, before the load lands).
-    expect(await screen.findByText(/Playing from YouTube/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled();
-    expect(screen.getByLabelText('Volume')).toBeInTheDocument();
+    // The load settles through the one marker a render helper waits on — the
+    // root's `data-settled` flag, set on the success and failure paths alike
+    // (the heading appears on mount, before the load lands).
+    await waitForPlayerSettled();
 
     // A YouTube record stores no audio bytes — the URL is the whole input.
     const [stored] = await storage.projects.list();
