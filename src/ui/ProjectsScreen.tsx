@@ -21,7 +21,7 @@ const COMMONS_STATUS: Record<PublicationStatus, { text: string; title: string }>
   },
   rejected: {
     text: 'Rejected',
-    title: 'Not published — edit the set and submit again to return it to review',
+    title: 'Not published — submit it again to return it to review',
   },
 };
 

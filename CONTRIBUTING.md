@@ -10,10 +10,12 @@ GitHub account.
 You marked a public performance on YouTube and want every student to start
 from your markers. The whole path is inside the app:
 
-1. **Open the performance.** Create a project from its YouTube link and
-   place your markers while listening (press `M` as each rehearsal mark goes
-   by). Labels come out A, B, C… in time order automatically; correct any
-   timestamps with the nudge buttons in the inspector.
+> **Markers can't be written in the app yet.** The player is read-only over
+> markers, and the label-editing page that lets you place, move, and rename
+> them hasn't been built. Until it lands, a project can't be given its own
+> markers, and a published set can't be changed.
+
+1. **Open the project you want to contribute.**
 2. **Sign in with Google.** The only account the app ever asks for. Reading
    label sets never requires one; publishing does.
 3. **Submit your label set.** One step in the app. Your markers for this
@@ -22,12 +24,12 @@ from your markers. The whole path is inside the app:
    resubmissions included.
 4. **Await review.** A maintainer listens and checks the markers, exactly as
    they would check any contribution. A set the maintainer denies comes
-   back to you with its row marked **Rejected** — edit it and submit again,
-   and it returns to review.
+   back to you with its row marked **Rejected** — submit it again, and it
+   returns to review.
 5. **Published.** Your label set loads for every student who opens the
-   video. You can update it any time — updates return the set to pending
-   and go through review again (a contributor whose past sets were accepted
-   publishes updates immediately).
+   video. Updating the set — once the label-editing page can change it —
+   returns it to pending and goes through review again (a contributor whose
+   past sets were accepted publishes updates immediately).
 
 A label set is facts about a recording (like a table of contents), not
 copyrightable expression — sharing your own markers is unproblematic. Publish

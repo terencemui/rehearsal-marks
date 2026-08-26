@@ -9,26 +9,31 @@ import { HelpTab } from './HelpTab';
  * and the contribution workflow — as facts, not as layout.
  */
 describe('HelpTab', () => {
-  it('documents the keyboard reference', () => {
+  it('documents the single-posture keyboard reference', () => {
     render(<HelpTab />);
 
     const keyboard = screen.getByRole('heading', { name: 'Keyboard reference' }).closest('section')!;
     expect(keyboard).toHaveTextContent('Space');
-    expect(keyboard).toHaveTextContent('Add a marker');
     expect(keyboard).toHaveTextContent('A–Z');
-    expect(keyboard).toHaveTextContent('Alt');
-    expect(keyboard).toHaveTextContent('Delete');
-    expect(keyboard).toHaveTextContent('Esc');
+    expect(keyboard).toHaveTextContent('Seek ∓5 seconds');
+    // One posture only: M is a plain letter jump, and the editing rows are gone.
+    expect(keyboard).toHaveTextContent(/M is just the letter/i);
+    expect(keyboard).not.toHaveTextContent('Add a marker');
+    expect(keyboard).not.toHaveTextContent(/Nudge the selected marker/i);
+    expect(keyboard).not.toHaveTextContent('Delete');
+    expect(keyboard).not.toHaveTextContent('Esc');
   });
 
   it('states the marker rules and their limits', () => {
     render(<HelpTab />);
 
     const markers = screen.getByRole('heading', { name: /markers/i }).closest('section')!;
-    expect(markers).toHaveTextContent('5:10.5');
-    expect(markers).toHaveTextContent('310.5');
     expect(markers).toHaveTextContent('16');
     expect(markers).toHaveTextContent('AA');
+    // Times read in whole seconds on the readout; the loose-input formats
+    // described the inspector that the playback-only player no longer has.
+    expect(markers).toHaveTextContent(/whole seconds/i);
+    expect(markers).not.toHaveTextContent('5:10.5');
   });
 
   it('explains storage honestly, including the stays-in-your-browser guarantee', () => {

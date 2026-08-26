@@ -46,17 +46,9 @@ _Avoid_: youtube key, video key
 
 ### The player
 
-**Ruler**:
-The labeled-ticks, click-to-seek surface under the video.
-_Avoid_: timeline, tick bar
-
-**Playback mode**:
-The player posture for practicing: navigation tools with read-only markers.
-_Avoid_: practice mode, read-only mode
-
-**Label mode**:
-The player posture for editing: navigation tools plus every marking tool.
-_Avoid_: edit mode
+**Timeline**:
+The full-width, tick-free, click-to-seek clock below the split — the recording's own strip, with a flag at every marker and a live playhead.
+_Avoid_: ruler, tick bar
 
 ### Community
 
@@ -73,5 +65,5 @@ A signed-in person who publishes label sets to the Commons and owns the ones the
 _Avoid_: user, author
 
 **Publication status**:
-Whether a label set in the Commons is visible to anonymous readers: pending until a maintainer reviews it, then published — or rejected, when a maintainer denies a pending set (visible to its contributor, who can edit and resubmit). A contributor with a track record is trusted: their submissions and edits publish without review.
+Whether a label set in the Commons is visible to anonymous readers: pending until a maintainer reviews it, then published — or rejected, when a maintainer denies a pending set (visible to its contributor, who can resubmit it). A contributor with a track record is trusted: their submissions publish without review.
 _Avoid_: state, moderation flag, approved
