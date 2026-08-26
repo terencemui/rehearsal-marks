@@ -197,7 +197,7 @@ these name the recording's boundaries instead. */
   color: #64748b;
 }
 
-/* Playback transport and the playhead overlay. */
+/* The timeline strip and the playhead overlay. */
 
 /* The full-width timeline strip (T38): the recording's clock, below the
 split, spanning the content width. It carries its own seek surface — the
@@ -236,49 +236,6 @@ as --ruler-height. */
   pointer-events: none;
 }
 
-.player-transport {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-top: 8px;
-}
-
-/* The Playback | Label segmented control: one posture toggle, two buttons.
-The pressed half carries the player's accent, so the active posture reads at
-a glance without adding another visual language to the transport. */
-.player-modes {
-  display: flex;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.player-modes button {
-  padding: 4px 14px;
-  border: 0;
-  background: #fff;
-  color: #334155;
-  font: 500 13px/20px system-ui, sans-serif;
-  cursor: pointer;
-}
-
-.player-modes button + button {
-  border-left: 1px solid #cbd5e1;
-}
-
-.player-modes button[aria-pressed='true'] {
-  background: #0f766e;
-  color: #fff;
-}
-
-.player-volume {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
 /* Marker flags: a pass-through overlay whose flags alone take pointer input,
 so empty space still reaches the seek surface underneath. The overlay spans
 the strip (its inline width is the measured strip width), so a flag's
@@ -304,77 +261,6 @@ the strip (its inline width is the measured strip width), so a flag's
   letter-spacing: 0.02em;
   cursor: pointer;
   pointer-events: auto;
-}
-
-.player-flag[aria-pressed='true'] {
-  background: #b45309;
-}
-
-/* The selected marker's panel: nudges, time, aliases, delete. */
-
-.player-inspector {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 480px;
-}
-
-.player-inspector-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.player-inspector-header strong {
-  font-size: 18px;
-  color: #0f766e;
-}
-
-.player-inspector-nudges {
-  display: flex;
-  gap: 6px;
-}
-
-.player-inspector-field {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.player-inspector-field label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.player-inspector-error {
-  margin: 0;
-  color: #b91c1c;
-  font-size: 13px;
-}
-
-/* The deletion undo toast — the safety net that replaces delete dialogs. */
-
-.player-undo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 8px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #f8fafc;
-}
-
-.player-undo p {
-  margin: 0;
-  font-size: 14px;
 }
 
 /* The YouTube failure card: the honest state when the video cannot play.

@@ -5,12 +5,7 @@ export interface MarkerFlagsProps {
   markers: LabeledMarker[];
   /** The known recording duration, seconds — flag positions divide by it. */
   duration: number;
-  /** The selected marker — null in Playback mode, where selection is hidden. */
-  selectedId: string | null;
-  /**
-   * A flag was clicked. The parent jumps to the marker in both postures and
-   * additionally selects it in Label mode.
-   */
+  /** A flag was clicked. The player jumps to the marker — never selects. */
   onFlagClick(marker: LabeledMarker): void;
   /**
    * The strip's width in px — the overlay spans it, so each flag's
@@ -28,9 +23,11 @@ const FLAG_HALF_CHIP_PX = 16;
  * The marker overlay: one flag per marker, positioned by time as a
  * percentage of the recording. Flags are click-to-jump surfaces, not tab
  * stops — keyboard users reach markers through the letter keys (T07), and
- * keeping them out of the tab order leaves it to the transport controls.
+ * keeping them out of the tab order leaves it to the Projects control. There
+ * is no selection in a playback-only player (T39): clicking a flag jumps and
+ * nothing else.
  */
-export function MarkerFlags({ markers, duration, selectedId, onFlagClick, width }: MarkerFlagsProps) {
+export function MarkerFlags({ markers, duration, onFlagClick, width }: MarkerFlagsProps) {
   if (duration <= 0) return null;
   return (
     <div className="player-markers" style={width !== undefined ? { width: `${width}px` } : undefined}>
@@ -47,7 +44,6 @@ export function MarkerFlags({ markers, duration, selectedId, onFlagClick, width 
             type="button"
             tabIndex={-1}
             className="player-flag"
-            aria-pressed={marker.id === selectedId}
             style={{
               left: `${percent}%`,
               transform: overhang > 0 ? `translateX(calc(-50% + ${overhang}px))` : undefined,
