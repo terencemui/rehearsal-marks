@@ -16,8 +16,7 @@ import { fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
 import { HelpTab } from './ui/HelpTab';
 import { Navbar } from './ui/Navbar';
-import { Player } from './ui/Player';
-import { usePlayerSession } from './ui/playerSession';
+import { ProjectPage } from './ui/ProjectPage';
 import { WorkspaceScreen } from './ui/WorkspaceScreen';
 import './ui/app.css';
 
@@ -87,20 +86,20 @@ function commonsFailure(): CommonsError {
 }
 
 /**
- * The app shell (T43, T44): owns storage, the contributor controllers, and the
- * workspace's durable state (the list, the save line, the notices, the create
- * surface's rejection and busy state, and the Commons badges — everything that
- * must survive the page surfaces' unmounts), and coordinates the two separable
- * modules — the workspace surface (create, list, rename, delete, submission)
- * and the imperative open-session flow. The app is served by a history-mode
+ * The app shell (T43, T44, T45): owns storage, the contributor controllers, and
+ * the workspace's durable state (the list, the save line, the notices, the
+ * create surface's rejection and busy state, and the Commons badges — everything
+ * that must survive the page surfaces' unmounts), and coordinates the two
+ * separable modules — the workspace surface (create, list, rename, delete,
+ * submission) and the routed project page. The app is served by a history-mode
  * router (T44): `/` is the Projects home, `/help` the discoverable reference,
- * and any unknown path falls back to `/`. A persistent navbar — the app name,
- * the Projects and Help links with active states, and the contributor sign-in
- * — replaces the old header-plus-tabs pair and renders on every page, inside
- * the shared page rail. Opening a project still swaps the whole screen to the
- * player without the navbar (a known interim gap — a later ticket folds the
- * player into the frame); leaving flushes the session's autosave before the
- * list is re-read, so the workspace never shows stale data.
+ * `/projects/:id` the project page, and any unknown path falls back to `/`. A
+ * persistent navbar — the app name, the Projects and Help links with active
+ * states, and the contributor sign-in — renders on every page, inside the
+ * shared page rail. Opening a project is navigation now (T45): the page is its
+ * own session, restored by a refresh of its URL, and browser Back — or a navbar
+ * link — is the exit, flushing the session's one write (the measured duration)
+ * before the list is re-read, so the workspace never shows stale data.
  */
 function App({
   controllerFactory = createAudioController,
@@ -125,8 +124,11 @@ function App({
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [status, setStatus] = useState<SaveStatus>('idle');
-  /** The routed page — the location is the shell's page, so navigation is what
-   * swaps the workspace surface for Help and what invalidates an in-flight open. */
+  /**
+   * The routed page — the location is the shell's page: navigation swaps the
+   * workspace surface for Help or a project page, and bumps the navigation
+   * token that a slow create reads before it lands.
+   */
   const location = useLocation();
   const [notice, setNotice] = useState<string | null>(null);
   /** The contributor session — the header's sign-in state. Anonymous first paint. */
@@ -157,10 +159,11 @@ function App({
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   /**
-   * Serializes session creation and every workspace mutation (upload, open,
-   * rename, delete). These are one-at-a-time user actions, and the
-   * alternative — an open racing a rename or a fresh upload racing an open —
-   * silently reverts or hides the loser's data.
+   * Serializes the workspace mutations (a link create, rename, delete) and the
+   * Commons submission. These are one-at-a-time user actions, and the
+   * alternative — a rename racing a fresh create or a delete racing a rename —
+   * silently reverts or hides the loser's data. (An open is instant navigation
+   * now (T45): it holds no lock.)
    */
   const workingRef = useRef(false);
   /**
@@ -184,14 +187,6 @@ function App({
       setNotice('Something went wrong reading the project list. Please reload.');
     }
   }
-
-  const sessionFlow = usePlayerSession({
-    storage,
-    controllerFactory,
-    workingRef,
-    onNotice: setNotice,
-    refreshProjects,
-  });
 
   // Runs once per mount, never per render: an inline `authFactory` from a
   // re-rendering parent can't recycle the controller mid-mount and drop
@@ -271,11 +266,17 @@ function App({
     };
   }, [injectedStorage]);
 
-  // Mount and every navigation invalidate an in-flight open: the player must
-  // never yank the user off a page they navigated to while a read was running.
+  /**
+   * The navigation token (T45): a link create captures it before its slow title
+   * lookup and navigates to the new project's page only if the user hasn't
+   * already moved on. Bumped on every pathname change — an in-flight create
+   * that lands behind a navigation the user made must save the project and let
+   * them find it in the list, never yank them off the page they chose.
+   */
+  const navigateTokenRef = useRef(0);
+  // Bumped on every pathname change — a slow create reads it before it lands.
   useEffect(() => {
-    sessionFlow.invalidateOpen();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bump on navigation only
+    navigateTokenRef.current += 1;
   }, [location.pathname]);
 
   /** Starts the Google OAuth flow; the session lands when the flow returns. */
@@ -293,28 +294,16 @@ function App({
     void authRef.current?.deleteAccount();
   }
 
-  /** Back from the player: settle pending writes, then restore the workspace.
-   * The URL does not change while the player is up (the interim gap — a later
-   * ticket routes the player itself), so exiting lands on whatever page the
-   * open left, which is the Projects home. */
-  async function handlePlayerExit(): Promise<void> {
-    const exitStatus = await sessionFlow.closeSession();
-    setStatus(exitStatus);
-    if (storage !== null) await refreshProjects(storage);
-  }
-
-  if (sessionFlow.session !== null) {
-    return (
-      // Keyed by project: a fresh recording must start a fresh player — the
-      // zoom level, marker state, and selection are per-session, never
-      // carried across recordings.
-      <Player
-        key={sessionFlow.session.autosave.get().id}
-        autosave={sessionFlow.session.autosave}
-        controller={sessionFlow.session.controller}
-        onExit={() => void handlePlayerExit()}
-      />
-    );
+  /**
+   * The project page's exit channel (T45): when a page unmounts (browser Back,
+   * a navbar link, a swap to another project page), it reports the final flush's
+   * result, and the shell restores the workspace's save line and re-reads the
+   * list — a duration learned during the visit is persisted before the list
+   * reads it, so the workspace never shows stale data.
+   */
+  function handleExitStatus(status: SaveStatus): void {
+    setStatus(status);
+    if (storage !== null) void refreshProjects(storage);
   }
 
   return (
@@ -339,16 +328,12 @@ function App({
                   onStatus={setStatus}
                   onNotice={setNotice}
                   refreshProjects={refreshProjects}
-                  controllerFactory={controllerFactory}
                   fetchTitle={fetchTitle}
                   loadCommunityLabels={loadCommunityLabels}
                   authState={authState}
                   onSignIn={handleSignIn}
                   commonsWrite={commonsWriteRef.current}
-                  openingId={sessionFlow.openingId}
-                  onOpen={sessionFlow.openProject}
-                  onSessionCreated={sessionFlow.startSession}
-                  getOpenToken={sessionFlow.getOpenToken}
+                  getNavigateToken={() => navigateTokenRef.current}
                   workingRef={workingRef}
                   linkError={linkError}
                   onLinkError={setLinkError}
@@ -363,6 +348,19 @@ function App({
             }
           />
           <Route path="/help" element={<HelpTab />} />
+          <Route
+            path="/projects/:id"
+            element={
+              storage !== null ? (
+                <ProjectPage
+                  storage={storage}
+                  controllerFactory={controllerFactory}
+                  onExitStatus={handleExitStatus}
+                  onNotice={setNotice}
+                />
+              ) : null
+            }
+          />
           {/* A URL nobody recognises lands on the Projects home (T44). */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

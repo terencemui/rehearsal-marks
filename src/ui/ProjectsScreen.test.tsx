@@ -62,8 +62,8 @@ describe('ProjectsScreen list', () => {
     expect(props.onOpen).toHaveBeenCalledWith('project-1');
   });
 
-  it('disables rows while one is opening', () => {
-    renderScreen({ openingId: 'project-1' });
+  it('disables rows while a workspace pipeline (a link create) runs', () => {
+    renderScreen({ busy: true });
     expect(screen.getByRole('button', { name: /Brahms/ })).toBeDisabled();
   });
 

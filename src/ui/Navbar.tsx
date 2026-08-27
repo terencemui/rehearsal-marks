@@ -15,9 +15,9 @@ export interface NavbarProps {
 /**
  * The one global navbar (T44): the app name, the Projects and Help links with
  * active states, and the contributor sign-in — the shell chrome that replaced
- * the workspace's header-plus-tabs pair. Renders on every routed page; the
- * player is folded into the frame by a later ticket, so until then the player
- * keeps its own Projects control.
+ * the workspace's header-plus-tabs pair. Renders on every routed page,
+ * including the project page (T45): the player's own Projects control is
+ * retired, and the navbar links are the only navigation.
  */
 export function Navbar({ authState, onSignIn, onSignOut, onDeleteAccount }: NavbarProps) {
   return (

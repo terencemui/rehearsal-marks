@@ -1,4 +1,4 @@
-import type { AudioController } from '../audio';
+import { useNavigate } from 'react-router';
 import type { AuthState } from '../auth';
 import { CommonsError } from '../commons/errors';
 import { labelSetValuesFromProjectFile, projectFileFromRecord, rowsById } from '../commons/labelSet';
@@ -25,10 +25,9 @@ export interface WorkspaceScreenProps {
   notice: string | null;
   onStatus: (status: SaveStatus) => void;
   onNotice: (notice: string | null) => void;
-  /** Re-reads the list; the shell owns it because the open flow resyncs through it too. */
+  /** Re-reads the list; the shell owns it so the list state stays durable. */
   refreshProjects: (source: Storage) => Promise<void>;
   /** Test seams for the create pipeline. */
-  controllerFactory: () => AudioController;
   fetchTitle: (canonicalUrl: string) => Promise<string | null>;
   loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null>;
   /** The contributor session, shared with the header's sign-in control. */
@@ -36,15 +35,13 @@ export interface WorkspaceScreenProps {
   onSignIn: () => void;
   /** The Commons write surface; null only before the shell's controller is wired. */
   commonsWrite: CommonsWriteController | null;
-  /** The row being opened by the session flow, if any — rows are inert then. */
-  openingId: string | null;
-  /** Opens a stored project through the session flow. */
-  onOpen: (id: string) => Promise<void>;
-  /** Commits a link create that landed as a session. */
-  onSessionCreated: (record: ProjectRecord, controller: AudioController) => void;
-  /** The open token — a link create captures it before its slow title lookup. */
-  getOpenToken: () => number;
-  /** The serialization lock shared with the session flow. */
+  /**
+   * The navigation token — a link create captures it before its slow title
+   * lookup and navigates to the new project's page only if the user hasn't
+   * already moved on (the shell bumps it on every navigation).
+   */
+  getNavigateToken: () => number;
+  /** The serialization lock shared with the workspace's pipelines. */
   workingRef: { current: boolean };
   /**
    * The create surface's rejection guidance beside the input — owned by the
@@ -72,12 +69,14 @@ export interface WorkspaceScreenProps {
 }
 
 /**
- * The workspace surface (T43): the Projects tab's content — the link-only
+ * The workspace surface (T43): the Projects home's content — the link-only
  * create, the list, rename, delete, and Commons submission, plus the notices
  * and save-status line that accompany them. It owns its pipelines; the shell
  * supplies the durable list/save-state/notice/create-busy/Commons-badges state
- * (everything that must survive this screen's unmounts) and the seams, and runs
- * the open-session flow this screen's open affordances feed into.
+ * (everything that must survive this screen's unmounts) and the seams. Opening
+ * a project is navigation now (T45): the row's open affordance and a landed
+ * link create both navigate to the project's page, whose player is its own
+ * session.
  */
 export function WorkspaceScreen({
   storage,
@@ -87,16 +86,12 @@ export function WorkspaceScreen({
   onStatus,
   onNotice,
   refreshProjects,
-  controllerFactory,
   fetchTitle,
   loadCommunityLabels,
   authState,
   onSignIn,
   commonsWrite,
-  openingId,
-  onOpen,
-  onSessionCreated,
-  getOpenToken,
+  getNavigateToken,
   workingRef,
   linkError,
   onLinkError,
@@ -107,19 +102,21 @@ export function WorkspaceScreen({
   submittingId,
   onSubmittingId,
 }: WorkspaceScreenProps) {
+  /** The workspace is the routed home page — navigation opens a project. */
+  const navigate = useNavigate();
+
   /**
    * The create surface's one input: a pasted YouTube link becomes a project
-   * and opens the player session. Nothing decodes and nothing is hashed —
-   * there is no audio here — so the whole path is the link rules plus one
-   * title lookup.
+   * and navigates to its page. Nothing decodes and nothing is hashed — there
+   * is no audio here — so the whole path is the link rules plus one title
+   * lookup.
    */
   async function handleLink(url: string): Promise<void> {
     if (workingRef.current) return;
     workingRef.current = true;
     onLinkError(null);
     onCreatingFromLink(true);
-    const controller = controllerFactory();
-    const token = getOpenToken();
+    const token = getNavigateToken();
     try {
       const outcome = await createProjectFromYouTubeLink(url, {
         fetchTitle,
@@ -127,23 +124,21 @@ export function WorkspaceScreen({
         save: (record) => storage.projects.save(record),
       });
       if (!outcome.ok) {
-        // The controller never entered a session — release it.
-        controller.destroy();
         onLinkError(outcome.guidance);
         return;
       }
-      if (token !== getOpenToken()) {
-        // The user switched tabs while the title lookup ran (up to ten
+      if (token !== getNavigateToken()) {
+        // The user navigated away while the title lookup ran (up to ten
         // seconds) — the project is saved and waiting in the list, but
-        // yanking them off the tab they navigated to is not ours to do.
-        controller.destroy();
+        // yanking them off the page they chose is not ours to do.
         await refreshProjects(storage);
         return;
       }
-      // A link create that lands is a fresh start for the surface.
-      onSessionCreated(outcome.project, controller);
+      // The list must show the new project when the user returns — refresh
+      // it before the navigation leaves this surface.
+      await refreshProjects(storage);
+      navigate(`/projects/${outcome.project.id}`);
     } catch {
-      controller.destroy();
       onLinkError('Something went wrong creating the project. Please try again.');
     } finally {
       workingRef.current = false;
@@ -254,25 +249,23 @@ export function WorkspaceScreen({
 
   // Every workspace pipeline holds the working lock while it runs; each
   // control must be disabled across all of them, or an action made mid-flight
-  // is silently dropped by the lock guard.
-  const workspaceBusy = creatingFromLink || openingId !== null;
-
+  // is silently dropped by the lock guard. An open is instant navigation now
+  // (T45) — it holds no lock — so the only busy state left is a link create.
   return (
     <>
       <CreateProject
         onLink={(url) => void handleLink(url)}
         onLinkEdit={() => onLinkError(null)}
         linkError={linkError}
-        busy={workspaceBusy}
+        busy={creatingFromLink}
         creatingFromLink={creatingFromLink}
       />
       <ProjectsScreen
         projects={projects}
         status={status}
-        openingId={openingId}
         notice={notice}
-        busy={workspaceBusy}
-        onOpen={(id) => void onOpen(id)}
+        busy={creatingFromLink}
+        onOpen={(id) => navigate(`/projects/${id}`)}
         onRename={(id, name) => void renameProject(id, name)}
         onDelete={(id) => void deleteProject(id)}
         authKind={authState.kind}

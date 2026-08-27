@@ -1,52 +1,16 @@
-/* The player's outer chrome (T37): the practice surface's frame. A nav bar
-carrying only the Projects control and the project name in its own band above
-the recording. The shared page rail — a maximum content width with fluid side
-margins — lives in app.css (T44): the workspace pages now use the same frame,
-so content is never jammed against the window edge and no page scrolls
-sideways when the window narrows. */
-
-/* The nav bar spans the window; its bottom border is the only divider the
-chrome needs. No back arrow, no title, no save status — the single Projects
-control is the whole bar. */
-.player-nav {
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.player-nav .page-rail {
-  display: flex;
-  align-items: center;
-  padding-block: 14px;
-}
-
-.player-nav button {
-  flex: none;
-  border: 0;
-  background: none;
-  color: #0f766e;
-  font: 600 14px/20px system-ui, sans-serif;
-  cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 8px;
-}
-
-.player-nav button:hover {
-  background: #f0fdfa;
-}
+/* The player's outer chrome: the title band and the practice surface. The
+   player is shell chrome now (T45) — the persistent navbar and the shared page
+   rail frame it (app.css), the player's own nav bar is retired, and the title
+   band above the recording is the one piece of page chrome the player still
+   owns. */
 
 /* The project name in its own band above the recording, spanning the content
-width — confirmation at a glance of which recording is being practised, kept
-out of the nav. */
+width — confirmation at a glance of which recording is being practised. */
 .player-title {
   margin: 0 0 20px;
   font: 700 28px/1.15 system-ui, sans-serif;
   color: #0f172a;
   overflow-wrap: anywhere;
-}
-
-/* The page below the title band. */
-.player-page {
-  padding-top: 24px;
-  padding-bottom: 32px;
 }
 
 /* The practice split view (T27): a YouTube project's player splits on a
