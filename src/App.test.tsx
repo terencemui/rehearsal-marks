@@ -143,6 +143,53 @@ async function waitForWorkspaceRow(name: string): Promise<void> {
   });
 }
 
+/**
+ * Drives a link create whose title lookup is held open, then navigates away to
+ * Help while it is still in flight — the shared "create lands behind a
+ * navigation" setup (T45, T46). Returns the release, which drains the create's
+ * continuation (title → labels → token check → list refresh) inside act, so the
+ * tests assert only the aftermath.
+ */
+async function createBehindNavigation(): Promise<{
+  storage: Storage;
+  controller: ReturnType<typeof mockController>;
+  release: () => Promise<void>;
+}> {
+  const user = userEvent.setup();
+  const storage = await testStorage();
+  let releaseTitle!: () => void;
+  const pendingTitle = new Promise<void>((resolve) => {
+    releaseTitle = resolve;
+  });
+  const controller = mockController({
+    load: vi.fn(async () => ({ duration: 372 })),
+  });
+  await renderApp({
+    controller,
+    storage,
+    fetchTitle: async () => {
+      await pendingTitle;
+      return VIDEO_TITLE;
+    },
+  });
+  await pasteLink(user, YOUTUBE_CANONICAL);
+  // The title lookup is still in flight; the user navigates away to Help.
+  await user.click(screen.getByRole('link', { name: 'Help' }));
+  expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+  return {
+    storage,
+    controller,
+    release: async () => {
+      await act(async () => {
+        releaseTitle();
+        // Drain the create's continuation inside act, so its App updates do not
+        // leak past the block.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    },
+  };
+}
+
 describe('App create from a YouTube link', () => {
   it('opens a freshly pasted link in Label mode, and the player is read-only over the empty timeline', async () => {
     // End to end, the behaviour the stamped mode and the player have to agree
@@ -1137,35 +1184,8 @@ describe('App route-as-session project page (T45)', () => {
   });
 
   it('a create that lands behind a navigation saves the project and does not yank the user', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    let releaseTitle!: () => void;
-    const pendingTitle = new Promise<void>((resolve) => {
-      releaseTitle = resolve;
-    });
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 372 })),
-    });
-    await renderApp({
-      controller,
-      storage,
-      fetchTitle: async () => {
-        await pendingTitle;
-        return VIDEO_TITLE;
-      },
-    });
-
-    await pasteLink(user, YOUTUBE_CANONICAL);
-    // The title lookup is still in flight; the user navigates away to Help.
-    await user.click(screen.getByRole('link', { name: 'Help' }));
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
-
-    await act(async () => {
-      releaseTitle();
-      // Drain the create's continuation (title → labels → token check → list
-      // refresh) inside act, so its App updates do not leak past the block.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    const { storage, controller, release } = await createBehindNavigation();
+    await release();
 
     // The project is saved and waiting in the list; the user stays on Help.
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
@@ -1174,5 +1194,44 @@ describe('App route-as-session project page (T45)', () => {
     expect(projects.map((p) => p.name)).toEqual([VIDEO_TITLE]);
     // No session ever opened — the controller is never created.
     expect(controller.load).not.toHaveBeenCalled();
+  });
+});
+
+describe('App create-from-link navigates to the project page (T46)', () => {
+  it('lands a link create on the new project’s page — its own URL, the player under the navbar', async () => {
+    const user = userEvent.setup();
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 372 })),
+    });
+    const { storage, currentPath } = await renderApp({ controller });
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+
+    // The player renders on the new project's page.
+    expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
+    // The URL is the new project's own address — the created row's id, not a
+    // hardcoded path — so the page is refreshable and shareable.
+    const [created] = await storage.projects.list();
+    await waitFor(() => expect(currentPath()).toBe(`/projects/${created.id}`));
+    // The persistent navbar still frames the player page.
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    // The load settles before the test finishes, so the player's one write (the
+    // measured-duration stamp) is not left pending across the storage teardown.
+    await waitForPlayerSettled();
+  });
+
+  it('a create that lands behind a navigation is waiting in the list when the user returns', async () => {
+    const { storage, release } = await createBehindNavigation();
+    await release();
+
+    // Not yanked: the user is still where they chose to go.
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: VIDEO_TITLE })).not.toBeInTheDocument();
+
+    // Their own return to Projects finds the saved project in the list.
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await waitForWorkspaceRow(VIDEO_TITLE);
+    expect(await storage.projects.list()).toHaveLength(1);
   });
 });
