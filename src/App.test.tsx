@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { MemoryRouter, useNavigate } from 'react-router';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -49,12 +49,23 @@ async function renderApp({
   const auth = mockAuth();
   /** The memory history's Back/Forward, driven like the browser's buttons. */
   let go: (delta: number) => void = () => {};
-  /** A probe inside the router that hands `go` the navigate function. The
-   * async act with a microtask yield is deliberate: React 19 defers the
-   * history listener's location update, and a synchronous act would read the
-   * DOM before the new page commits. */
+  /** Programmatic navigation to a path — the memory router's address bar. */
+  let navigateTo: (path: string) => void = () => {};
+  /**
+   * The memory router's committed path — a mutable holder the returned getter
+   * reads at call time. A getter that captured the location in an effect
+   * closure would freeze the initial path (the object literal copies the
+   * closure reference), so the probe writes the path here and the returned
+   * `currentPath` reads it fresh.
+   */
+  const pathRef: { current: string } = { current: '/' };
+  /** A probe inside the router that hands the helpers the navigate function and
+   * the live location. The async act with a microtask yield is deliberate: React
+   * 19 defers the history listener's location update, and a synchronous act would
+   * read the DOM before the new page commits. */
   function HistoryProbe() {
     const navigate = useNavigate();
+    const location = useLocation();
     useEffect(() => {
       go = async (delta: number) => {
         await act(async () => {
@@ -62,7 +73,14 @@ async function renderApp({
           await Promise.resolve();
         });
       };
-    }, [navigate]);
+      navigateTo = async (path: string) => {
+        await act(async () => {
+          navigate(path);
+          await Promise.resolve();
+        });
+      };
+      pathRef.current = location.pathname;
+    }, [navigate, location]);
     return null;
   }
   const view = render(
@@ -87,6 +105,8 @@ async function renderApp({
     auth: auth.backend,
     commons: commons.backend,
     go,
+    navigateTo,
+    currentPath: () => pathRef.current,
   };
 }
 
@@ -109,6 +129,18 @@ afterEach(async () => {
 async function pasteLink(user: ReturnType<typeof userEvent.setup>, url: string) {
   await user.type(screen.getByLabelText(/paste a YouTube link/i), url);
   await user.click(screen.getByRole('button', { name: /create from link/i }));
+}
+
+/**
+ * Waits for a workspace row named `name` after leaving a player visit. The
+ * row's presence is the signal the visit is over: the player has no list, so a
+ * row cannot coexist with its page — the same guarantee the old "wait for the
+ * navbar link" trick gave before the navbar became persistent (T45).
+ */
+async function waitForWorkspaceRow(name: string): Promise<void> {
+  await waitFor(() => {
+    expect(screen.getAllByRole('listitem').some((li) => li.textContent?.includes(name))).toBe(true);
+  });
 }
 
 describe('App create from a YouTube link', () => {
@@ -426,14 +458,11 @@ describe('App Projects workspace', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
 
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    // The navbar's Projects link is the way home now — the player carries no
+    // nav of its own (T45).
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
 
-    // The player's Projects control is a button; the navbar's is a link, and
-    // only the workspace renders the navbar. Waiting for the link guarantees
-    // the player (and its same-named heading) is gone before asserting on the
-    // list row — otherwise the title query can land on a node about to detach.
-    await screen.findByRole('link', { name: 'Projects' });
-    expect(screen.getByRole('listitem')).toHaveTextContent(VIDEO_TITLE);
+    await waitForWorkspaceRow(VIDEO_TITLE);
     expect(await storage.projects.list()).toHaveLength(1);
   });
 
@@ -534,7 +563,7 @@ describe('App Projects workspace', () => {
     expect(screen.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current');
   });
 
-  it('drops an in-flight open when the user navigates away', async () => {
+  it('drops an in-flight page read when the user navigates away', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(projectRecord());
@@ -558,6 +587,7 @@ describe('App Projects workspace', () => {
     await renderApp({ controller, storage: slowStorage });
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    // The row click navigates to the project page; its record read is slow.
     await user.click(screen.getByRole('button', { name: /Brahms/ }));
     await user.click(screen.getByRole('link', { name: 'Help' }));
     await act(async () => {
@@ -565,8 +595,8 @@ describe('App Projects workspace', () => {
     });
 
     // The player must not yank the user off the page they navigated to. The
-    // session never commits, so the controller it would have owned is never
-    // created in the first place — nothing leaks.
+    // page read is cancelled by the unmount, so the session never builds and
+    // the controller is never created in the first place — nothing leaks.
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Brahms Op. 118 No. 2' })).not.toBeInTheDocument();
   });
@@ -599,7 +629,10 @@ describe('App Projects workspace', () => {
     // write itself before leaving the player.
     await vi.waitFor(() => expect(saves).toBeGreaterThanOrEqual(2));
 
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    // The navbar's Projects link leaves the player; the page's teardown flush
+    // fails too, and the shell's exit channel reports the failure on the
+    // workspace's save line.
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Save failed.');
   });
@@ -668,8 +701,8 @@ describe('App contributor sign-in', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     // Back to the workspace with the saved project.
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByText(VIDEO_TITLE);
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await waitForWorkspaceRow(VIDEO_TITLE);
 
     await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
     act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
@@ -803,8 +836,8 @@ describe('App Commons submission', () => {
     });
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByText(VIDEO_TITLE);
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await waitForWorkspaceRow(VIDEO_TITLE);
     act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
     await screen.findByText('Signed in as Ava Cellist');
     const [summary] = await storage.projects.list();
@@ -840,8 +873,8 @@ describe('App Commons submission', () => {
     const { auth } = await renderApp({ controller, commons });
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByText(VIDEO_TITLE);
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await waitForWorkspaceRow(VIDEO_TITLE);
 
     await user.click(screen.getByRole('button', { name: 'Sign in to submit' }));
 
@@ -909,8 +942,8 @@ describe('App durable workspace state (T43)', () => {
     // Into the player and back — the workspace surface unmounts and remounts.
     await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
     await screen.findByRole('heading', { name: 'Brahms on YouTube' });
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByRole('link', { name: 'Projects' });
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await waitForWorkspaceRow('Brahms on YouTube');
 
     // The badge and the update affordance are still there — the rows are the
     // shell's durable state, not the surface's, so nothing re-fetched on return.
@@ -926,8 +959,8 @@ describe('App durable workspace state (T43)', () => {
     // Round-trip through the player, then re-submit.
     await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
     await screen.findByRole('heading', { name: 'Brahms on YouTube' });
-    await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByRole('link', { name: 'Projects' });
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await waitForWorkspaceRow('Brahms on YouTube');
 
     await user.click(screen.getByRole('button', { name: 'Update submission' }));
 
@@ -999,5 +1032,147 @@ describe('App pages and the persistent navbar (T44)', () => {
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     await go(1);
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+  });
+});
+
+describe('App route-as-session project page (T45)', () => {
+  it('renders a project page at /projects/:id — the player under the navbar, restored by a refresh', async () => {
+    const storage = await testStorage();
+    const record = projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 });
+    await storage.projects.save(record);
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 372 })),
+    });
+    // A refresh at the project's URL: the router restores the page from the
+    // path, and the page builds its own session — no app-level open state.
+    const { container } = await renderApp({ controller, storage, initialEntry: '/projects/p1' });
+
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    // The player is shell chrome under the persistent navbar — the app name,
+    // the page links, and the sign-in all frame it.
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
+    expect(container.querySelector('.player-ruler')).toBeInTheDocument();
+    await waitForPlayerSettled();
+    // The session read the stored record — a visit never writes anything else.
+    expect(await storage.projects.get(record.id)).toEqual(
+      expect.objectContaining({ markers: record.markers }),
+    );
+  });
+
+  it('opening a project from the list navigates to its page', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 372 })),
+    });
+    const { currentPath } = await renderApp({ controller, storage });
+
+    await user.click(await screen.findByRole('button', { name: /Brahms/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    // The open is a navigation — the project's page is the address bar's.
+    // (The probe's location closure updates on an effect, hence the wait.)
+    await waitFor(() => expect(currentPath()).toBe('/projects/p1'));
+  });
+
+  it('browser Back returns to the Projects list, flushing the pending write', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    const record = projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 });
+    await storage.projects.save(record);
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 500 })),
+    });
+    const { go } = await renderApp({ controller, storage });
+
+    // Into the player: the load's measured duration differs from the stored
+    // one, so the player schedules its one write — the duration stamp.
+    await user.click(await screen.findByRole('button', { name: /Brahms/ }));
+    await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
+    await waitForPlayerSettled();
+
+    // Back is the exit: the page tears down, flushing its one pending write
+    // before the workspace re-reads the list.
+    await go(-1);
+    await waitForWorkspaceRow('Brahms Op. 118 No. 2');
+    await vi.waitFor(async () => {
+      expect((await storage.projects.get(record.id))!.duration).toBe(500);
+    });
+    const [summary] = await storage.projects.list();
+    expect(summary.duration).toBe(500);
+  });
+
+  it('navigating from one project page to another closes the first and opens the second', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    await storage.projects.save(projectRecord({ id: 'p2', name: 'Bach Cello Suite', duration: 372 }));
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 372 })),
+    });
+    const { navigateTo } = await renderApp({ controller, storage });
+
+    await user.click(await screen.findByRole('button', { name: /Brahms/ }));
+    await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
+
+    // Straight to another project's page — the swap tears the first session
+    // down and the second mounts its own.
+    await navigateTo('/projects/p2');
+
+    expect(await screen.findByRole('heading', { name: 'Bach Cello Suite' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Brahms Op. 118 No. 2' })).not.toBeInTheDocument();
+    // Settle the second page's load inside act before the test ends.
+    await waitForPlayerSettled();
+  });
+
+  it('lands an unknown project id back on the Projects home', async () => {
+    // The explicit not-found page is the next slice (T47); until then an
+    // unknown record lands quietly back on the home page, like any unknown path.
+    await renderApp({ initialEntry: '/projects/no-such-project' });
+    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('a create that lands behind a navigation saves the project and does not yank the user', async () => {
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    let releaseTitle!: () => void;
+    const pendingTitle = new Promise<void>((resolve) => {
+      releaseTitle = resolve;
+    });
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 372 })),
+    });
+    await renderApp({
+      controller,
+      storage,
+      fetchTitle: async () => {
+        await pendingTitle;
+        return VIDEO_TITLE;
+      },
+    });
+
+    await pasteLink(user, YOUTUBE_CANONICAL);
+    // The title lookup is still in flight; the user navigates away to Help.
+    await user.click(screen.getByRole('link', { name: 'Help' }));
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+
+    await act(async () => {
+      releaseTitle();
+      // Drain the create's continuation (title → labels → token check → list
+      // refresh) inside act, so its App updates do not leak past the block.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // The project is saved and waiting in the list; the user stays on Help.
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: VIDEO_TITLE })).not.toBeInTheDocument();
+    const projects = await storage.projects.list();
+    expect(projects.map((p) => p.name)).toEqual([VIDEO_TITLE]);
+    // No session ever opened — the controller is never created.
+    expect(controller.load).not.toHaveBeenCalled();
   });
 });

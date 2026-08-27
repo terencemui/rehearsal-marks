@@ -15,21 +15,16 @@ import { renderRuler } from '../playback/renderRuler';
 import { MarkerFlags } from './MarkerFlags';
 import { PracticeReadout } from './PracticeReadout';
 import './player.css';
-// The shared page rail (T44) is shell chrome, defined in the shell stylesheet
-// — the player renders it, so the player imports it directly rather than
-// depending on the shell happening to load it.
-import './app.css';
 
 export interface PlayerProps {
   /**
-   * The session's autosave — owned by the shell, which flushes it before
-   * returning to the Projects screen, so the list never reads stale data.
+   * The session's autosave — owned by the route that built the session
+   * (T45), which flushes it when the player unmounts, so the list never
+   * reads stale data.
    */
   autosave: Autosave;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
-  /** Back to the Projects screen; the shell flushes before unmounting. */
-  onExit: () => void;
 }
 
 /**
@@ -57,12 +52,13 @@ const YOUTUBE_FAILED_EXPLANATION =
  * The one mutation the player makes is stamping the measured duration after
  * load; everything audible goes through the `controller`.
  *
- * The outer chrome is the T37 practice-surface frame: a nav bar carrying only
- * the Projects control — no back arrow, no title, no save status — the project
- * name in its own band above the recording, and the shared page rail (a
- * maximum content width with fluid side margins; the workspace pages now use
- * the same rail, T44) so content is never jammed against the window edge and
- * the page never scrolls sideways when the window narrows.
+ * The player page is shell chrome (T45): the persistent navbar and the shared
+ * page rail (a maximum content width with fluid side margins) frame it — the
+ * player carries no nav of its own (the in-player Projects control and the
+ * `onExit` prop it rode on are retired: navigation is the only exit) — and
+ * renders the project name in its own band above the recording. The page is
+ * the route's content, so no `<main>` and no page rail of its own: the shell's
+ * single `<main>` wraps the navbar and the route.
  *
  * The recording's clock is a single strip below the split (T38), spanning
  * the full content width — a click-to-seek surface with a flag at every
@@ -82,7 +78,6 @@ const YOUTUBE_FAILED_EXPLANATION =
 export function Player({
   autosave,
   controller,
-  onExit,
 }: PlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   /** The strip's seek surface — the shared ruler-drawing module draws into it. */
@@ -307,9 +302,12 @@ export function Player({
   }
 
   useEffect(() => {
-    // Page teardown: write anything still pending, then release. The shell
-    // flushes before returning to the Projects screen, so this is normally a
-    // no-op; it is the safety net for a session torn down any other way.
+    // Teardown: write anything still pending, then release. This is the
+    // safety net for a directly-rendered player — the test seam renders
+    // Player without the routed page, so no page teardown runs here. In the
+    // app the project page (T45) owns the exit: React cleans up children
+    // first, so this net's flush settles the pending write before the page's
+    // own flush (which is then a no-op) and the page reports the result.
     return () => {
       void autosave.flush().catch(() => {});
       autosave.dispose();
@@ -349,50 +347,41 @@ export function Player({
   return (
     // `data-settled` is the load's settled-state marker — set on the success
     // and failure paths alike, so a render helper waits on it once and the
-    // failure behaviour stays keyed off the error card.
-    <main data-settled={settled || undefined}>
-      {/* T37 frame: the nav carries only the Projects control, the title sits
-          in its own band, and the rail wraps the split below. */}
-      <nav className="player-nav">
-        <div className="page-rail">
-          <button type="button" onClick={onExit}>
-            Projects
+    // failure behaviour stays keyed off the error card. The page is shell
+    // chrome (T45): the navbar and page rail are the shell's, so the player
+    // renders just the title band and the recording under them.
+    <div data-settled={settled || undefined}>
+      <h1 className="player-title">{record.name}</h1>
+      {loadFailed && (
+        <div role="alert" className="player-youtube-error">
+          <p>{YOUTUBE_FAILED_EXPLANATION}</p>
+          <p>
+            <a href={youtubeUrl} target="_blank" rel="noreferrer">
+              {youtubeUrl}
+            </a>
+          </p>
+          <button type="button" onClick={retryLoad}>
+            Retry
           </button>
         </div>
-      </nav>
-      <div className="page-rail player-page">
-        <h1 className="player-title">{record.name}</h1>
-        {loadFailed && (
-          <div role="alert" className="player-youtube-error">
-            <p>{YOUTUBE_FAILED_EXPLANATION}</p>
-            <p>
-              <a href={youtubeUrl} target="_blank" rel="noreferrer">
-                {youtubeUrl}
-              </a>
-            </p>
-            <button type="button" onClick={retryLoad}>
-              Retry
-            </button>
-          </div>
-        )}
-        {/* T27/T38: the practice split view — the recording fills its column
-            (the audio layer loads the embed into the .player-ruler container;
-            its own ruler band is hidden) with the practice readout beside it,
-            and the recording's clock is its own full-width strip below the
-            split. Every project is a YouTube project, so the split view is
-            unconditional. */}
-        <div className="player-practice-split">
-          <div className="player-video-column">
-            <div ref={containerRef} className="player-ruler" />
-          </div>
-          <PracticeReadout
-            markers={labeled}
-            currentTime={playback.currentTime}
-            duration={duration}
-          />
+      )}
+      {/* T27/T38: the practice split view — the recording fills its column
+          (the audio layer loads the embed into the .player-ruler container;
+          its own ruler band is hidden) with the practice readout beside it,
+          and the recording's clock is its own full-width strip below the
+          split. Every project is a YouTube project, so the split view is
+          unconditional. */}
+      <div className="player-practice-split">
+        <div className="player-video-column">
+          <div ref={containerRef} className="player-ruler" />
         </div>
-        {timelineStrip}
+        <PracticeReadout
+          markers={labeled}
+          currentTime={playback.currentTime}
+          duration={duration}
+        />
       </div>
-    </main>
+      {timelineStrip}
+    </div>
   );
 }

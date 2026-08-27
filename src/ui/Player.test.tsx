@@ -27,8 +27,8 @@ afterEach(closeTestStorages);
  * the same render the marking tests use, surfaced with the autosave handle
  * for the tests that only need the controller and the view.
  */
-async function renderLoadedPlayer(record = projectRecord(), onExit = vi.fn()) {
-  const { autosave, ...rest } = await renderSettledPlayer(record, onExit);
+async function renderLoadedPlayer(record = projectRecord()) {
+  const { autosave, ...rest } = await renderSettledPlayer(record);
   return { ...rest, autosave };
 }
 
@@ -41,7 +41,7 @@ describe('Player', () => {
     const record = projectRecord();
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
 
     expect(screen.getByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
 
@@ -53,19 +53,23 @@ describe('Player', () => {
     storage.close();
   });
 
-  it('frames the page: a nav bar with only Projects, and a title band above the split', async () => {
+  it('carries no navigation of its own — the shell’s navbar is the only chrome (T45)', async () => {
     const storage = await testStorage();
     const record = projectRecord();
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
-    render(<Player autosave={autosave} controller={mockController()} onExit={vi.fn()} />);
 
-    const nav = screen.getByRole('navigation');
-    expect(within(nav).getByRole('button', { name: 'Projects' })).toBeInTheDocument();
-    expect(within(nav).getAllByRole('button')).toHaveLength(1);
-    expect(within(nav).queryByRole('heading')).not.toBeInTheDocument();
-    expect(within(nav).queryByRole('status')).not.toBeInTheDocument();
+    render(<Player autosave={autosave} controller={mockController()} />);
 
+    // The in-player Projects control and its nav bar are retired (T45):
+    // navigation is the shell's — the persistent navbar frames the player, so
+    // the player renders none of its own.
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Projects' })).not.toBeInTheDocument();
+
+    // The title band is still the player's — the record's name over the split.
     expect(screen.getByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    // Settle the async load inside act before the test ends.
+    await waitForPlayerSettled();
     storage.close();
   });
 
@@ -75,7 +79,7 @@ describe('Player', () => {
     const record = projectRecord({ duration: 0 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    const { unmount } = render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    const { unmount } = render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
     unmount();
 
@@ -97,7 +101,7 @@ describe('Player', () => {
     const record = projectRecord();
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
 
     const card = await screen.findByRole('alert');
     expect(card).toHaveTextContent(/couldn’t be played/i);
@@ -108,27 +112,13 @@ describe('Player', () => {
     storage.close();
   });
 
-  it('returns to the Projects screen from the nav button', async () => {
-    const user = userEvent.setup();
-    const onExit = vi.fn();
-    const storage = await testStorage();
-    const record = projectRecord();
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
-    render(<Player autosave={autosave} controller={mockController()} onExit={onExit} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Projects' }));
-
-    expect(onExit).toHaveBeenCalledTimes(1);
-    storage.close();
-  });
-
   it('does not write the record over sub-millisecond duration noise', async () => {
     const storage = await testStorage();
     const record = projectRecord();
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
     const controller = mockController({ load: vi.fn(async () => ({ duration: 123.4560004 })) });
 
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
     await new Promise((resolve) => setTimeout(resolve, 600));
 
@@ -177,20 +167,30 @@ describe('Player — playback-only (T39)', () => {
 
   it('toggles with Space, except while a button has focus', async () => {
     const user = userEvent.setup();
-    const onExit = vi.fn();
-    const { controller } = await renderLoadedPlayer(projectRecord(), onExit);
+    const storage = await testStorage();
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 0, error: new YouTubePlaybackError(150) })),
+    });
+    const record = projectRecord();
+    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const { unmount } = render(<Player autosave={autosave} controller={controller} />);
+    await screen.findByRole('alert');
 
+    // With focus on the body, Space is the player's play/pause.
     await user.keyboard(' ');
     expect(controller.togglePlay).toHaveBeenCalledTimes(1);
 
     // A focused button owns Space through native activation — the window
-    // handler must not double-toggle playback on top. The Projects control is
-    // the player's only focus stop.
+    // handler must not double-toggle playback on top. The failure card's Retry
+    // is the player's only focus stop (the card's URL link precedes it).
     await user.tab();
-    expect(screen.getByRole('button', { name: 'Projects' })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveFocus();
     await user.keyboard(' ');
     expect(controller.togglePlay).toHaveBeenCalledTimes(1);
-    expect(onExit).toHaveBeenCalledTimes(1);
+
+    unmount();
+    storage.close();
   });
 });
 
@@ -482,7 +482,7 @@ describe('Player navigation — focus and gating', () => {
     const storage = await testStorage();
     const record = projectRecord();
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
 
     // Space is gated with the rest — a press during load is not swallowed
     // against a dead embed (spec #74, story 37).
@@ -540,14 +540,14 @@ const RECORD_SECONDS = 123.456;
  * render without the edge-overhang correction — the one test that needs a
  * width mocks it for itself.
  */
-async function renderSettledPlayer(record = projectRecord(), onExit = vi.fn()) {
+async function renderSettledPlayer(record = projectRecord()) {
   const controller = mockController();
   const storage = await testStorage();
   controller.load = vi.fn(async () => ({ duration: RECORD_SECONDS }));
   // Settle the mount duration before the strip draws its seek surface.
   controller.emitPlayback({ duration: RECORD_SECONDS });
   const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
-  const view = render(<Player autosave={autosave} controller={controller} onExit={onExit} />);
+  const view = render(<Player autosave={autosave} controller={controller} />);
   await waitForPlayerSettled();
   return { ...view, controller, storage, record, autosave };
 }
@@ -704,7 +704,7 @@ describe('Player timeline strip (T38)', () => {
     const record = projectRecord({ duration: RECORD_SECONDS });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    const { container } = render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    const { container } = render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
 
     const strip = container.querySelector('.player-timeline-strip') as HTMLElement;
@@ -736,7 +736,7 @@ describe('Player — YouTube projects', () => {
     controller.emitPlayback({ duration });
     const record = projectRecord({ name: 'Brahms — Intermezzo', duration });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
-    const view = render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    const view = render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
     return { ...view, controller, storage, autosave };
   }
@@ -758,7 +758,7 @@ describe('Player — YouTube projects', () => {
     const record = projectRecord({ duration: 0 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
 
     const card = await screen.findByRole('alert');
     expect(card).toHaveTextContent(/couldn’t be played/i);
@@ -778,7 +778,7 @@ describe('Player — YouTube projects', () => {
     const record = projectRecord({ duration: 604.2 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
 
     await user.click(screen.getByRole('button', { name: 'Retry' }));
@@ -787,7 +787,9 @@ describe('Player — YouTube projects', () => {
     await waitFor(() => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
-    expect(screen.getByRole('main').getAttribute('data-settled')).toBe('true');
+    // The load settled again on the success path — the root's marker, no
+    // longer a lone `<main>` (the player is shell chrome now, T45).
+    await waitForPlayerSettled();
     storage.close();
   });
 
@@ -800,7 +802,7 @@ describe('Player — YouTube projects', () => {
     const record = projectRecord({ duration: 604.2 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
 
     await user.keyboard('m');
@@ -847,7 +849,7 @@ describe('Player — YouTube projects', () => {
     const record = projectRecord({ duration: 0 });
     const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player autosave={autosave} controller={controller} onExit={vi.fn()} />);
+    render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
 
     await waitFor(() => expect(autosave.get().duration).toBe(372.5));

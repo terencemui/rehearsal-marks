@@ -30,9 +30,7 @@ export interface ProjectsScreenProps {
   projects: ProjectSummary[];
   /** The save-state line for list mutations (rename, delete). */
   status: SaveStatus;
-  /** The row being opened, if any — rows are inert while one loads. */
-  openingId?: string | null;
-  /** True while any workspace pipeline (link create, open) runs — rows are inert then. */
+  /** True while any workspace pipeline (link create) runs — rows are inert then. */
   busy?: boolean;
   /** A transient failure the user must see (e.g. a project that won't open). */
   notice?: string | null;
@@ -67,7 +65,6 @@ export interface ProjectsScreenProps {
 export function ProjectsScreen({
   projects,
   status,
-  openingId = null,
   busy = false,
   notice = null,
   onOpen,
@@ -138,8 +135,9 @@ export function ProjectsScreen({
                   className="projects-open"
                   // Every workspace pipeline holds the working lock, and an
                   // open attempted under it is silently dropped — so the row
-                  // must be disabled across all of them, not just opens.
-                  disabled={openingId !== null || busy}
+                  // must be disabled across all of them. (An open itself is
+                  // instant navigation now (T45) — it holds no lock.)
+                  disabled={busy}
                   onClick={() => onOpen(project.id)}
                 >
                   <span className="projects-name">
