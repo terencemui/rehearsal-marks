@@ -15,6 +15,10 @@ import { renderRuler } from '../playback/renderRuler';
 import { MarkerFlags } from './MarkerFlags';
 import { PracticeReadout } from './PracticeReadout';
 import './player.css';
+// The shared page rail (T44) is shell chrome, defined in the shell stylesheet
+// — the player renders it, so the player imports it directly rather than
+// depending on the shell happening to load it.
+import './app.css';
 
 export interface PlayerProps {
   /**
@@ -55,9 +59,10 @@ const YOUTUBE_FAILED_EXPLANATION =
  *
  * The outer chrome is the T37 practice-surface frame: a nav bar carrying only
  * the Projects control — no back arrow, no title, no save status — the project
- * name in its own band above the recording, and a shared page rail (a maximum
- * content width with fluid side margins) so content is never jammed against
- * the window edge and the page never scrolls sideways when the window narrows.
+ * name in its own band above the recording, and the shared page rail (a
+ * maximum content width with fluid side margins; the workspace pages now use
+ * the same rail, T44) so content is never jammed against the window edge and
+ * the page never scrolls sideways when the window narrows.
  *
  * The recording's clock is a single strip below the split (T38), spanning
  * the full content width — a click-to-seek surface with a flag at every
@@ -349,13 +354,13 @@ export function Player({
       {/* T37 frame: the nav carries only the Projects control, the title sits
           in its own band, and the rail wraps the split below. */}
       <nav className="player-nav">
-        <div className="player-rail">
+        <div className="page-rail">
           <button type="button" onClick={onExit}>
             Projects
           </button>
         </div>
       </nav>
-      <div className="player-rail player-page">
+      <div className="page-rail player-page">
         <h1 className="player-title">{record.name}</h1>
         {loadFailed && (
           <div role="alert" className="player-youtube-error">

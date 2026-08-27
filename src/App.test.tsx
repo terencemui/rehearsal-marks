@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { MemoryRouter, useNavigate } from 'react-router';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,29 +17,77 @@ import { waitForPlayerSettled } from './test/settle-player';
 import type { CommunityLabelSet } from './youtube/community';
 import App from './App';
 
-/** Renders the app on a fresh fake-indexeddb database with a mocked seam. */
-async function renderApp(
+/** The renderApp knobs — every App seam, named so a test reaches one without
+ * skipping the others. */
+interface RenderAppOptions {
+  /** The audio-controller seam, like App's controllerFactory. */
+  controller?: ReturnType<typeof mockController>;
+  /** An already-opened storage; the app opens its own when absent. */
+  storage?: Storage;
+  /** The video-title lookup, so tests never reach the network. */
+  fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
+  /** The community label-set lookup. */
+  loadCommunityLabels?: (videoId: string) => Promise<CommunityLabelSet | null>;
+  /** The Commons write seam, like App's commonsWriteFactory. */
+  commons?: ReturnType<typeof mockCommonsWrite>;
+  /** The starting URL the memory router serves — the refresh/landing case. */
+  initialEntry?: string;
+}
+
+/** Renders the app on a fresh fake-indexeddb database with a mocked seam,
+ * served by a memory router — the one App-level seam, so the tests control
+ * the starting URL and can drive Back and Forward (T44). */
+async function renderApp({
   controller = mockController(),
-  storage?: Storage,
-  fetchTitle: (canonicalUrl: string) => Promise<string | null> = async () => VIDEO_TITLE,
-  loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null> = async () => null,
+  storage,
+  fetchTitle = async () => VIDEO_TITLE,
+  loadCommunityLabels = async () => null,
   commons = mockCommonsWrite(),
-) {
+  initialEntry = '/',
+}: RenderAppOptions = {}) {
   const opened = storage ?? (await testStorage());
   const auth = mockAuth();
+  /** The memory history's Back/Forward, driven like the browser's buttons. */
+  let go: (delta: number) => void = () => {};
+  /** A probe inside the router that hands `go` the navigate function. The
+   * async act with a microtask yield is deliberate: React 19 defers the
+   * history listener's location update, and a synchronous act would read the
+   * DOM before the new page commits. */
+  function HistoryProbe() {
+    const navigate = useNavigate();
+    useEffect(() => {
+      go = async (delta: number) => {
+        await act(async () => {
+          navigate(delta);
+          await Promise.resolve();
+        });
+      };
+    }, [navigate]);
+    return null;
+  }
   const view = render(
-    <App
-      controllerFactory={() => controller}
-      storage={opened}
-      // Stubbed by default so no test reaches YouTube's oEmbed endpoint or
-      // the community index, and no test constructs a supabase-js client.
-      fetchTitle={fetchTitle}
-      loadCommunityLabels={loadCommunityLabels}
-      authFactory={() => auth.controller}
-      commonsWriteFactory={() => commons.controller}
-    />,
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <HistoryProbe />
+      <App
+        controllerFactory={() => controller}
+        storage={opened}
+        // Stubbed by default so no test reaches YouTube's oEmbed endpoint or
+        // the community index, and no test constructs a supabase-js client.
+        fetchTitle={fetchTitle}
+        loadCommunityLabels={loadCommunityLabels}
+        authFactory={() => auth.controller}
+        commonsWriteFactory={() => commons.controller}
+      />
+    </MemoryRouter>,
   );
-  return { ...view, storage: opened, controller, auth: auth.backend, commons: commons.backend };
+  return {
+    ...view,
+    storage: opened,
+    controller,
+    auth: auth.backend,
+    commons: commons.backend,
+    go,
+  };
 }
 
 const VIDEO_ID = 'dQw4w9WgXcQ';
@@ -71,7 +121,7 @@ describe('App create from a YouTube link', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { storage } = await renderApp(controller);
+    const { storage } = await renderApp({ controller });
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -97,12 +147,11 @@ describe('App create from a YouTube link', () => {
       markers: [{ id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 }],
       duration: 604.2,
     };
-    const { storage } = await renderApp(
+    const { storage } = await renderApp({
       controller,
-      undefined,
-      async () => VIDEO_TITLE,
-      async () => community,
-    );
+      fetchTitle: async () => VIDEO_TITLE,
+      loadCommunityLabels: async () => community,
+    });
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -142,11 +191,13 @@ describe('App create from a YouTube link', () => {
     });
     const opened = await testStorage();
     render(
-      <App
-        controllerFactory={() => controller}
-        storage={opened}
-        fetchTitle={async () => VIDEO_TITLE}
-      />,
+      <MemoryRouter>
+        <App
+          controllerFactory={() => controller}
+          storage={opened}
+          fetchTitle={async () => VIDEO_TITLE}
+        />
+      </MemoryRouter>,
     );
 
     await pasteLink(user, YOUTUBE_CANONICAL);
@@ -181,11 +232,13 @@ describe('App create from a YouTube link', () => {
     });
     const opened = await testStorage();
     render(
-      <App
-        controllerFactory={() => controller}
-        storage={opened}
-        fetchTitle={async () => VIDEO_TITLE}
-      />,
+      <MemoryRouter>
+        <App
+          controllerFactory={() => controller}
+          storage={opened}
+          fetchTitle={async () => VIDEO_TITLE}
+        />
+      </MemoryRouter>,
     );
 
     await pasteLink(user, YOUTUBE_CANONICAL);
@@ -206,7 +259,7 @@ describe('App create from a YouTube link', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { storage } = await renderApp(controller);
+    const { storage } = await renderApp({ controller });
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -251,7 +304,7 @@ describe('App create from a YouTube link', () => {
 
   it('still creates the project when the title cannot be read', async () => {
     const user = userEvent.setup();
-    const { storage } = await renderApp(mockController(), undefined, async () => null);
+    const { storage } = await renderApp({ controller: mockController(), fetchTitle: async () => null });
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -273,7 +326,7 @@ describe('App create from a YouTube link', () => {
         },
       },
     };
-    await renderApp(mockController(), brokenStorage);
+    await renderApp({ controller: mockController(), storage: brokenStorage });
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -294,7 +347,7 @@ describe('App create from a YouTube link', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { container } = await renderApp(controller, storage);
+    const { container } = await renderApp({ controller, storage });
 
     await user.click(await screen.findByRole('button', { name: /Brahms on YouTube/ }));
 
@@ -319,7 +372,7 @@ describe('App Projects workspace', () => {
   it('lists stored projects with name, duration, marker count, and last-modified on start', async () => {
     const storage = await testStorage();
     await storage.projects.save(projectRecord());
-    await renderApp(mockController(), storage);
+    await renderApp({ controller: mockController(), storage });
 
     expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
     // The row's meta: duration · marker count · last-modified. The fixture's
@@ -335,9 +388,9 @@ describe('App Projects workspace', () => {
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByText(/paste a YouTube link above to start marking/i)).toBeInTheDocument();
     // The Library tab and its browse surface are gone — the link is the only way in.
-    expect(screen.getByRole('tab', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Help' })).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: 'Library' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Library' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /browse the library/i })).not.toBeInTheDocument();
 
     storage.close();
@@ -351,7 +404,7 @@ describe('App Projects workspace', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 123.456 })),
     });
-    await renderApp(controller, storage);
+    await renderApp({ controller, storage });
 
     await user.click(await screen.findByRole('button', { name: /Brahms/ }));
 
@@ -375,10 +428,11 @@ describe('App Projects workspace', () => {
 
     await user.click(screen.getByRole('button', { name: 'Projects' }));
 
-    // The tablist only renders in the workspace, so waiting for it guarantees
+    // The player's Projects control is a button; the navbar's is a link, and
+    // only the workspace renders the navbar. Waiting for the link guarantees
     // the player (and its same-named heading) is gone before asserting on the
     // list row — otherwise the title query can land on a node about to detach.
-    await screen.findByRole('tablist');
+    await screen.findByRole('link', { name: 'Projects' });
     expect(screen.getByRole('listitem')).toHaveTextContent(VIDEO_TITLE);
     expect(await storage.projects.list()).toHaveLength(1);
   });
@@ -388,7 +442,7 @@ describe('App Projects workspace', () => {
     const storage = await testStorage();
     await storage.projects.save(projectRecord({ id: 'older', name: 'Older', updatedAt: 1_000 }));
     await storage.projects.save(projectRecord({ id: 'newer', name: 'Newer', updatedAt: 2_000 }));
-    await renderApp(mockController(), storage);
+    await renderApp({ controller: mockController(), storage });
     await screen.findByText('Newer');
 
     const rows = screen.getAllByRole('listitem');
@@ -413,7 +467,7 @@ describe('App Projects workspace', () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(projectRecord());
-    await renderApp(mockController(), storage);
+    await renderApp({ controller: mockController(), storage });
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
@@ -440,7 +494,7 @@ describe('App Projects workspace', () => {
         },
       },
     };
-    await renderApp(mockController(), brokenStorage);
+    await renderApp({ controller: mockController(), storage: brokenStorage });
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
@@ -460,23 +514,27 @@ describe('App Projects workspace', () => {
 
     // A reload: a fresh App opens a fresh connection to the same database.
     const reopened = await createStorage({ name });
-    await renderApp(mockController(), reopened);
+    await renderApp({ controller: mockController(), storage: reopened });
     expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
     reopened.close();
   });
 
-  it('switches between the workspace tabs', async () => {
+  it('navigates between the workspace pages, and the navbar marks the active page', async () => {
     const user = userEvent.setup();
     await renderApp();
 
-    await user.click(screen.getByRole('tab', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Help' }));
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
 
-    await user.click(screen.getByRole('tab', { name: 'Projects' }));
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current');
   });
 
-  it('drops an in-flight open when the user switches tabs', async () => {
+  it('drops an in-flight open when the user navigates away', async () => {
     const user = userEvent.setup();
     const storage = await testStorage();
     await storage.projects.save(projectRecord());
@@ -497,16 +555,16 @@ describe('App Projects workspace', () => {
         },
       },
     };
-    await renderApp(controller, slowStorage);
+    await renderApp({ controller, storage: slowStorage });
     await screen.findByText('Brahms Op. 118 No. 2');
 
     await user.click(screen.getByRole('button', { name: /Brahms/ }));
-    await user.click(screen.getByRole('tab', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Help' }));
     await act(async () => {
       releaseRead();
     });
 
-    // The player must not yank the user off the tab they navigated to. The
+    // The player must not yank the user off the page they navigated to. The
     // session never commits, so the controller it would have owned is never
     // created in the first place — nothing leaks.
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
@@ -533,7 +591,7 @@ describe('App Projects workspace', () => {
       // A different duration guarantees the player schedules a write.
       load: vi.fn(async () => ({ duration: 42 })),
     });
-    await renderApp(controller, flaky);
+    await renderApp({ controller, storage: flaky });
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     // The player's only write — the measured-duration stamp — fails against
@@ -559,7 +617,7 @@ describe('App Projects workspace', () => {
         },
       },
     };
-    await renderApp(mockController(), broken);
+    await renderApp({ controller: mockController(), storage: broken });
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
@@ -634,7 +692,7 @@ describe('App contributor sign-in', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/didn't work/i);
     // The app never blocked on the failure: the workspace is still live.
     expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
-    expect(screen.getByRole('tablist', { name: 'Workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
   });
 
   it('a failed sign-out lands anonymous with a partial-sign-out notice — the session was removed', async () => {
@@ -714,15 +772,17 @@ describe('App contributor sign-in', () => {
   it('an unconfigured deployment says sign-in is unavailable and keeps browsing', async () => {
     const storage = await testStorage();
     render(
-      <App
-        controllerFactory={() => mockController()}
-        storage={storage}
-        authFactory={() => createAuthController(null)}
-      />,
+      <MemoryRouter>
+        <App
+          controllerFactory={() => mockController()}
+          storage={storage}
+          authFactory={() => createAuthController(null)}
+        />
+      </MemoryRouter>,
     );
 
     expect(await screen.findByText("Sign-in isn't set up yet")).toBeInTheDocument();
-    expect(screen.getByRole('tablist', { name: 'Workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
     // No sign-in affordance on an unconfigured deployment — nothing to press.
     expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
   });
@@ -737,13 +797,10 @@ describe('App Commons submission', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 604.2 })),
     });
-    const { storage, auth } = await renderApp(
+    const { storage, auth } = await renderApp({
       controller,
-      undefined,
-      undefined,
-      undefined,
       commons,
-    );
+    });
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     await user.click(screen.getByRole('button', { name: 'Projects' }));
@@ -780,7 +837,7 @@ describe('App Commons submission', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 604.2 })),
     });
-    const { auth } = await renderApp(controller, undefined, undefined, undefined, commons);
+    const { auth } = await renderApp({ controller, commons });
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     await user.click(screen.getByRole('button', { name: 'Projects' }));
@@ -835,7 +892,7 @@ describe('App durable workspace state (T43)', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 604.2 })),
     });
-    const { auth } = await renderApp(controller, storage, undefined, undefined, commons);
+    const { auth } = await renderApp({ controller, storage, commons });
 
     await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
     act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
@@ -853,7 +910,7 @@ describe('App durable workspace state (T43)', () => {
     await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
     await screen.findByRole('heading', { name: 'Brahms on YouTube' });
     await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByRole('tablist');
+    await screen.findByRole('link', { name: 'Projects' });
 
     // The badge and the update affordance are still there — the rows are the
     // shell's durable state, not the surface's, so nothing re-fetched on return.
@@ -870,7 +927,7 @@ describe('App durable workspace state (T43)', () => {
     await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
     await screen.findByRole('heading', { name: 'Brahms on YouTube' });
     await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await screen.findByRole('tablist');
+    await screen.findByRole('link', { name: 'Projects' });
 
     await user.click(screen.getByRole('button', { name: 'Update submission' }));
 
@@ -889,12 +946,58 @@ describe('App durable workspace state (T43)', () => {
     await pasteLink(user, 'https://example.com/not-a-video');
     expect(await screen.findByRole('alert')).toHaveTextContent(/YouTube video link/);
 
-    await user.click(screen.getByRole('tab', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Help' }));
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
-    await user.click(screen.getByRole('tab', { name: 'Projects' }));
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
 
     // The rejection still explains the bad input that sits in the field.
     expect(screen.getByRole('alert')).toHaveTextContent(/YouTube video link/);
     expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
+  });
+});
+
+describe('App pages and the persistent navbar (T44)', () => {
+  it('renders the Projects home at /, framed by the persistent navbar', async () => {
+    await renderApp();
+    // The create surface is the home page's headline affordance; the navbar —
+    // the app name, the page links, and the sign-in — frames it, with the
+    // Projects link marking the active page.
+    expect(screen.getByRole('region', { name: 'Create project' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+  });
+
+  it('renders the Help page at /help with the same persistent navbar', async () => {
+    // A refresh while on /help lands straight back on Help — the router
+    // restores the page from the URL, not from app state.
+    await renderApp({ initialEntry: '/help' });
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+  });
+
+  it('lands an unknown path on the Projects home', async () => {
+    await renderApp({ initialEntry: '/no-such-page' });
+    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('browser Back and Forward move between the workspace pages', async () => {
+    const user = userEvent.setup();
+    const { go } = await renderApp();
+    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Help' }));
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+
+    // Back to the Projects home, then forward to Help again.
+    await go(-1);
+    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    await go(1);
+    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
   });
 });

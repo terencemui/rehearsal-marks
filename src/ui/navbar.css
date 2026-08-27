@@ -1,0 +1,46 @@
+/* The persistent navbar (T44): the app name, the page links with active
+   states, and the contributor sign-in — the shell chrome that replaced the
+   workspace's header-plus-tabs pair. Spans the window; its bottom border is
+   the only divider the chrome needs. */
+
+.app-nav {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.app-nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 12px;
+}
+
+.app-name {
+  margin: 0;
+  font: 700 20px/1.2 system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.app-nav-link {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font: 600 14px/20px system-ui, sans-serif;
+  color: #334155;
+  text-decoration: none;
+}
+
+.app-nav-link:hover {
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+/* The active page's link shows where the user is (T44) — the visual
+   counterpart of the aria-current the router puts on it. */
+.app-nav-link[aria-current='page'] {
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+/* The sign-in control sits at the rail's far end, away from the page links. */
+.app-nav-auth {
+  margin-left: auto;
+}

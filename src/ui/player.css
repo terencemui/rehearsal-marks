@@ -1,17 +1,9 @@
 /* The player's outer chrome (T37): the practice surface's frame. A nav bar
-carrying only the Projects control, the project name in its own band above
-the recording, and a shared page rail — a maximum content width with fluid
-side margins — so content is never jammed against the window edge and the
-page never scrolls sideways when the window narrows. */
-
-/* The shared page rail: a maximum content width, centred, with fluid side
-padding. Applied consistently to the nav's contents and to the page below. */
-.player-rail {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding-inline: clamp(16px, 3vw, 48px);
-  box-sizing: border-box;
-}
+carrying only the Projects control and the project name in its own band above
+the recording. The shared page rail — a maximum content width with fluid side
+margins — lives in app.css (T44): the workspace pages now use the same frame,
+so content is never jammed against the window edge and no page scrolls
+sideways when the window narrows. */
 
 /* The nav bar spans the window; its bottom border is the only divider the
 chrome needs. No back arrow, no title, no save status — the single Projects
@@ -20,7 +12,7 @@ control is the whole bar. */
   border-bottom: 1px solid #e2e8f0;
 }
 
-.player-nav .player-rail {
+.player-nav .page-rail {
   display: flex;
   align-items: center;
   padding-block: 14px;
