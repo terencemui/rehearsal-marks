@@ -15,8 +15,10 @@ import { waitForPlayerSettled } from '../test/settle-player';
 import { Player } from './Player';
 // jsdom computes no layout, so the layout facts are CSS text — the narrow
 // viewport and console-row tests pin them by reading the stylesheet from disk
-// (vitest stubs CSS imports, raw or not, to an empty string).
+// (vitest stubs CSS imports, raw or not, to an empty string). The shared page
+// rail moved to the shell stylesheet (T44), so the rail's fact is read there.
 const playerCss = readFileSync('src/ui/player.css', 'utf8');
+const appCss = readFileSync('src/ui/app.css', 'utf8');
 
 afterEach(closeTestStorages);
 
@@ -714,9 +716,10 @@ describe('Player timeline strip (T38)', () => {
   it('keeps the page from scrolling sideways at a narrow viewport', () => {
     // jsdom cannot observe layout, so the overflow guards are CSS facts —
     // pin the rules that let the rail and the split shrink instead of forcing
-    // a horizontal scrollbar: box-sizing on the rail, minmax(0, …) columns in
-    // the split, and min-width: 0 on the video column.
-    expect(playerCss).toMatch(/\.player-rail\s*\{[^}]*box-sizing:\s*border-box;/);
+    // a horizontal scrollbar: box-sizing on the shared page rail (now in the
+    // shell stylesheet, app.css), minmax(0, …) columns in the split, and
+    // min-width: 0 on the video column.
+    expect(appCss).toMatch(/\.page-rail\s*\{[^}]*box-sizing:\s*border-box;/);
     expect(playerCss).toMatch(
       /grid-template-columns:\s*minmax\(0,\s*1\.1fr\)\s+minmax\(0,\s*0\.9fr\);/,
     );

@@ -12,7 +12,8 @@ export interface ContributorControlProps {
 }
 
 /**
- * The sign-in surface: one control in the app header. Anonymous visitors see
+ * The sign-in surface: one control in the persistent navbar (T44). Anonymous
+ * visitors see
  * Sign in with Google (viewing never requires an account); a signed-in
  * contributor sees who they are, Sign out, and the account-deletion path;
  * an unconfigured deployment states so plainly — the app never blocks on

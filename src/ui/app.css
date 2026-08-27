@@ -1,29 +1,20 @@
-/* App shell chrome: the workspace header and tab bar. */
+/* App shell chrome: the shared page rail and the routed page wrapper. The
+   navbar's own styles live in navbar.css. */
 
-.app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-  margin-bottom: 8px;
+/* The shared page rail: a maximum content width, centred, with fluid side
+   padding. Applied consistently to the navbar's contents and to the page
+   below — the same frame the player (T37) uses, extended to the workspace
+   pages (T44) — so content is never jammed against the window edge and no
+   page scrolls sideways when the window narrows. */
+.page-rail {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding-inline: clamp(16px, 3vw, 48px);
+  box-sizing: border-box;
 }
 
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin: 12px 0;
-}
-
-.tabs [role='tab'] {
-  padding: 6px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px 6px 0 0;
-  background: none;
-  cursor: pointer;
-}
-
-.tabs [role='tab'][aria-selected='true'] {
-  font-weight: 600;
-  border-color: #0f766e;
-  color: #0f766e;
+/* The routed page under the navbar. */
+.app-page {
+  padding-top: 24px;
+  padding-bottom: 32px;
 }

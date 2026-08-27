@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { createAudioController } from './audio';
 import type { AudioController } from './audio';
 import { createDefaultAuthController } from './auth';
@@ -13,8 +14,8 @@ import { createStorage } from './storage';
 import type { ProjectSummary, SaveStatus, Storage } from './storage';
 import { fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
-import { ContributorControl } from './ui/Contributor';
 import { HelpTab } from './ui/HelpTab';
+import { Navbar } from './ui/Navbar';
 import { Player } from './ui/Player';
 import { usePlayerSession } from './ui/playerSession';
 import { WorkspaceScreen } from './ui/WorkspaceScreen';
@@ -47,8 +48,6 @@ export interface AppProps {
    */
   commonsWriteFactory?: () => CommonsWriteController;
 }
-
-type Tab = 'projects' | 'help';
 
 /**
  * The app's fetch surface for the Commons' anonymous reads, translating every
@@ -88,15 +87,20 @@ function commonsFailure(): CommonsError {
 }
 
 /**
- * The app shell (T43): owns storage, the contributor controllers, and the
+ * The app shell (T43, T44): owns storage, the contributor controllers, and the
  * workspace's durable state (the list, the save line, the notices, the create
  * surface's rejection and busy state, and the Commons badges — everything that
- * must survive the workspace surface's unmounts), and coordinates the two
- * separable modules — the workspace surface (create, list, rename, delete,
- * submission) and the imperative open-session flow. The Projects tab is home;
- * Help is the discoverable reference. Opening a project drops into the player;
- * leaving flushes the session's autosave before the list is re-read, so the
- * workspace never shows stale data.
+ * must survive the page surfaces' unmounts), and coordinates the two separable
+ * modules — the workspace surface (create, list, rename, delete, submission)
+ * and the imperative open-session flow. The app is served by a history-mode
+ * router (T44): `/` is the Projects home, `/help` the discoverable reference,
+ * and any unknown path falls back to `/`. A persistent navbar — the app name,
+ * the Projects and Help links with active states, and the contributor sign-in
+ * — replaces the old header-plus-tabs pair and renders on every page, inside
+ * the shared page rail. Opening a project still swaps the whole screen to the
+ * player without the navbar (a known interim gap — a later ticket folds the
+ * player into the frame); leaving flushes the session's autosave before the
+ * list is re-read, so the workspace never shows stale data.
  */
 function App({
   controllerFactory = createAudioController,
@@ -120,8 +124,10 @@ function App({
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [tab, setTab] = useState<Tab>('projects');
   const [status, setStatus] = useState<SaveStatus>('idle');
+  /** The routed page — the location is the shell's page, so navigation is what
+   * swaps the workspace surface for Help and what invalidates an in-flight open. */
+  const location = useLocation();
   const [notice, setNotice] = useState<string | null>(null);
   /** The contributor session — the header's sign-in state. Anonymous first paint. */
   const [authState, setAuthState] = useState<AuthState>({ kind: 'anonymous' });
@@ -265,12 +271,12 @@ function App({
     };
   }, [injectedStorage]);
 
-  // Mount and every tab switch invalidate an in-flight open: the player must
-  // never yank the user off a tab they navigated to while a read was running.
+  // Mount and every navigation invalidate an in-flight open: the player must
+  // never yank the user off a page they navigated to while a read was running.
   useEffect(() => {
     sessionFlow.invalidateOpen();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bump on tab changes only
-  }, [tab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bump on navigation only
+  }, [location.pathname]);
 
   /** Starts the Google OAuth flow; the session lands when the flow returns. */
   function handleSignIn(): void {
@@ -287,10 +293,12 @@ function App({
     void authRef.current?.deleteAccount();
   }
 
-  /** Back from the player: settle pending writes, then restore the workspace. */
+  /** Back from the player: settle pending writes, then restore the workspace.
+   * The URL does not change while the player is up (the interim gap — a later
+   * ticket routes the player itself), so exiting lands on whatever page the
+   * open left, which is the Projects home. */
   async function handlePlayerExit(): Promise<void> {
     const exitStatus = await sessionFlow.closeSession();
-    setTab('projects');
     setStatus(exitStatus);
     if (storage !== null) await refreshProjects(storage);
   }
@@ -311,57 +319,54 @@ function App({
 
   return (
     <main>
-      <header className="app-header">
-        <div>
-          <h1>Rehearsal Marks</h1>
-          <p>Pin your score's rehearsal marks to your recording.</p>
-        </div>
-        <ContributorControl
-          state={authState}
-          onSignIn={handleSignIn}
-          onSignOut={handleSignOut}
-          onDeleteAccount={handleDeleteAccount}
-        />
-      </header>
-      <div role="tablist" aria-label="Workspace" className="tabs">
-        <button type="button" role="tab" aria-selected={tab === 'projects'} onClick={() => setTab('projects')}>
-          Projects
-        </button>
-        <button type="button" role="tab" aria-selected={tab === 'help'} onClick={() => setTab('help')}>
-          Help
-        </button>
+      <Navbar
+        authState={authState}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+        onDeleteAccount={handleDeleteAccount}
+      />
+      <div className="page-rail app-page">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              storage !== null ? (
+                <WorkspaceScreen
+                  storage={storage}
+                  projects={projects}
+                  status={status}
+                  notice={notice}
+                  onStatus={setStatus}
+                  onNotice={setNotice}
+                  refreshProjects={refreshProjects}
+                  controllerFactory={controllerFactory}
+                  fetchTitle={fetchTitle}
+                  loadCommunityLabels={loadCommunityLabels}
+                  authState={authState}
+                  onSignIn={handleSignIn}
+                  commonsWrite={commonsWriteRef.current}
+                  openingId={sessionFlow.openingId}
+                  onOpen={sessionFlow.openProject}
+                  onSessionCreated={sessionFlow.startSession}
+                  getOpenToken={sessionFlow.getOpenToken}
+                  workingRef={workingRef}
+                  linkError={linkError}
+                  onLinkError={setLinkError}
+                  creatingFromLink={creatingFromLink}
+                  onCreatingFromLink={setCreatingFromLink}
+                  commonsRows={commonsRows}
+                  onCommonsRows={setCommonsRows}
+                  submittingId={submittingId}
+                  onSubmittingId={setSubmittingId}
+                />
+              ) : null
+            }
+          />
+          <Route path="/help" element={<HelpTab />} />
+          {/* A URL nobody recognises lands on the Projects home (T44). */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </div>
-      {tab === 'projects' && storage !== null && (
-        <WorkspaceScreen
-          storage={storage}
-          projects={projects}
-          status={status}
-          notice={notice}
-          onStatus={setStatus}
-          onNotice={setNotice}
-          refreshProjects={refreshProjects}
-          controllerFactory={controllerFactory}
-          fetchTitle={fetchTitle}
-          loadCommunityLabels={loadCommunityLabels}
-          authState={authState}
-          onSignIn={handleSignIn}
-          commonsWrite={commonsWriteRef.current}
-          openingId={sessionFlow.openingId}
-          onOpen={sessionFlow.openProject}
-          onSessionCreated={sessionFlow.startSession}
-          getOpenToken={sessionFlow.getOpenToken}
-          workingRef={workingRef}
-          linkError={linkError}
-          onLinkError={setLinkError}
-          creatingFromLink={creatingFromLink}
-          onCreatingFromLink={setCreatingFromLink}
-          commonsRows={commonsRows}
-          onCommonsRows={setCommonsRows}
-          submittingId={submittingId}
-          onSubmittingId={setSubmittingId}
-        />
-      )}
-      {tab === 'help' && <HelpTab />}
     </main>
   );
 }
