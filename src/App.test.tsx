@@ -1175,12 +1175,127 @@ describe('App route-as-session project page (T45)', () => {
     await waitForPlayerSettled();
   });
 
-  it('lands an unknown project id back on the Projects home', async () => {
-    // The explicit not-found page is the next slice (T47); until then an
-    // unknown record lands quietly back on the home page, like any unknown path.
+  it('shows the not-found page for a missing project, with a way back to the list', async () => {
+    // A URL that names no record (a deleted project, an edited link) renders
+    // the not-found page rather than a blank or broken surface — and the page
+    // itself offers the way back, not just the navbar (T47).
+    const user = userEvent.setup();
     await renderApp({ initialEntry: '/projects/no-such-project' });
+
+    expect(
+      await screen.findByRole('heading', { name: 'This project could not be found' }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Back to Projects' }));
     expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('a failed record read lands home with a notice, not the not-found page', async () => {
+    // A read that fails is not "not found" — the store was unreachable, not
+    // empty. The page falls back to the Projects home, the workspace's notice
+    // says what went wrong, and the not-found page is not shown (T47 keeps
+    // the T45 behavior for a transient storage error).
+    const storage = await testStorage();
+    const brokenStorage: Storage = {
+      ...storage,
+      projects: {
+        ...storage.projects,
+        get: async () => {
+          throw new Error('IndexedDB unavailable');
+        },
+      },
+    };
+    await renderApp({
+      controller: mockController(),
+      storage: brokenStorage,
+      initialEntry: '/projects/p1',
+    });
+
+    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't open that project. Try again.");
+    expect(
+      screen.queryByRole('heading', { name: 'This project could not be found' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not flash the not-found page when a missing project is followed by a real one', async () => {
+    // A stale missing flag from the previous id must never paint on a live
+    // project's URL: navigating from a missing project to a real one (Back,
+    // or a hand-navigated URL) shows the loading/player surface, not the
+    // not-found page. The real project's read is held open so the flash
+    // window — the committed render before the effect resets the flag — is
+    // wide enough to observe.
+    const storage = await testStorage();
+    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    let releaseRead!: () => void;
+    const pendingGet = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let reads = 0;
+    const slowStorage: Storage = {
+      ...storage,
+      projects: {
+        ...storage.projects,
+        get: async (id) => {
+          reads += 1;
+          // Only the revisit of the real project is held open — the first
+          // read (the missing id) and any other reads run straight through.
+          if (id === 'p1' && reads > 1) await pendingGet;
+          return storage.projects.get(id);
+        },
+      },
+    };
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 372 })),
+    });
+    const { navigateTo } = await renderApp({
+      controller,
+      storage: slowStorage,
+      initialEntry: '/projects/no-such-project',
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'This project could not be found' }),
+    ).toBeInTheDocument();
+
+    await navigateTo('/projects/p1');
+
+    // The real project's read is still in flight — the only surface that may
+    // be showing is the loading placeholder, never the not-found page.
+    expect(
+      screen.queryByRole('heading', { name: 'This project could not be found' }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      releaseRead();
+    });
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+  });
+
+  it('the not-found escape replaces the dead URL, so browser Back does not re-enter it', async () => {
+    // Escaping via the page's own link replaces the dead entry in history
+    // (the old navigate-home-invariant): Back from the Projects list goes
+    // past the dead URL rather than back into the not-found page.
+    const user = userEvent.setup();
+    const storage = await testStorage();
+    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    const { navigateTo, go } = await renderApp({ controller: mockController(), storage });
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    await navigateTo('/projects/no-such-project');
+    expect(
+      await screen.findByRole('heading', { name: 'This project could not be found' }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Back to Projects' }));
+    expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
+
+    await go(-1);
+
+    expect(
+      screen.queryByRole('heading', { name: 'This project could not be found' }),
+    ).not.toBeInTheDocument();
+    // Back landed on the entry before the dead URL — the Projects list.
+    expect(screen.getByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
   });
 
   it('a create that lands behind a navigation saves the project and does not yank the user', async () => {

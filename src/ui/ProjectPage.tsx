@@ -3,6 +3,7 @@ import { Navigate, useParams } from 'react-router';
 import type { AudioController } from '../audio';
 import { createAutosave } from '../storage';
 import type { Autosave, ProjectRecord, SaveStatus, Storage } from '../storage';
+import { NotFoundPage } from './NotFoundPage';
 import { Player } from './Player';
 
 /** One project page session: the autosave over the record and its controller. */
@@ -38,14 +39,23 @@ export interface ProjectPageProps {
  * so navigating away — Back, a navbar link, or a direct swap to another
  * project page — closes it cleanly and the next page opens its own.
  *
- * The explicit not-found page is the next slice (T47); until then a record
- * that no longer exists — or a read that fails — lands quietly back on the
- * Projects home, the same way any unknown path does.
+ * A project id that names no record shows the not-found page (T47) instead of
+ * a blank or broken surface, with the way back to the Projects list in the
+ * page itself; a read that fails (a transient storage error, not a missing
+ * row) keeps landing on the Projects home with the failure on the workspace's
+ * notice line, since "not found" would misdescribe a store that was merely
+ * unreachable.
  */
 export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice }: ProjectPageProps) {
   const { id } = useParams();
   const [session, setSession] = useState<ProjectSession | null>(null);
-  const [missing, setMissing] = useState(false);
+  /**
+   * The id whose record turned out missing — null until one does. Holding the
+   * id, not a boolean, is deliberate: the flag must be compared against the
+   * routed id (`missingId === id`), so a stale value from a previous id can
+   * never paint the not-found page on a live project's URL mid-navigation.
+   */
+  const [missingId, setMissingId] = useState<string | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   // The callbacks are read from refs so the session-build effect's deps stay
   // the stable inputs (the id, the storage, the seam) — the same mount-only
@@ -77,16 +87,15 @@ export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice
     let built: ProjectSession | null = null;
     // A new id is a fresh page: drop the old session, then read the record.
     setSession(null);
-    setMissing(false);
+    setMissingId(null);
     setReadFailed(false);
     void storage.projects
       .get(id)
       .then((record) => {
         if (cancelled) return;
         if (record === undefined) {
-          // A stale row (another tab deleted it) — the not-found page is the
-          // next slice (T47); for now this lands on the Projects home.
-          setMissing(true);
+          // A stale row (another tab deleted it) — the not-found page.
+          setMissingId(id);
           return;
         }
         built = {
@@ -111,7 +120,17 @@ export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice
     // seam changes — never on the shell's incidental re-renders.
   }, [id, storage, controllerFactory]);
 
-  if (id === undefined || missing || readFailed) {
+  // A record that no longer exists is its own surface now (T47): the
+  // not-found page, with the way back in the page itself. The check compares
+  // the flagged id to the routed id, so a stale flag from a previous id can
+  // never paint this page on a live project's URL. The silent bounce to `/`
+  // is left for the impossible no-id case and for a read failure — a
+  // transient storage error is not "not found", so the notice says what went
+  // wrong and home is the honest landing.
+  if (missingId === id) {
+    return <NotFoundPage />;
+  }
+  if (id === undefined || readFailed) {
     return <Navigate to="/" replace />;
   }
   if (session === null) {
