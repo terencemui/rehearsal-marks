@@ -1,0 +1,41 @@
+/* The not-found page (T47): a missing record reads as an empty surface, framed
+   like the workspace's empty state, with the way back offered in the page
+   itself. The heading and link follow the shell's type and accent tokens. */
+
+.not-found {
+  max-width: 480px;
+  margin: 0 auto;
+  border: 1px dashed #ddd;
+  border-radius: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.not-found h2 {
+  margin: 0 0 8px;
+  font: 700 20px/1.2 system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.not-found-copy {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #555;
+}
+
+.not-found-back {
+  display: inline-block;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: none;
+  padding: 6px 12px;
+  font: 600 14px/20px system-ui, sans-serif;
+  color: #0f766e;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.not-found-back:hover {
+  background: #0f766e;
+  color: #fff;
+}
