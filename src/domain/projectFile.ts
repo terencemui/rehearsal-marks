@@ -2,6 +2,7 @@ import { DomainError } from './errors';
 import { deriveLabels } from './labels';
 import type { Marker } from './marker';
 import { setAliases } from './markers';
+import type { Movement } from './movement';
 import { parseYouTubeLink } from './youtube';
 
 /** The only schema version this app reads and writes. */
@@ -46,6 +47,8 @@ export interface AudioMeta {
 export interface ProjectFileData {
   project: ProjectInfo;
   markers: Marker[];
+  /** The recording's movements, optional (ADR-0005): absent or empty is today's behaviour. */
+  movements: Movement[];
   audioMeta: AudioMeta;
 }
 
@@ -70,7 +73,11 @@ export function youtubeAudioMeta(meta: AudioMeta): AudioMeta {
  * Serializes a project to the versioned `project.json` format — the zip
  * export's data file and the community label-set format. Markers are written
  * in time order with their derived `label` for human review only: labels are
- * re-derived by time rank on import, never trusted from the file.
+ * re-derived by time rank within each movement on import, never trusted from
+ * the file. Movements are written only when present — absent means none, so
+ * files that never carried them stay byte-for-byte the files this app always
+ * wrote, and older app versions reading a movement-carrying file ignore the
+ * unknown field rather than break on it.
  */
 export function serializeProjectFile(data: ProjectFileData): string {
   // Uploads omit the discriminator — absent means upload, so upload files
@@ -87,13 +94,14 @@ export function serializeProjectFile(data: ProjectFileData): string {
   const file = {
     schemaVersion: SCHEMA_VERSION,
     project,
-    markers: deriveLabels(data.markers).map((m) => ({
+    markers: deriveLabels(data.markers, data.movements).map((m) => ({
       id: m.id,
       time: m.time,
       label: m.label,
       aliases: m.aliases,
       createdAt: m.createdAt,
     })),
+    ...(data.movements.length > 0 ? { movements: data.movements } : {}),
     audioMeta: data.audioMeta,
   };
 
@@ -153,15 +161,21 @@ export function parseProjectFile(text: string): ProjectFileData {
         throw invalidFile('"audioMeta.source" must be a valid YouTube video link for a YouTube project.');
       }
     }
+    // Movements are optional (ADR-0005): a file without the field reads as a
+    // project with none, exactly as files from before the field existed did.
+    const movements = root.movements === undefined ? [] : parseMovements(root.movements);
     return {
       project,
       markers: parseMarkers(root.markers),
+      movements,
       audioMeta,
     };
   } catch (error) {
     if (
       error instanceof DomainError &&
-      (error.code === 'invalid-value' || error.code === 'invalid-markers')
+      (error.code === 'invalid-value' ||
+        error.code === 'invalid-markers' ||
+        error.code === 'invalid-movements')
     ) {
       throw invalidFile(error.message);
     }
@@ -181,6 +195,10 @@ function invalidValue(reason: string): DomainError {
 
 function invalidMarkers(reason: string): DomainError {
   return new DomainError(reason, 'invalid-markers');
+}
+
+function invalidMovements(reason: string): DomainError {
+  return new DomainError(reason, 'invalid-movements');
 }
 
 // The section readers share these assertion helpers; each throws a neutral
@@ -206,6 +224,14 @@ function assertString(value: unknown, path: string): string {
     throw invalidValue(`${path} must be a string.`);
   }
   return value;
+}
+
+function assertNonEmptyString(value: unknown, path: string): string {
+  const string = assertString(value, path);
+  if (string.trim() === '') {
+    throw invalidValue(`${path} must not be blank.`);
+  }
+  return string;
 }
 
 function assertFiniteNumber(value: unknown, path: string): number {
@@ -286,6 +312,46 @@ export function parseMarkers(value: unknown): Marker[] {
     }
   }
   return validated;
+}
+
+/**
+ * Parses a movements document — the shared validation for every boundary
+ * where movements arrive as JSON: a project file's `"movements"` and a
+ * Commons label-set row's movements document. Validates shape, enforces
+ * unique ids and strictly increasing starts (ADR-0005), so a hand-edited
+ * document cannot smuggle in state the surface cannot draw. Errors are
+ * neutral DomainErrors; the owning boundary rebrands them.
+ */
+export function parseMovements(value: unknown): Movement[] {
+  const raw = assertArray(value, '"movements"');
+  const movements = raw.map((item, index) => {
+    const movement = assertObject(item, `"movements[${index}]"`);
+    return {
+      id: assertString(movement.id, `"movements[${index}].id"`),
+      name: assertNonEmptyString(movement.name, `"movements[${index}].name"`),
+      start: assertNonNegativeNumber(movement.start, `"movements[${index}].start"`),
+    };
+  });
+
+  // Movement ids are identity; two sharing one would make membership
+  // derivation ambiguous.
+  const seenIds = new Set<string>();
+  for (const movement of movements) {
+    if (seenIds.has(movement.id)) {
+      throw invalidMovements(`"movements" contain duplicate id "${movement.id}".`);
+    }
+    seenIds.add(movement.id);
+  }
+
+  // Starts are strictly increasing: a boundary that moves backwards makes the
+  // latest-start-≤-time rule point two movements at the same stretch.
+  for (let i = 1; i < movements.length; i += 1) {
+    if (movements[i].start <= movements[i - 1].start) {
+      throw invalidMovements('"movements" starts must be strictly increasing.');
+    }
+  }
+
+  return movements;
 }
 
 function readAudioMeta(value: unknown): AudioMeta {

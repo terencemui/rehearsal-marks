@@ -211,15 +211,21 @@ towers over the recording. */
   overflow-y: auto;
 }
 
+/* Rows: label — alias on the left, the timestamp flush right in the shared
+   clock column (`space-between` pushes the time to the right edge). The row's
+   left padding is the marker's indent under its movement header (which sits at
+   the panel's 10px inset), so the letter markers read as nested under their
+   movement while the movement names stay flush. */
 .player-marker-list li button {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 14px;
   width: 100%;
   border: 0;
   background: transparent;
   cursor: pointer;
-  padding: 7px 10px;
+  padding: 7px 10px 7px 16px;
   border-radius: 6px;
   text-align: left;
   font: 400 15px/22px system-ui, sans-serif;
@@ -247,7 +253,60 @@ towers over the recording. */
 .player-marker-time {
   min-width: 52px;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   color: #64748b;
+}
+
+/* The sticky movement headers (ADR-0005). Each movement's `<li>` pins to the
+   list's top while its group scrolls under it, then the next movement's header
+   scrolls in and takes its place — the headers read as the list's own table of
+   contents. The header is a full-bleed divider band (`#f1f5f9` over the list's
+   white, with the panel's bottom edge as its rule), the movement name flush at
+   the panel's 10px inset — the marker rows' 16px indent is measured from it —
+   and the movement's start time sharing the rows' right-aligned clock column.
+   Scoped under `.player-marker-movement` so it outranks the base row rule
+   (`.player-marker-list li button`), which would otherwise win the
+   specificity fight and lay the header out as another row. */
+.player-marker-movement {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.player-marker-movement .player-movement-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: #f1f5f9;
+  cursor: pointer;
+  padding: 6px 10px;
+  text-align: left;
+  font: 400 15px/22px system-ui, sans-serif;
+  color: #334155;
+}
+
+/* The orphan header (markers before the first movement) is a divider, not a
+   control — it names the group and never seeks. */
+.player-marker-movement .player-movement-header:not(button) {
+  cursor: default;
+}
+
+.player-marker-movement button.player-movement-header:hover {
+  background: #e2e8f0;
+}
+
+/* The movement name: the header's one accent — semibold, ink — so the four
+   names read as the section headers while their times and rows stay quiet. */
+.player-movement-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 /* The YouTube failure card: the honest state when the video cannot play.

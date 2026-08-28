@@ -40,6 +40,7 @@ export function mockCommonsWriteBackend(rows: LabelSetRow[] = []): MockCommonsWr
         title: values.title,
         duration: values.duration,
         markers: values.markers,
+        movements: values.movements,
         publication_status: 'pending',
         created_at: '2026-08-20T12:00:00Z',
         updated_at: '2026-08-20T12:00:00Z',

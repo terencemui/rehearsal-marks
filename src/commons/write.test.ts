@@ -15,6 +15,7 @@ const VALUES: LabelSetValues = {
     { id: 'm1', time: 10, aliases: [], createdAt: 1 },
     { id: 'm2', time: 222.35, aliases: ['Recap'], createdAt: 2 },
   ],
+  movements: [],
 };
 
 describe('createCommonsWriteController over a backend', () => {
@@ -39,6 +40,7 @@ describe('createCommonsWriteController over a backend', () => {
       title: VALUES.title,
       duration: VALUES.duration,
       markers: VALUES.markers,
+      movements: VALUES.movements,
     });
     expect(backend.insertLabelSet).not.toHaveBeenCalled();
   });

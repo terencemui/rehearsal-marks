@@ -74,10 +74,10 @@ export async function loadPublishedLabelSet(
 ): Promise<LabelSetReadRow | null> {
   if (config === null) return null;
   const url = new URL('/rest/v1/label_sets', config.supabaseUrl);
-  // The read projection only: identity, marks, and the duration they seed.
-  // Contributor identity and stamps stay on the write path — an anonymous
-  // reader never receives them.
-  url.searchParams.set('select', 'video_id,duration,markers');
+  // The read projection only: identity, marks, movements, and the duration
+  // they seed. Contributor identity and stamps stay on the write path — an
+  // anonymous reader never receives them.
+  url.searchParams.set('select', 'video_id,duration,markers,movements');
   url.searchParams.set('video_id', `eq.${videoId}`);
   url.searchParams.set('publication_status', 'eq.published');
   url.searchParams.set('limit', '1');

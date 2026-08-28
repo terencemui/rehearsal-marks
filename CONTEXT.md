@@ -15,7 +15,7 @@ A point in time on a recording that pins one rehearsal mark; carries its time an
 _Avoid_: pin, bookmark, mark
 
 **Label**:
-The letter a marker displays (A, B, … Z, AA, AB, …), derived from its time rank; never stored as truth.
+The letter a marker displays (A, B, … Z, AA, AB, …), derived from its time rank within its movement — restarting at A for each movement — and never stored as truth.
 _Avoid_: letter, index, number
 
 **Alias**:
@@ -31,6 +31,10 @@ _Avoid_: file, document, track
 **Recording**:
 The performance a project is built on — a YouTube video, streamed from Google.
 _Avoid_: audio, media, clip
+
+**Movement**:
+A named subdivision of a recording — a self-contained portion of the musical work, such as a symphony's first movement. Each movement has a name and a start time; its extent runs to the next movement's start or the recording's end. A project may carry any number.
+_Avoid_: part, section, track
 
 **Recording identity**:
 The facts that make a label set applicable to exactly one recording: the video ID (stored as its canonical URL), with duration as a soft check.

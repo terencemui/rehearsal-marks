@@ -9,14 +9,16 @@
  */
 
 import { parseProjectFile, parseYouTubeLink } from '../domain';
-import type { Marker } from '../domain';
+import type { Marker, Movement } from '../domain';
 import type { LabelSetReadRow } from '../commons/labelSet';
 import { loadPublishedLabelSet } from '../commons/load';
 import type { CommonsReadDependencies } from '../commons/load';
 
-/** A community label set that checked out: the marks and the video's known duration. */
+/** A community label set that checked out: the marks, the movements, and the video's known duration. */
 export interface CommunityLabelSet {
   markers: Marker[];
+  /** The recording's movements, optional (ADR-0005) — copied in with the marks. */
+  movements: Movement[];
   /**
    * Seconds — the video's known duration. Seeded into the project so a video
    * that never reports its own duration (one that cannot play) still has an
@@ -50,7 +52,7 @@ export function validateYouTubeLabelSet(text: string, videoId: string): Communit
   }
   if (data.project.source !== 'youtube') return null;
   if (videoIdOf(data.audioMeta.source) !== videoId) return null;
-  return { markers: data.markers, duration: data.audioMeta.duration };
+  return { markers: data.markers, movements: data.movements, duration: data.audioMeta.duration };
 }
 
 /**
@@ -63,7 +65,7 @@ export function communityLabelSetFromRow(
   videoId: string,
 ): CommunityLabelSet | null {
   if (row.video_id !== videoId) return null;
-  return { markers: row.markers, duration: row.duration };
+  return { markers: row.markers, movements: row.movements, duration: row.duration };
 }
 
 /**

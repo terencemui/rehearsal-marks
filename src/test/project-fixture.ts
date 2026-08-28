@@ -20,6 +20,7 @@ export function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRe
     videoId: 'dQw4w9WgXcQ',
     duration: 123.456,
     markers: [marker('m1', 10), marker('m2', 20)],
+    movements: [],
     playerMode: 'label',
     ...overrides,
   };

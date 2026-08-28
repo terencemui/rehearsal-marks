@@ -24,6 +24,7 @@ function labelsetFile(url: string): string {
       { id: 'm1', time: 10, label: 'A', aliases: ['Recap'], createdAt: 1 },
       { id: 'm2', time: 222.35, label: 'B', aliases: [], createdAt: 2 },
     ],
+    movements: [],
     audioMeta: {
       sha256: '',
       duration: 604.2,
@@ -65,6 +66,7 @@ describe('validateYouTubeLabelSet', () => {
         { id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 },
         { id: 'm2', time: 222.35, aliases: [], createdAt: 2 },
       ],
+      movements: [],
       duration: 604.2,
     });
   });
@@ -107,6 +109,7 @@ describe('communityLabelSetFromRow', () => {
   it('checks out a row naming the video as the set the project copies', () => {
     expect(communityLabelSetFromRow(labelSetRow(), COMMUNITY_VIDEO_ID)).toEqual({
       markers: labelSetRow().markers,
+      movements: [],
       duration: 604.2,
     });
   });
@@ -133,7 +136,7 @@ describe('loadCommunityLabelSet', () => {
       fetchText: respondWith(JSON.stringify([labelSetRow()])),
       config: CONFIG,
     });
-    expect(set).toEqual({ markers: labelSetRow().markers, duration: 604.2 });
+    expect(set).toEqual({ markers: labelSetRow().markers, movements: [], duration: 604.2 });
   });
 
   it('returns null when the Commons has no published set for the video', async () => {

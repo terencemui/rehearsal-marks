@@ -13,12 +13,11 @@ import {
   canonicalYouTubeUrl,
   deriveLabels,
   formatWholeSeconds,
-  markerForLetter,
   nextMarker,
   practiceReadout,
   previousMarker,
 } from '../domain';
-import type { LabeledMarker } from '../domain';
+import type { LabeledMarker, Movement } from '../domain';
 import type { Autosave, ProjectRecord } from '../storage';
 import { MarkersPanel } from './MarkersPanel';
 import { PracticeReadout } from './PracticeReadout';
@@ -70,11 +69,10 @@ const STACKED_MARKERS_MIN = 120;
  * marker control, the marker inspector, delete-with-undo, and the editing
  * keyboard shortcuts all left, and with them marker selection: a marker row
  * click jumps, never selects. The only surviving keys are navigation: Space to
- * play/pause, ←/→ to seek ∓5s, ↑/↓ to walk the marks (wrapping), and A–Z to
- * jump straight to that mark — M is no longer a special case, just another
- * letter. `Alt`+`←` reverts to the browser's Back, an accepted consequence.
- * The one mutation the player makes is stamping the measured duration after
- * load; everything audible goes through the `controller`.
+ * play/pause, ←/→ to seek ∓5s, ↑/↓ to walk the marks (wrapping). `Alt`+`←`
+ * reverts to the browser's Back, an accepted consequence. The one mutation the
+ * player makes is stamping the measured duration after load; everything audible
+ * goes through the `controller`.
  *
  * The player page is shell chrome (T45): the persistent navbar and the shared
  * page rail (a maximum content width with fluid side margins) frame it — the
@@ -90,10 +88,13 @@ const STACKED_MARKERS_MIN = 120;
  * carries no marks: the flags left the strip for the markers panel, a
  * scrollable list in the side column where each marker is a row — timestamp,
  * then `label — alias` — and the row holding the playhead is highlighted. A
- * click on the bar seeks; a marker row click jumps to that marker. The video
- * column keeps only the recording (the audio layer's own ruler band is hidden
- * with CSS), and everything is a percentage of the recording, so nothing
- * scrolls: the fit-to-viewport zoom machinery is gone.
+ * click on the bar seeks; a marker row click jumps to that marker. When the
+ * recording has movements (ADR-0005) the rows group under sticky movement
+ * headers that jump to the movement's start, and the rehearsal letters
+ * restart at A within each movement. The video column keeps only the
+ * recording (the audio layer's own ruler band is hidden with CSS), and
+ * everything is a percentage of the recording, so nothing scrolls: the
+ * fit-to-viewport zoom machinery is gone.
  *
  * A settled-state marker on the player's root (`data-settled`) signals that
  * the load has resolved. It means *settled*, not *playable*: it is set on
@@ -146,7 +147,13 @@ export function Player({
   // The playback store lives behind the seam; React subscribes to it directly.
   const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
 
-  const labeled = useMemo(() => deriveLabels(current.markers), [current.markers]);
+  // Labels derive from the recording's movements (ADR-0005): they restart at A
+  // within each movement, so a movement's letters read the same whether the
+  // piece is one movement or four.
+  const labeled = useMemo(
+    () => deriveLabels(current.markers, current.movements),
+    [current.markers, current.movements],
+  );
   const duration = playback.duration > 0 ? playback.duration : current.duration;
 
   /** Applies the player's one mutation: the autosave gets it, React mirrors it. */
@@ -164,6 +171,15 @@ export function Player({
    */
   function handleMarkerSeek(marker: LabeledMarker): void {
     controller.seek(marker.time);
+  }
+
+  /**
+   * A movement header click (ADR-0005): jump to the movement's start. Like a
+   * marker row, the header is a navigation surface — it seeks and never
+   * selects.
+   */
+  function handleMovementSeek(movement: Movement): void {
+    controller.seek(movement.start);
   }
 
   /** A track click: seek to the clicked position, clamped to the recording. */
@@ -239,16 +255,6 @@ export function Player({
       if (target === null) return;
       event.preventDefault();
       controller.seek(target.time);
-      return;
-    }
-    if (plain && /^[a-z]$/i.test(event.key)) {
-      // A–Z jumps straight to that marker — "take it from C" is one keypress.
-      // M is no special case: it is just the letter for the marker labelled M.
-      const target = markerForLetter(labeled, event.key);
-      if (target !== null) {
-        event.preventDefault();
-        controller.seek(target.time);
-      }
       return;
     }
   };
@@ -471,9 +477,11 @@ export function Player({
           />
           <MarkersPanel
             markers={labeled}
+            movements={current.movements}
             duration={duration}
             activeId={activeMarker?.id ?? null}
             onSeek={handleMarkerSeek}
+            onSeekMovement={handleMovementSeek}
             maxHeight={markersMaxHeight ?? undefined}
           />
         </div>

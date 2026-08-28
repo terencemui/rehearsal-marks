@@ -41,6 +41,7 @@ function fileData(): ProjectFileData {
       source: 'upload',
     },
     markers: [marker('a', 30, ['Recap']), marker('b', 10), marker('c', 20, ['Coda'])],
+    movements: [],
     audioMeta,
   };
 }
@@ -108,6 +109,41 @@ describe('serializeProjectFile', () => {
       { id: 'a', time: 30, label: 'C', aliases: ['Recap'], createdAt: 0 },
     ]);
   });
+
+  it('writes the movements array only when the project has them', () => {
+    // A flat project writes no movements key at all, so its file stays
+    // byte-identical to the pre-movement app — old files round-trip unchanged.
+    const flat = JSON.parse(serializeProjectFile(fileData())) as Record<string, unknown>;
+    expect(flat).not.toHaveProperty('movements');
+
+    const withMovements = {
+      ...fileData(),
+      movements: [{ id: 'm1', name: 'I. Allegro', start: 0 }],
+    };
+    const parsed = JSON.parse(serializeProjectFile(withMovements)) as {
+      movements: Array<{ id: string; name: string; start: number }>;
+    };
+    expect(parsed.movements).toEqual(withMovements.movements);
+  });
+
+  it('derives the serialized labels within each movement', () => {
+    const withMovements = {
+      ...fileData(),
+      movements: [
+        { id: 'm1', name: 'I. Allegro', start: 0 },
+        { id: 'm2', name: 'II. Adagio', start: 15 },
+      ],
+    };
+
+    const parsed = JSON.parse(serializeProjectFile(withMovements)) as {
+      markers: Array<{ id: string; label: string }>;
+    };
+    const labels = Object.fromEntries(parsed.markers.map((m) => [m.id, m.label]));
+
+    // b(10) sits in the first movement → A; c(20) and a(30) restart the
+    // second movement at A, B — the letters read the same within each.
+    expect(labels).toEqual({ b: 'A', c: 'A', a: 'B' });
+  });
 });
 
 /** Field-level equality — marker array order is not a field (time rank is what matters). */
@@ -116,6 +152,7 @@ function expectProjectFileEquals(actual: ProjectFileData, expected: ProjectFileD
 
   expect(actual.project).toEqual(expected.project);
   expect(actual.audioMeta).toEqual(expected.audioMeta);
+  expect(actual.movements).toEqual(expected.movements);
   expect(byId(actual.markers)).toEqual(byId(expected.markers));
 }
 
@@ -260,7 +297,11 @@ describe('parseProjectFile', () => {
     expectDomainError(() => parseProjectFile(JSON.stringify(parsed)), 'invalid-project-file');
   });
 
-  it('rejects an alias that collides with any final derived label, including one later in the file', () => {
+  it('accepts an alias that matches a derived label — the collision rule is gone', () => {
+    // ADR-0005: the alias-vs-label collision rule existed only to keep the A–Z
+    // letter-jump keys unambiguous. With the keys gone, an alias may read as a
+    // derived label — even one that only exists once time order is known (here,
+    // "C" is marker a's label, and this earlier marker may claim it too).
     const data = fileData();
     const parsed = JSON.parse(serializeProjectFile(data)) as {
       markers: Array<Record<string, unknown>>;
@@ -268,7 +309,8 @@ describe('parseProjectFile', () => {
     // Serialized order is b(10), c(20), a(30); "C" only exists once a is in.
     (parsed.markers[0] as Record<string, unknown>).aliases = ['C'];
 
-    expectDomainError(() => parseProjectFile(JSON.stringify(parsed)), 'invalid-project-file');
+    const file = parseProjectFile(JSON.stringify(parsed));
+    expect(file.markers[0].aliases).toEqual(['C']);
   });
 
   it('rejects empty, over-long, duplicate, and already-taken aliases', () => {
@@ -298,6 +340,66 @@ describe('parseProjectFile', () => {
 
     expect(imported.markers.find((m) => m.id === 'c')?.aliases).toEqual(['Coda']);
   });
+
+  it('tolerates an absent movements array as no movements', () => {
+    // Flat projects never serialize the movements key; reading one back is
+    // exactly the pre-movement project — one flat label sequence.
+    const parsed = JSON.parse(serializeProjectFile(fileData())) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty('movements');
+
+    expect(parseProjectFile(JSON.stringify(parsed)).movements).toEqual([]);
+  });
+
+  it('round-trips movements — their own section, parsed as the domain model', () => {
+    const withMovements = {
+      ...fileData(),
+      movements: [
+        { id: 'm1', name: 'I. Allegro', start: 0 },
+        { id: 'm2', name: 'II. Andante cantabile', start: 831 },
+      ],
+    };
+
+    expectProjectFileEquals(parseProjectFile(serializeProjectFile(withMovements)), withMovements);
+  });
+
+  it.each([
+    ['movements is not an array', (file: Record<string, unknown>) => (file.movements = {})],
+    [
+      'movement start is a string',
+      (file: Record<string, unknown>) => ((file.movements as Array<Record<string, unknown>>)[0]).start = '10',
+    ],
+    [
+      'movement start is negative',
+      (file: Record<string, unknown>) => ((file.movements as Array<Record<string, unknown>>)[0]).start = -1,
+    ],
+    [
+      'movement name is blank',
+      (file: Record<string, unknown>) => ((file.movements as Array<Record<string, unknown>>)[0]).name = '   ',
+    ],
+    [
+      'movement id is not a string',
+      (file: Record<string, unknown>) => ((file.movements as Array<Record<string, unknown>>)[0]).id = 7,
+    ],
+    [
+      'movement starts are not strictly increasing',
+      (file: Record<string, unknown>) => ((file.movements as Array<Record<string, unknown>>)[1]).start = 0,
+    ],
+  ] as Array<[string, (file: Record<string, unknown>) => void]>)(
+    'rejects a file where %s',
+    (_name, breakIt) => {
+      const data = {
+        ...fileData(),
+        movements: [
+          { id: 'm1', name: 'I. Allegro', start: 0 },
+          { id: 'm2', name: 'II. Andante cantabile', start: 831 },
+        ],
+      };
+      const parsed = JSON.parse(serializeProjectFile(data)) as Record<string, unknown>;
+      breakIt(parsed);
+
+      expectDomainError(() => parseProjectFile(JSON.stringify(parsed)), 'invalid-project-file');
+    },
+  );
 
   it('rejects a JSON root that is not an object', () => {
     for (const root of ['"hello"', 'null', '[1, 2]']) {

@@ -1,6 +1,5 @@
 import { DomainError } from './errors';
 import { newId } from './id';
-import { deriveLabels } from './labels';
 import type { Marker } from './marker';
 
 export const ALIAS_MAX_LENGTH = 16;
@@ -32,10 +31,12 @@ function updateAt(
 
 /**
  * Trims aliases and enforces every alias rule: non-empty, ≤ ALIAS_MAX_LENGTH,
- * no repeats within the set, and case-insensitive uniqueness across every
- * other marker's aliases and every derived label. Case-insensitive because
- * letter keys navigate by label, and a case-twin of a label or alias would
- * make the marker list ambiguous. Returns the normalized aliases.
+ * no repeats within the set, and case-insensitive uniqueness against every
+ * other marker's aliases only. The former alias-vs-label collision rule is
+ * gone with the A–Z letter jumps (ADR-0005): it existed only to keep letter
+ * navigation unambiguous, and labels restart per movement now, so a marker
+ * labelled A and an alias "A" no longer name the same thing. Returns the
+ * normalized aliases.
  */
 function validateAliases(
   raw: string[],
@@ -58,15 +59,12 @@ function validateAliases(
 
   const lower = (s: string) => s.toLowerCase();
 
-  const takenBy = new Map<string, 'alias' | 'label'>();
+  const taken = new Set<string>();
   for (const m of markers) {
     if (m.id === ownId) continue;
     for (const alias of m.aliases) {
-      takenBy.set(lower(alias), 'alias');
+      taken.add(lower(alias));
     }
-  }
-  for (const { label } of deriveLabels(markers)) {
-    takenBy.set(lower(label), 'label');
   }
 
   const withinSet = new Set<string>();
@@ -76,14 +74,7 @@ function validateAliases(
     }
     withinSet.add(lower(alias));
 
-    const takenAs = takenBy.get(lower(alias));
-    if (takenAs === 'label') {
-      throw new DomainError(
-        `Alias "${alias}" collides with a marker label.`,
-        'alias-label-collision',
-      );
-    }
-    if (takenAs === 'alias') {
+    if (taken.has(lower(alias))) {
       throw new DomainError(
         `Alias "${alias}" is already used by another marker.`,
         'alias-duplicate',

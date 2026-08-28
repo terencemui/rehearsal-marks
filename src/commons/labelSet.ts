@@ -18,10 +18,11 @@ import {
   canonicalYouTubeUrl,
   isVideoId,
   parseMarkers,
+  parseMovements,
   parseYouTubeLink,
   youtubeAudioMeta,
 } from '../domain';
-import type { AudioMeta, Marker, ProjectFileData } from '../domain';
+import type { AudioMeta, Marker, Movement, ProjectFileData } from '../domain';
 import type { ProjectRecord } from '../storage';
 
 export const PUBLICATION_STATUSES = ['pending', 'published', 'rejected'] as const;
@@ -38,6 +39,8 @@ export interface LabelSetRow {
   /** Seconds, float — the soft check of recording identity. */
   duration: number;
   markers: Marker[];
+  /** The recording's movements (ADR-0005) — optional: absent or empty is today's behaviour. */
+  movements: Movement[];
   publication_status: PublicationStatus;
   /** ISO 8601, as PostgREST serializes timestamptz. */
   created_at: string;
@@ -52,6 +55,7 @@ export interface LabelSetValues {
   title: string;
   duration: number;
   markers: Marker[];
+  movements: Movement[];
 }
 
 /**
@@ -59,13 +63,13 @@ export interface LabelSetValues {
  * ownership, and publication status are all out of reach — the update grant
  * and the row's round-trip key make re-submission an UPDATE of the same row.
  */
-export type LabelSetUpdate = Pick<LabelSetValues, 'title' | 'duration' | 'markers'>;
+export type LabelSetUpdate = Pick<LabelSetValues, 'title' | 'duration' | 'markers' | 'movements'>;
 
 /**
- * The read projection of a `label_sets` row — the three facts an anonymous
- * lookup requests and consumes. The full row (contributor identity, stamps,
+ * The read projection of a `label_sets` row — the facts an anonymous lookup
+ * requests and consumes. The full row (contributor identity, stamps,
  * publication status) belongs to the write and round-trip paths; a reader
- * needs only the identity, the marks, and the duration they seed.
+ * needs only the identity, the marks, the movements, and the duration they seed.
  */
 export interface LabelSetReadRow {
   /** The 11-character YouTube video ID — the row's recording-identity key. */
@@ -73,6 +77,7 @@ export interface LabelSetReadRow {
   /** Seconds, float — the soft check of recording identity. */
   duration: number;
   markers: Marker[];
+  movements: Movement[];
 }
 
 /** The submissions list as a lookup by row id — the badges' source. */
@@ -90,6 +95,7 @@ export function parseLabelSetRow(value: unknown): LabelSetRow {
   const row = assertObject(value, 'the row');
 
   const markers = readRowMarkers(row.markers);
+  const movements = readRowMovements(row.movements);
 
   return {
     id: assertNonEmptyString(row.id, '"id"'),
@@ -98,6 +104,7 @@ export function parseLabelSetRow(value: unknown): LabelSetRow {
     title: assertNonEmptyString(row.title, '"title"'),
     duration: assertNonNegativeNumber(row.duration, '"duration"'),
     markers,
+    movements,
     publication_status: readStatus(row.publication_status),
     created_at: assertTimestamp(row.created_at, '"created_at"'),
     updated_at: assertTimestamp(row.updated_at, '"updated_at"'),
@@ -118,6 +125,7 @@ export function parseLabelSetReadRow(value: unknown): LabelSetReadRow {
     video_id: readVideoId(row.video_id),
     duration: assertNonNegativeNumber(row.duration, '"duration"'),
     markers: readRowMarkers(row.markers),
+    movements: readRowMovements(row.movements),
   };
 }
 
@@ -169,12 +177,26 @@ export function labelSetValuesFromProjectFile(data: ProjectFileData): LabelSetVa
     throw error;
   }
 
+  let movements: Movement[];
+  try {
+    movements = parseMovements(data.movements);
+  } catch (error) {
+    if (
+      error instanceof DomainError &&
+      (error.code === 'invalid-value' || error.code === 'invalid-movements')
+    ) {
+      throw invalidLabelSet(error.message);
+    }
+    throw error;
+  }
+
   return {
     id: data.project.id,
     video_id: link.videoId,
     title: data.project.name,
     duration: data.audioMeta.duration,
     markers,
+    movements,
   };
 }
 
@@ -193,6 +215,7 @@ export function projectFileFromLabelSetRow(row: LabelSetRow): ProjectFileData {
       source: 'youtube',
     },
     markers: row.markers,
+    movements: row.movements,
     // The same youtubeAudioMetaFrom the export path passes through, so the
     // row direction and the export direction can never drift apart on which
     // fields describe stored bytes and which carry identity.
@@ -218,6 +241,7 @@ export function projectFileFromRecord(record: ProjectRecord): ProjectFileData {
       source: 'youtube',
     },
     markers: record.markers,
+    movements: record.movements,
     audioMeta: youtubeAudioMetaFrom({ name: record.name, duration: record.duration, videoId: record.videoId }),
   };
 }
@@ -261,6 +285,26 @@ function readRowMarkers(value: unknown): Marker[] {
     if (
       error instanceof DomainError &&
       (error.code === 'invalid-value' || error.code === 'invalid-markers')
+    ) {
+      throw invalidRow(error.message);
+    }
+    throw error;
+  }
+}
+
+/**
+ * The row's movements through the domain's own rules — the shared gate of both
+ * parsers. Absent (a row written before movements existed) reads as none, the
+ * same tolerance the project file applies.
+ */
+function readRowMovements(value: unknown): Movement[] {
+  if (value === undefined) return [];
+  try {
+    return parseMovements(value);
+  } catch (error) {
+    if (
+      error instanceof DomainError &&
+      (error.code === 'invalid-value' || error.code === 'invalid-movements')
     ) {
       throw invalidRow(error.message);
     }

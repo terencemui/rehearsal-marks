@@ -224,6 +224,7 @@ describe('App create from a YouTube link', () => {
     });
     const community: CommunityLabelSet = {
       markers: [{ id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 }],
+      movements: [],
       duration: 604.2,
     };
     const { storage } = await renderApp({
@@ -236,7 +237,7 @@ describe('App create from a YouTube link', () => {
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     // The copied marks render as marker rows — the first label in time order.
-    expect(await screen.findByRole('button', { name: '00:10 A — Recap' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /A — Recap/ })).toBeInTheDocument();
     // No posture toggle, no Add marker — the transport is gone (T39).
     expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
@@ -282,7 +283,7 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(await screen.findByRole('button', { name: '00:10 A — Recap' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /A — Recap/ })).toBeInTheDocument();
     // The one query was the anonymous published read, keyed on the video ID.
     const [requested] = fetchMock.mock.calls[0] as [string];
     expect(requested).toContain(`video_id=eq.${VIDEO_ID}`);
@@ -905,6 +906,7 @@ describe('App Commons submission', () => {
         title: VIDEO_TITLE,
         duration: 604.2,
         markers: [],
+        movements: [],
       }),
     );
     // The refresh after the insert answers with the moderation gate's default.

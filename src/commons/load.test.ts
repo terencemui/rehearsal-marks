@@ -49,7 +49,7 @@ describe('loadPublishedLabelSet', () => {
     expect(parsed.searchParams.get('limit')).toBe('1');
     // The read projection only: contributor identity and stamps never reach
     // an anonymous reader.
-    expect(parsed.searchParams.get('select')).toBe('video_id,duration,markers');
+    expect(parsed.searchParams.get('select')).toBe('video_id,duration,markers,movements');
     // The anon key names the role RLS applies.
     expect(request!.headers).toEqual({
       apikey: CONFIG.anonKey,
@@ -67,17 +67,27 @@ describe('loadPublishedLabelSet', () => {
     expect(set?.duration).toBe(604.2);
   });
 
-  it('parses a projected row — the three fields the read consumes', async () => {
+  it('parses a projected row — the fields the read consumes', async () => {
     // The Commons answers the requested projection; a full row parses the
     // same way, but the minimal answer is what the query asks for.
     const body = JSON.stringify([
-      { video_id: COMMUNITY_VIDEO_ID, duration: 604.2, markers: labelSetRow().markers },
+      {
+        video_id: COMMUNITY_VIDEO_ID,
+        duration: 604.2,
+        markers: labelSetRow().markers,
+        movements: [],
+      },
     ]);
     const set = await loadPublishedLabelSet(COMMUNITY_VIDEO_ID, {
       fetchText: vi.fn(async () => body),
       config: CONFIG,
     });
-    expect(set).toEqual({ video_id: COMMUNITY_VIDEO_ID, duration: 604.2, markers: labelSetRow().markers });
+    expect(set).toEqual({
+      video_id: COMMUNITY_VIDEO_ID,
+      duration: 604.2,
+      markers: labelSetRow().markers,
+      movements: [],
+    });
   });
 
   it('returns null when no published set exists', async () => {
