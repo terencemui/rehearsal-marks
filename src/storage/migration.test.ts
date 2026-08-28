@@ -95,6 +95,7 @@ describe('v2 migration — YouTube-only schema', () => {
       videoId: 'dQw4w9WgXcQ',
       duration: 300,
       markers: [{ id: 'm1', time: 10, aliases: [], createdAt: 500 }],
+      movements: [],
       playerMode: 'label',
     });
     storage.close();

@@ -409,45 +409,18 @@ describe('Player navigation — arrow jumps', () => {
   });
 });
 
-describe('Player navigation — letter jumps', () => {
-  it('jumps straight to a marker by its letter, case-insensitively, without ever selecting', async () => {
-    const user = userEvent.setup();
-    const { container, controller } = await renderLoadedPlayer();
-
-    await user.keyboard('b');
-    expect(controller.seek).toHaveBeenLastCalledWith(20);
-
-    await user.keyboard('{Shift>}b{/Shift}');
-    expect(controller.seek).toHaveBeenLastCalledWith(20);
-
-    expect(screen.queryByRole('region', { name: 'Marker B' })).not.toBeInTheDocument();
-    expect(selectedMarkerRows(container)).toHaveLength(0);
-  });
-
-  it('blocks the default on a letter that has a marker and leaves the rest alone', async () => {
+describe('Player navigation — letter keys are inert', () => {
+  it('leaves letter keys alone — the A–Z jump is gone (ADR-0005)', async () => {
     const { controller } = await renderLoadedPlayer();
 
-    expect(fireEvent.keyDown(document.body, { key: 'a' })).toBe(false);
-    expect(controller.seek).toHaveBeenLastCalledWith(10);
-
-    expect(fireEvent.keyDown(document.body, { key: 'd' })).toBe(true);
-    expect(controller.seek).toHaveBeenCalledTimes(1);
-  });
-
-  it('makes M just another letter jump — to the marker labelled M, never adding', async () => {
-    const user = userEvent.setup();
-    const { container, controller } = await renderLoadedPlayer(
-      projectRecord({ markers: Array.from({ length: 13 }, (_, i) => marker(`m${i}`, i + 1)) }),
-    );
-    act(() => controller.emitPlayback({ currentTime: 50 }));
-
-    await user.keyboard('m');
-
-    // M jumps to the marker labelled M (the 13th, at 13s) — it no longer
-    // creates a new mark, so the row count is unchanged and one seek happened.
-    expect(markerRows(container)).toHaveLength(13);
-    expect(controller.seek).toHaveBeenCalledTimes(1);
-    expect(controller.seek).toHaveBeenLastCalledWith(13);
+    // A–Z used to jump to the marker with that label — "take it from C" was
+    // one keypress. With labels restarting per movement the jump became
+    // ambiguous and left (ADR-0005); a letter key now does nothing to
+    // playback, stays the browser's own, and never selects.
+    expect(fireEvent.keyDown(document.body, { key: 'a' })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: 'b' })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: 'M' })).toBe(true);
+    expect(controller.seek).not.toHaveBeenCalled();
   });
 });
 
@@ -749,15 +722,19 @@ describe('Player — the timeline bar and markers (T38)', () => {
     expect(markerRows(container)[1]).not.toHaveAttribute('aria-pressed');
   });
 
-  it('lists the markers — timestamp and label — alias — and highlights the active row', async () => {
+  it('lists the markers — label — alias on the left, timestamp on the right — and highlights the active row', async () => {
     const { container, controller } = await renderLoadedPlayer(
       projectRecord({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
     );
 
     const rows = markerRows(container);
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toBe('00:10A — Recap');
-    expect(rows[1].textContent).toBe('00:20B');
+    // The settled layout: the label — alias reads on the left, the timestamp
+    // flush right in the shared clock column.
+    expect(rows[0].querySelector('.player-marker-title')!.textContent).toBe('A — Recap');
+    expect(rows[0].querySelector('.player-marker-time')!.textContent).toBe('00:10');
+    expect(rows[1].querySelector('.player-marker-title')!.textContent).toBe('B');
+    expect(rows[1].querySelector('.player-marker-time')!.textContent).toBe('00:20');
     expect(rows[0].closest('li')).not.toHaveClass('active');
     expect(rows[1].closest('li')).not.toHaveClass('active');
 
@@ -779,6 +756,42 @@ describe('Player — the timeline bar and markers (T38)', () => {
   it('renders no markers panel when the recording has no marks', async () => {
     const { container } = await renderLoadedPlayer(projectRecord({ markers: [] }));
     expect(container.querySelector('.player-markers')).toBeNull();
+  });
+
+  it('groups markers under sticky movement headers and seeks when a header is clicked', async () => {
+    const { container, controller } = await renderLoadedPlayer(
+      projectRecord({
+        markers: [marker('a', 10), marker('b', 500), marker('c', 900), marker('d', 1700)],
+        movements: [
+          { id: 'm1', name: 'I. Allegro', start: 0 },
+          { id: 'm2', name: 'II. Adagio', start: 831 },
+          { id: 'm3', name: 'III. Finale', start: 1620 },
+        ],
+      }),
+    );
+
+    const headers = Array.from(container.querySelectorAll('.player-movement-header'));
+    expect(headers.map((h) => h.querySelector('.player-movement-name')!.textContent)).toEqual([
+      'I. Allegro',
+      'II. Adagio',
+      'III. Finale',
+    ]);
+    // Each header carries its movement's start in the shared clock column.
+    expect(headers[1].querySelector('.player-marker-time')!.textContent).toBe('13:51');
+
+    // Labels restart at A within each movement (ADR-0005).
+    const rows = markerRows(container);
+    expect(rows.map((r) => r.querySelector('.player-marker-title')!.textContent)).toEqual([
+      'A',
+      'B',
+      'A',
+      'A',
+    ]);
+
+    // A movement header click jumps to the movement's start — the fold-in
+    // that the prototype only sketched with a playhead.
+    fireEvent.click(headers[1]);
+    expect(controller.seek).toHaveBeenLastCalledWith(831);
   });
 
   it('retires the zoom machinery: no scroll shell, no content-width fit, no reveal-on-jump', async () => {

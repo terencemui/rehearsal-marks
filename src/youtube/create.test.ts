@@ -150,6 +150,7 @@ describe('createProjectFromYouTubeLink', () => {
         { id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 },
         { id: 'm2', time: 222.35, aliases: [], createdAt: 2 },
       ],
+      movements: [],
       duration: 604.2,
     };
     const { deps } = await dependencies({

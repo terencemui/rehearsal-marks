@@ -49,7 +49,7 @@ describe('addMarker', () => {
     expect(next[0].aliases).toEqual(['Recap']);
   });
 
-  it('rejects a marker whose aliases are invalid or collide on add', () => {
+  it('rejects a marker whose aliases are invalid or duplicate on add', () => {
     const markers = [marker('a', 10), marker('b', 20, ['Recap'])]; // labels A, B
 
     expectDomainError(() => addMarker(markers, marker('c', 30, ['   '])), 'alias-empty');
@@ -62,7 +62,10 @@ describe('addMarker', () => {
       'alias-duplicate',
     );
     expectDomainError(() => addMarker(markers, marker('c', 30, ['recap'])), 'alias-duplicate');
-    expectDomainError(() => addMarker(markers, marker('c', 30, ['b'])), 'alias-label-collision');
+    expectDomainError(
+      () => addMarker(markers, marker('c', 30, ['Recap', 'b'])),
+      'alias-duplicate',
+    );
   });
 
   it('rejects a marker whose id already exists', () => {
@@ -157,11 +160,16 @@ describe('setAliases', () => {
     expectDomainError(() => setAliases(markers, 'a', ['RECAP']), 'alias-duplicate');
   });
 
-  it('rejects an alias that collides with any derived label, including its own', () => {
+  it('accepts an alias that matches a derived label — the collision rule is gone', () => {
+    // ADR-0005: the alias-vs-label collision rule existed only to keep the A–Z
+    // letter-jump keys unambiguous. With the keys gone, an alias may read as
+    // another marker's label — or its own — because labels restart per movement
+    // and no longer name a unique target. The only uniqueness left is among
+    // aliases.
     const markers = [marker('a', 10), marker('b', 20)]; // labels A, B
 
-    expectDomainError(() => setAliases(markers, 'a', ['b']), 'alias-label-collision');
-    expectDomainError(() => setAliases(markers, 'a', ['A']), 'alias-label-collision');
+    expect(setAliases(markers, 'a', ['b'])[0].aliases).toEqual(['b']);
+    expect(setAliases(markers, 'a', ['A'])[0].aliases).toEqual(['A']);
   });
 
   it('accepts any characters within the length limit', () => {

@@ -50,6 +50,7 @@ export function createCommonsWriteController(
           title: values.title,
           duration: values.duration,
           markers: values.markers,
+          movements: values.movements,
         });
       } else {
         await backend.insertLabelSet(values);

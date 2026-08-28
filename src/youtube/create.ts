@@ -70,6 +70,7 @@ export async function createProjectFromYouTubeLink(
   ]);
   const name = title ?? fallbackName(link.videoId);
   const markers = community?.markers ?? [];
+  const movements = community?.movements ?? [];
 
   const createdAt = now();
   const project: ProjectRecord = {
@@ -84,9 +85,10 @@ export async function createProjectFromYouTubeLink(
     // marks has an honest timeline even before the embed reports its own.
     videoId: link.videoId,
     duration: community?.duration ?? 0,
-    // The community set's marks are copied in as the project's own editable
-    // copy — editing them never touches the shared set.
+    // The community set's marks (and their movements) are copied in as the
+    // project's own editable copy — editing them never touches the shared set.
     markers,
+    movements,
     // The project's own rule decides the posture: marks in hand means
     // immediately practiceable (Playback); a bare link arrives with an empty
     // timeline and lands in Label with the marking tools in reach.

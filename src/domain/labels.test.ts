@@ -63,3 +63,53 @@ describe('deriveLabels', () => {
     expect(markers[0]).not.toHaveProperty('label');
   });
 });
+
+describe('deriveLabels with movements', () => {
+  it('restarts the letters at A within each movement', () => {
+    const markers = [
+      marker('a', 10),
+      marker('b', 20),
+      marker('c', 900),
+      marker('d', 1000),
+      marker('e', 2000),
+    ];
+    const movements = [
+      { id: 'm1', name: 'I. Allegro', start: 0 },
+      { id: 'm2', name: 'II. Adagio', start: 831 },
+      { id: 'm3', name: 'III. Finale', start: 1620 },
+    ];
+
+    const labeled = deriveLabels(markers, movements);
+
+    // Each movement's letters read the same, whether the piece is one
+    // movement or four.
+    expect(labeled.map((m) => [m.id, m.label])).toEqual([
+      ['a', 'A'],
+      ['b', 'B'],
+      ['c', 'A'],
+      ['d', 'B'],
+      ['e', 'A'],
+    ]);
+  });
+
+  it('leads markers before the first movement as their own group, labelled from A', () => {
+    const markers = [marker('a', 5), marker('b', 10), marker('c', 40)];
+    const movements = [{ id: 'm1', name: 'I. Allegro', start: 30 }];
+
+    const labeled = deriveLabels(markers, movements);
+
+    // The orphan "before the first movement" group labels from A like any
+    // other, so the movement's own letters still start fresh.
+    expect(labeled.map((m) => [m.id, m.label])).toEqual([
+      ['a', 'A'],
+      ['b', 'B'],
+      ['c', 'A'],
+    ]);
+  });
+
+  it('labels exactly as the flat list when there are no movements', () => {
+    const markers = [marker('a', 10), marker('b', 20)];
+
+    expect(deriveLabels(markers, [])).toEqual(deriveLabels(markers));
+  });
+});

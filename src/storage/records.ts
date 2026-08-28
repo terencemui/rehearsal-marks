@@ -1,4 +1,5 @@
 import type { Marker } from '../domain';
+import type { Movement } from '../domain';
 import { parseYouTubeLink } from '../domain';
 
 /** The player posture persisted per project: Playback (read-only) or Label (editing). */
@@ -26,6 +27,11 @@ export interface ProjectRecord {
   /** Seconds, float — the soft check of recording identity. */
   duration: number;
   markers: Marker[];
+  /**
+   * The recording's movements, optional (ADR-0005): an empty array is the
+   * pre-movement project — one flat label sequence, exactly as always.
+   */
+  movements: Movement[];
   /** The last-used player mode; the project's default on first open. */
   playerMode: PlayerMode;
 }
@@ -73,6 +79,7 @@ interface LegacyRecord {
   source?: unknown;
   audioMeta?: { source?: unknown; duration?: unknown };
   markers?: unknown;
+  movements?: unknown;
   playerMode?: unknown;
 }
 
@@ -102,6 +109,7 @@ export function slimRecordFromStored(value: unknown): ProjectRecord | null {
   }
 
   const markers = Array.isArray(raw.markers) ? (raw.markers as Marker[]) : [];
+  const movements = Array.isArray(raw.movements) ? (raw.movements as Movement[]) : [];
   return {
     id: typeof raw.id === 'string' ? raw.id : '',
     name: typeof raw.name === 'string' ? raw.name : '',
@@ -110,6 +118,7 @@ export function slimRecordFromStored(value: unknown): ProjectRecord | null {
     videoId,
     duration: typeof raw.audioMeta.duration === 'number' ? raw.audioMeta.duration : 0,
     markers,
+    movements,
     // A legacy record without a stored mode gets the same default the player
     // would have applied, so migrated records are canonical.
     playerMode:

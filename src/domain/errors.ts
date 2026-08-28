@@ -7,10 +7,10 @@ export type DomainErrorCode =
   | 'alias-empty'
   | 'alias-too-long'
   | 'alias-duplicate'
-  | 'alias-label-collision'
   | 'invalid-project-file'
   | 'invalid-value'
   | 'invalid-markers'
+  | 'invalid-movements'
   | 'unsupported-schema-version'
   | 'invalid-youtube-link'
   | 'youtube-playlist-link';

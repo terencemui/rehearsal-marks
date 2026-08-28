@@ -6,7 +6,9 @@ export { DomainError, errorMessage } from './errors';
 export type { DomainErrorCode } from './errors';
 export { newId } from './id';
 export { deriveLabels, labelForRank } from './labels';
-export { FRAME_EPSILON, markerForLetter, nextMarker, previousMarker } from './navigation';
+export { FRAME_EPSILON, nextMarker, previousMarker } from './navigation';
+export { movementForTime } from './movement';
+export type { Movement } from './movement';
 export { practiceReadout } from './practice';
 export type { PracticeReadout } from './practice';
 export {
@@ -20,6 +22,6 @@ export {
 export { formatTime, formatWholeSeconds, parseTime } from './time';
 export { canonicalYouTubeUrl, isVideoId, parseYouTubeLink } from './youtube';
 export type { YouTubeLink } from './youtube';
-export { SCHEMA_VERSION, parseMarkers, parseProjectFile, serializeProjectFile, youtubeAudioMeta } from './projectFile';
+export { SCHEMA_VERSION, parseMarkers, parseMovements, parseProjectFile, serializeProjectFile, youtubeAudioMeta } from './projectFile';
 export type { AudioMeta, ProjectFileData, ProjectInfo, ProjectSource } from './projectFile';
 export type { LabeledMarker, Marker } from './marker';

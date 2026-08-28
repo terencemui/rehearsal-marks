@@ -13,6 +13,7 @@ export function labelSetRow(overrides: Partial<LabelSetRow> = {}): LabelSetRow {
     title: 'A labeled performance',
     duration: 604.2,
     markers: [marker('m1', 10, ['Recap'], 1), marker('m2', 222.35, [], 2)],
+    movements: [],
     publication_status: 'published',
     created_at: '2026-08-20T12:00:00Z',
     updated_at: '2026-08-20T12:00:00Z',

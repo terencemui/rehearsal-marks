@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { marker } from '../test/marker-fixture';
 import { deriveLabels } from './labels';
-import { markerForLetter, nextMarker, previousMarker } from './navigation';
+import { nextMarker, previousMarker } from './navigation';
 
 /**
  * The fixture: three markers at 10s, 20s, and 30s — labels A, B, C in time
@@ -71,27 +71,5 @@ describe('previousMarker', () => {
 
   it('returns null when there are no markers', () => {
     expect(previousMarker([], 5)).toBeNull();
-  });
-});
-
-describe('markerForLetter', () => {
-  it('finds a marker by its label, case-insensitively', () => {
-    expect(markerForLetter(abcMarkers(), 'b')?.id).toBe('b');
-    expect(markerForLetter(abcMarkers(), 'B')?.id).toBe('b');
-  });
-
-  it('returns null when no marker has that label', () => {
-    expect(markerForLetter(abcMarkers(), 'd')).toBeNull();
-    expect(markerForLetter([], 'a')).toBeNull();
-  });
-
-  it('matches multi-letter labels only by their full label', () => {
-    // 27 markers: labels A–Z then AA. A single letter never reaches AA.
-    const markers = deriveLabels(
-      Array.from({ length: 27 }, (_, i) => marker(`m${i}`, i + 1)),
-    );
-
-    expect(markerForLetter(markers, 'a')?.id).toBe('m0');
-    expect(markerForLetter(markers, 'aa')?.id).toBe('m26');
   });
 });

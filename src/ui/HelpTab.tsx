@@ -71,24 +71,15 @@ export function HelpTab() {
               <td>Jump to the previous / next marker, wrapping at the ends</td>
             </tr>
             <tr>
-              <td>
-                <kbd>A</kbd>–<kbd>Z</kbd>
-              </td>
-              <td>
-                Jump straight to that marker — <kbd>M</kbd> is just the letter for the marker
-                labelled M
-              </td>
-            </tr>
-            <tr>
-              <td>Click a marker flag</td>
+              <td>Click a marker row</td>
               <td>Jump to it</td>
             </tr>
           </tbody>
         </table>
         <p>
-          Markers are labeled A, B, C… by time order. Jumping never selects a marker and never
-          interrupts playback. Labels continue past <kbd>Z</kbd> (<kbd>AA</kbd>, <kbd>AB</kbd>,{' '}
-          …); the arrow keys reach every marker, including those a single letter key cannot.
+          Markers are labeled A, B, C… by time order, restarting at A within each movement.
+          Jumping never selects a marker and never interrupts playback. Labels continue past{' '}
+          <kbd>Z</kbd> (<kbd>AA</kbd>, <kbd>AB</kbd>, …), and the arrow keys reach every marker.
         </p>
         <p>
           Play, pause, and volume come from the recording's own controls. The player no longer
@@ -106,13 +97,18 @@ export function HelpTab() {
           </li>
           <li>
             A marker can carry an alias — a second name beside its letter, like{' '}
-            <strong>Recap</strong> — which the readout shows and the marker's flag reveals on
+            <strong>Recap</strong> — which the readout shows and the marker's row reveals on
             hover. Aliases are non-empty, trimmed, at most <strong>16 characters</strong>, and
-            unique across all labels and aliases in a project.
+            unique across all aliases in a project.
           </li>
           <li>
-            Marker labels run A, B, C… and continue past Z as AA, AB, … — you never run out, and
-            labels always follow time order.
+            Marker labels run A, B, C… by time order and restart at A within each movement, so a
+            movement's letters always read the same. They continue past Z as AA, AB, … — you
+            never run out.
+          </li>
+          <li>
+            When a recording has movements, the markers group under sticky movement headers —
+            click one to jump to that movement's start.
           </li>
         </ul>
       </section>

@@ -26,6 +26,7 @@ function youtubeFileData(): ProjectFileData {
       source: 'youtube',
     },
     markers: [marker('m1', 10, ['Recap']), marker('m2', 20)],
+    movements: [],
     audioMeta: {
       sha256: '',
       duration: 754.2,
@@ -70,6 +71,7 @@ describe('parseLabelSetRow', () => {
       title: 'Brahms Symphony No. 4, mov. I',
       duration: 754.2,
       markers: [marker('m1', 10, ['Recap']), marker('m2', 20)],
+      movements: [],
       publication_status: 'published',
       created_at: new Date(CREATED_MS).toISOString(),
       updated_at: new Date(UPDATED_MS).toISOString(),
@@ -160,6 +162,7 @@ describe('labelSetValuesFromProjectFile', () => {
       title: 'Brahms Symphony No. 4, mov. I',
       duration: 754.2,
       markers: [marker('m1', 10, ['Recap']), marker('m2', 20)],
+      movements: [],
     });
   });
 
@@ -249,6 +252,7 @@ describe('projectFileFromRecord', () => {
       videoId: VIDEO_ID,
       duration: 754.2,
       markers: [marker('m1', 10, ['Recap']), marker('m2', 20)],
+      movements: [],
       playerMode: 'label',
     });
 
@@ -264,6 +268,7 @@ describe('projectFileFromRecord', () => {
       videoId: VIDEO_ID,
       duration: 754.2,
       markers: [],
+      movements: [],
       playerMode: 'label',
     });
 

@@ -14,10 +14,12 @@ describe('HelpTab', () => {
 
     const keyboard = screen.getByRole('heading', { name: 'Keyboard reference' }).closest('section')!;
     expect(keyboard).toHaveTextContent('Space');
-    expect(keyboard).toHaveTextContent('A–Z');
     expect(keyboard).toHaveTextContent('Seek ∓5 seconds');
-    // One posture only: M is a plain letter jump, and the editing rows are gone.
-    expect(keyboard).toHaveTextContent(/M is just the letter/i);
+    // The A–Z letter jump is gone (ADR-0005); navigation is Space, the arrows,
+    // and clicks. Labels restart at A within each movement.
+    expect(keyboard).not.toHaveTextContent('A–Z');
+    expect(keyboard).toHaveTextContent(/restarting at A within each movement/i);
+    // One posture only: the editing rows are gone.
     expect(keyboard).not.toHaveTextContent('Add a marker');
     expect(keyboard).not.toHaveTextContent(/Nudge the selected marker/i);
     expect(keyboard).not.toHaveTextContent('Delete');
