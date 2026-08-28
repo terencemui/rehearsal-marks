@@ -217,7 +217,7 @@ describe('App create from a YouTube link', () => {
   it('copies a loaded community label set in, and the player shows the copied marks', async () => {
     // The labeled-performance story: a video someone already marked loads its
     // label set at creation, so the project is immediately practiceable — the
-    // marks render as flags, and the T39 player is read-only over them.
+    // marks render as marker rows, and the T39 player is read-only over them.
     const user = userEvent.setup();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 604.2 })),
@@ -235,8 +235,8 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    // The copied marks render as flags — the first label in time order.
-    expect(await screen.findByRole('button', { name: 'A' })).toBeInTheDocument();
+    // The copied marks render as marker rows — the first label in time order.
+    expect(await screen.findByRole('button', { name: '00:10 A — Recap' })).toBeInTheDocument();
     // No posture toggle, no Add marker — the transport is gone (T39).
     expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
@@ -282,7 +282,7 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(await screen.findByRole('button', { name: 'A' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '00:10 A — Recap' })).toBeInTheDocument();
     // The one query was the anonymous published read, keyed on the video ID.
     const [requested] = fetchMock.mock.calls[0] as [string];
     expect(requested).toContain(`video_id=eq.${VIDEO_ID}`);

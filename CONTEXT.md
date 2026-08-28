@@ -47,8 +47,8 @@ _Avoid_: youtube key, video key
 ### The player
 
 **Timeline**:
-The full-width, tick-free, click-to-seek clock below the split — the recording's own strip, with a flag at every marker and a live playhead.
-_Avoid_: ruler, tick bar
+The full-width click-to-seek progress clock below the split — the recording's own strip, a filled bar tracking playback with the elapsed time under its left end and the total duration under its right. It carries no marks; the markers panel is where they show.
+_Avoid_: ruler, tick bar, scrubber
 
 ### Community
 

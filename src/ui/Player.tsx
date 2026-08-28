@@ -7,12 +7,20 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import type { MouseEvent } from 'react';
 import type { AudioController } from '../audio';
-import { canonicalYouTubeUrl, deriveLabels, markerForLetter, nextMarker, previousMarker } from '../domain';
+import {
+  canonicalYouTubeUrl,
+  deriveLabels,
+  formatWholeSeconds,
+  markerForLetter,
+  nextMarker,
+  practiceReadout,
+  previousMarker,
+} from '../domain';
 import type { LabeledMarker } from '../domain';
 import type { Autosave, ProjectRecord } from '../storage';
-import { renderRuler } from '../playback/renderRuler';
-import { MarkerFlags } from './MarkerFlags';
+import { MarkersPanel } from './MarkersPanel';
 import { PracticeReadout } from './PracticeReadout';
 import './player.css';
 
@@ -40,12 +48,28 @@ const YOUTUBE_FAILED_EXPLANATION =
   'or unavailable for embedding. Your marks are still here.';
 
 /**
+ * The markers list's ceiling: the stylesheet's fixed cap
+ * (`.player-marker-list`'s `max-height`), which the measured cap never
+ * exceeds, so a stacked viewport with room to spare can't inflate the panel
+ * past the design's tallest list.
+ */
+const MARKERS_STYLESHEET_CAP = 320;
+
+/**
+ * The narrowest the stacked list may be. The viewport cap keeps the panel on
+ * screen; just under the stacking breakpoint a full-width video fills the
+ * fold and leaves little room, and without this floor the panel would
+ * collapse to a two-row sliver.
+ */
+const STACKED_MARKERS_MIN = 120;
+
+/**
  * The player screen (T39): a playback-only practice surface. Markers are
  * read-only here — the posture toggle, the app's own play/pause and volume
  * transport (the embedded recording supplies its own controls), the Add
  * marker control, the marker inspector, delete-with-undo, and the editing
- * keyboard shortcuts all left, and with them marker selection: a flag click
- * jumps, never selects. The only surviving keys are navigation: Space to
+ * keyboard shortcuts all left, and with them marker selection: a marker row
+ * click jumps, never selects. The only surviving keys are navigation: Space to
  * play/pause, ←/→ to seek ∓5s, ↑/↓ to walk the marks (wrapping), and A–Z to
  * jump straight to that mark — M is no longer a special case, just another
  * letter. `Alt`+`←` reverts to the browser's Back, an accepted consequence.
@@ -60,15 +84,16 @@ const YOUTUBE_FAILED_EXPLANATION =
  * the route's content, so no `<main>` and no page rail of its own: the shell's
  * single `<main>` wraps the navbar and the route.
  *
- * The recording's clock is a single strip below the split (T38), spanning
- * the full content width — a click-to-seek surface with a flag at every
- * marker and a live playhead. Marker positions and the playhead are
- * percentages of the recording, so the strip is always exactly the content
- * width and never scrolls: the fit-to-viewport zoom machinery is gone. The
- * video column keeps only the recording — the audio layer's own ruler band
- * is hidden with CSS — and the strip draws its own seek surface with the
- * shared ruler-drawing module, its numbered ticks hidden. A click on the
- * strip seeks; a flag click jumps to that marker.
+ * The recording's clock is a single filled bar below the split (T38),
+ * spanning the full content width — a click-to-seek progress track with the
+ * elapsed time under its left end and the total duration under its right. It
+ * carries no marks: the flags left the strip for the markers panel, a
+ * scrollable list in the side column where each marker is a row — timestamp,
+ * then `label — alias` — and the row holding the playhead is highlighted. A
+ * click on the bar seeks; a marker row click jumps to that marker. The video
+ * column keeps only the recording (the audio layer's own ruler band is hidden
+ * with CSS), and everything is a percentage of the recording, so nothing
+ * scrolls: the fit-to-viewport zoom machinery is gone.
  *
  * A settled-state marker on the player's root (`data-settled`) signals that
  * the load has resolved. It means *settled*, not *playable*: it is set on
@@ -80,10 +105,8 @@ export function Player({
   controller,
 }: PlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  /** The strip's seek surface — the shared ruler-drawing module draws into it. */
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  /** The timeline strip itself, whose width drives the flag edge correction. */
-  const stripRef = useRef<HTMLDivElement>(null);
+  /** The practice split — the measurement effect observes it for size changes. */
+  const splitRef = useRef<HTMLDivElement>(null);
   /**
    * Whether the recording's load has settled — until then the shortcuts are
    * inert, and the ruler has nothing to draw on. Published to the root as
@@ -98,6 +121,14 @@ export function Player({
   const [loadFailed, setLoadFailed] = useState(false);
   /** Bumped by the failure card's Retry — re-runs the load effect. */
   const [loadAttempt, setLoadAttempt] = useState(0);
+  /**
+   * The measured cap on the markers list. In the side-by-side split it keeps
+   * the list's bottom within the video's; in the stacked layout (and the
+   * failure state) it caps the list to the viewport, so the panel fits on
+   * screen and scrolls within it. null is only the pre-measure first paint —
+   * the stylesheet's fixed cap holds until the geometry lands.
+   */
+  const [markersMaxHeight, setMarkersMaxHeight] = useState<number | null>(null);
   // The record's identity — name and recording — never changes in the player.
   const record = autosave.get();
   /**
@@ -118,41 +149,6 @@ export function Player({
   const labeled = useMemo(() => deriveLabels(current.markers), [current.markers]);
   const duration = playback.duration > 0 ? playback.duration : current.duration;
 
-  // The strip's measured width, kept solely to drive the flag component's
-  // edge-overhang correction — a marker at time zero must not hang off the
-  // strip's left edge. jsdom reports no layout (0), so the measurement only
-  // lands in a real browser; the guard keeps the flags unshifted in tests.
-  const [stripWidth, setStripWidth] = useState<number | undefined>(undefined);
-
-  // One measurement, taken before the first painted frame and kept honest on
-  // resize — the only geometry the strip needs.
-  useLayoutEffect(() => {
-    const strip = stripRef.current;
-    if (strip === null) return;
-    const measure = () => {
-      const width = strip.getBoundingClientRect().width;
-      if (width > 0) setStripWidth(width);
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(strip);
-    return () => observer.disconnect();
-  }, []);
-
-  // The strip's own seek surface — the shared ruler-drawing module draws it
-  // once a duration is known. The strip itself stays in the layout whether or
-  // not the source can play, so markers remain visible in the failure state.
-  useEffect(() => {
-    const surface = surfaceRef.current;
-    if (surface === null || duration <= 0) return;
-    renderRuler(surface, duration, (time) => {
-      controller.seek(time);
-      // The ruler reports the requested position; the controller clamps it.
-      return time;
-    });
-  }, [controller, duration]);
-
   /** Applies the player's one mutation: the autosave gets it, React mirrors it. */
   const update = useCallback(
     (fn: (current: ProjectRecord) => ProjectRecord): void => {
@@ -162,12 +158,25 @@ export function Player({
   );
 
   /**
-   * A flag click: always jump to the marker. Selection ceased to exist with
-   * the editing tools, so clicking never selects — there is nothing on this
-   * screen to select a marker *for*.
+   * A marker row click: always jump to the marker. Selection ceased to exist
+   * with the editing tools, so clicking never selects — there is nothing on
+   * this screen to select a marker *for*.
    */
-  function handleFlagClick(marker: LabeledMarker): void {
+  function handleMarkerSeek(marker: LabeledMarker): void {
     controller.seek(marker.time);
+  }
+
+  /** A track click: seek to the clicked position, clamped to the recording. */
+  function handleTrackSeek(event: MouseEvent<HTMLDivElement>): void {
+    if (duration <= 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientX - rect.left) / rect.width;
+    controller.seek(Math.min(1, Math.max(0, ratio)) * duration);
+  }
+
+  /** A readout bar click: the readout has already resolved the position. */
+  function handleReadoutSeek(time: number): void {
+    controller.seek(time);
   }
 
   // The window-level keydown listener is registered once and reads the latest
@@ -301,6 +310,80 @@ export function Player({
     setLoadAttempt((attempt) => attempt + 1);
   }
 
+  /**
+   * The markers list's band: a measured cap so a marker-heavy project scrolls
+   * instead of outrunning its container. In the side-by-side split the bound
+   * is the video's bottom — the gap between the list's own top and the video's
+   * bottom. In the stacked layout the list sits below the video, so the bound
+   * is the viewport instead — a panel that fits on screen and scrolls within
+   * it rather than growing the page past the fold. Re-run whenever the
+   * geometry moves (the video column grows as its embed renders 16:9, the
+   * readout grows as passed markers' aliases wrap, the viewport resizes).
+   */
+  useLayoutEffect(() => {
+    const split = splitRef.current;
+    if (split === null) return;
+    const measure = (): void => {
+      const videoColumn = split.querySelector<HTMLElement>('.player-video-column');
+      const list = split.querySelector<HTMLElement>('.player-marker-list');
+      if (videoColumn === null || list === null) return;
+      const videoBottom = videoColumn.getBoundingClientRect().bottom;
+      const listTop = list.getBoundingClientRect().top;
+      if (listTop >= videoBottom) {
+        // No measurable layout yet (jsdom, a detached element): the stylesheet
+        // cap owns the first paint.
+        if (listTop <= 0) {
+          setMarkersMaxHeight(null);
+          return;
+        }
+        // Stacked layout (or no measurable video): the list sits below the
+        // video, so there is no video bottom to stay within. Cap it to the
+        // viewport instead — a panel that fits on screen and scrolls within
+        // it, rather than one that grows the page past the fold. The floor
+        // keeps a fold consumed by a full-width video from collapsing it to a
+        // sliver; the stylesheet cap stays the ceiling.
+        setMarkersMaxHeight(
+          Math.min(
+            MARKERS_STYLESHEET_CAP,
+            Math.max(STACKED_MARKERS_MIN, window.innerHeight - listTop - 8),
+          ),
+        );
+        return;
+      }
+      // A breath of air between the last row and the video's bottom edge — but
+      // never past the stylesheet's ceiling, so a tall video on a wide desktop
+      // viewport can't inflate the panel past the design's tallest list.
+      setMarkersMaxHeight(
+        Math.min(MARKERS_STYLESHEET_CAP, Math.max(0, videoBottom - listTop - 8)),
+      );
+    };
+    measure();
+    // The stacked cap reads the viewport's height, which the observed elements
+    // don't announce — a viewport resize must re-run the measure too, or a
+    // shorter viewport would leave the panel sticking past the new fold.
+    const onViewportResize = (): void => measure();
+    window.addEventListener('resize', onViewportResize);
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(measure);
+      observer.observe(split);
+      // The split's height is driven by whichever column is taller, so a column
+      // growing beneath the other doesn't move the split — and the measure
+      // wouldn't re-run. The video column grows as its embed renders 16:9 (the
+      // first paint's fallback cap would otherwise stick); the readout grows as
+      // passed markers' aliases wrap. Observe each column that can move under
+      // the other.
+      const videoColumn = split.querySelector<HTMLElement>('.player-video-column');
+      if (videoColumn !== null) observer.observe(videoColumn);
+      const readout = split.querySelector<HTMLElement>('.player-practice-readout');
+      if (readout !== null) observer.observe(readout);
+    }
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', onViewportResize);
+    };
+  }, []);
+
   useEffect(() => {
     // Teardown: write anything still pending, then release. This is the
     // safety net for a directly-rendered player — the test seam renders
@@ -316,31 +399,35 @@ export function Player({
   }, [autosave, controller]);
 
   // The playhead as a percentage of the recording, pinned to the end so a
-  // trailing position can never overflow the strip.
+  // trailing position can never overflow the fill.
   const playheadPercent =
     duration > 0 ? (Math.min(playback.currentTime, duration) / duration) * 100 : 0;
+  // The elapsed time shown under the bar's left end, clamped to the end.
+  const elapsed = Math.min(playback.currentTime, duration);
+  // The active marker — the most recently passed marker (none before the first).
+  const activeMarker = practiceReadout(labeled, elapsed, duration).passed;
 
-  // The full-width timeline strip (T38): the recording's clock below the
-  // split. It carries its own seek surface (the shared ruler, ticks hidden),
-  // the marker flags, and the live playhead. The strip never scrolls — marker
-  // positions and the playhead are percentages of the recording — so the only
-  // geometry it needs is the measured width that keeps a flag at time zero on
-  // screen.
-  const timelineStrip = (
-    <div ref={stripRef} className="player-timeline-strip">
-      <div ref={surfaceRef} className="player-timeline-surface" />
-      <MarkerFlags
-        markers={labeled}
-        duration={duration}
-        onFlagClick={handleFlagClick}
-        width={stripWidth}
-      />
-      {/* pointer-events: none — clicks pass through to the seek surface. */}
+  // The full-width progress clock (T38): the recording's bar below the split —
+  // a filled, click-to-seek track with the elapsed time under its left end and
+  // the total duration under its right. It carries no marks; the markers panel
+  // in the side column is where the marks show.
+  const timelineBar = (
+    <div className="player-timeline-bar">
       <div
-        className="player-playhead"
-        style={{ left: `${playheadPercent}%` }}
-        aria-hidden="true"
-      />
+        className="player-timeline-track"
+        role="slider"
+        aria-label="Recording timeline"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={Math.round(elapsed)}
+        onClick={handleTrackSeek}
+      >
+        <div className="player-timeline-fill" style={{ width: `${playheadPercent}%` }} />
+      </div>
+      <div className="player-timeline-times">
+        <span>{formatWholeSeconds(elapsed, duration)}</span>
+        <span>{formatWholeSeconds(duration, duration)}</span>
+      </div>
     </div>
   );
 
@@ -367,21 +454,31 @@ export function Player({
       )}
       {/* T27/T38: the practice split view — the recording fills its column
           (the audio layer loads the embed into the .player-ruler container;
-          its own ruler band is hidden) with the practice readout beside it,
-          and the recording's clock is its own full-width strip below the
-          split. Every project is a YouTube project, so the split view is
-          unconditional. */}
-      <div className="player-practice-split">
+          its own ruler band is hidden) with the practice readout above the
+          markers panel beside it, and the recording's clock is its own
+          full-width progress bar below the split. Every project is a YouTube
+          project, so the split view is unconditional. */}
+      <div className="player-practice-split" ref={splitRef}>
         <div className="player-video-column">
           <div ref={containerRef} className="player-ruler" />
         </div>
-        <PracticeReadout
-          markers={labeled}
-          currentTime={playback.currentTime}
-          duration={duration}
-        />
+        <div className="player-side-column">
+          <PracticeReadout
+            markers={labeled}
+            currentTime={playback.currentTime}
+            duration={duration}
+            onSeek={handleReadoutSeek}
+          />
+          <MarkersPanel
+            markers={labeled}
+            duration={duration}
+            activeId={activeMarker?.id ?? null}
+            onSeek={handleMarkerSeek}
+            maxHeight={markersMaxHeight ?? undefined}
+          />
+        </div>
       </div>
-      {timelineStrip}
+      {timelineBar}
     </div>
   );
 }
