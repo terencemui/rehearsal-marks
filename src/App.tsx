@@ -14,6 +14,7 @@ import { createStorage } from './storage';
 import type { ProjectSummary, SaveStatus, Storage } from './storage';
 import { fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
+import { ChaptersPrototype } from './ui/ChaptersPrototype';
 import { HelpTab } from './ui/HelpTab';
 import { Navbar } from './ui/Navbar';
 import { ProjectPage } from './ui/ProjectPage';
@@ -363,6 +364,12 @@ function App({
           />
           {/* A URL nobody recognises lands on the Projects home (T44). */}
           <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Prototype route (throwaway — dev only): the chapters section +
+              remade bottom timeline variants, switchable via ?variant=. Dies
+              with the prototype; gated so it can never ship in a build. */}
+          {import.meta.env.DEV && (
+            <Route path="/prototype/chapters" element={<ChaptersPrototype />} />
+          )}
         </Routes>
       </div>
     </main>

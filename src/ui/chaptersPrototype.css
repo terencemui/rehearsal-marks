@@ -1,0 +1,244 @@
+/* UI prototype (throwaway) — chapters section + remade bottom timeline. The
+   design language follows the player: system-ui, teal #0f766e, slate text,
+   #e2e8f0 tracks, 8px radii. */
+
+.proto-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px clamp(16px, 3vw, 48px) 104px; /* bottom room for the switcher */
+  font-family: system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.proto-title {
+  margin: 0 0 20px;
+  font: 700 28px/1.15 system-ui, sans-serif;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.proto-frame {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  padding: 20px;
+}
+
+.proto-video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #94a3b8;
+  font-size: 40px;
+}
+
+/* The remade bottom timeline: a filled click-to-seek progress bar. */
+
+.proto-track-wrap {
+  margin-top: 16px;
+}
+
+.proto-track {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: #e2e8f0;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.proto-track-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: #0f766e;
+}
+
+.proto-track-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font: 500 13px/18px system-ui, sans-serif;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The chapters list, shared by the variants that place it. */
+
+.proto-chapters-heading {
+  margin: 22px 0 10px;
+  font: 600 11px/16px system-ui, sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.proto-chapters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.proto-chapters li button {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 7px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font: 400 15px/22px system-ui, sans-serif;
+  color: #334155;
+}
+
+.proto-chapters li button:hover {
+  background: #f1f5f9;
+}
+
+.proto-chapters li.active button {
+  background: #ecfdf5;
+  color: #0f172a;
+}
+
+.proto-chapters li.active .proto-chapter-time {
+  color: #0f766e;
+}
+
+.proto-chapters li.active .proto-chapter-title {
+  font-weight: 700;
+}
+
+.proto-chapter-time {
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+}
+
+.proto-chapters.scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Variant B — chapters as a side panel beside the video. */
+
+.proto-b-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+
+.proto-b-panel {
+  border-left: 1px solid #e2e8f0;
+  padding-left: 18px;
+}
+
+.proto-b-panel .proto-chapters-heading {
+  margin-top: 0;
+}
+
+.proto-b-top + .proto-track-wrap {
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .proto-b-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .proto-b-panel {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+
+/* Variant C — chapters as a horizontal chip strip. */
+
+.proto-c-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.proto-c-chips button {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font: 600 13px/18px system-ui, sans-serif;
+  color: #475569;
+}
+
+.proto-c-chips button:hover {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
+.proto-c-chips button.active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+.proto-chip-alias {
+  font-weight: 400;
+}
+
+.proto-c-now {
+  margin: 18px 0 0;
+  font: 600 15px/22px system-ui, sans-serif;
+  color: #0f766e;
+}
+
+/* The floating variant switcher — obviously not part of the design. */
+
+.prototype-switcher {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.35);
+  font: 600 13px/1 system-ui, sans-serif;
+  z-index: 50;
+}
+
+.prototype-switcher button {
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.prototype-switcher button:hover {
+  background: #1e293b;
+}
+
+.prototype-switcher-label {
+  min-width: 150px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
