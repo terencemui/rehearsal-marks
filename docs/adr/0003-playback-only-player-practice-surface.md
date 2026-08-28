@@ -1,6 +1,7 @@
 # ADR-0003 — Playback-only player: the practice surface, and the accepted editing gap
 
 **Status:** Accepted — 2026-08-26
+**Caught up — 2026-08-28:** the timeline strip's flags and playhead were retired once the side column gained the markers panel (T38's remake, then the panel refinement). The strip now carries only the played fill; the marks show in the markers panel, whose rows are the click-to-jump surface the passages below describe as flags.
 **Supersedes:** the two-posture (Playback | Label) player design, and spec 0001's in-player editing (see _Consequences → What this invalidates_)
 
 ## Context
@@ -13,14 +14,14 @@ The audience is a musician at a music stand, not a technician. Editing a label s
 
 **The player is playback-only.** Every editing affordance leaves it — the Playback | Label posture switch, the Add marker control, the marker inspector, delete-with-undo, and the editing keyboard shortcuts (add-at-playhead, nudge, delete, deselect). Marker *selection* ceases to exist in the player, because selection existed only to serve nudge and delete.
 
-Play/pause and volume come from the embedded recording's own controls, not a second app-level transport. Surviving keyboard navigation: `Space` to play/pause, `←`/`→` to seek ∓5 seconds, `↑`/`↓` to walk the marks (wrapping at the ends), and `A`–`Z` to jump straight to that mark — **`M` is no longer a special case**, just the letter for the marker labelled M. A flag click jumps, never selects. `Alt`+arrows are no longer intercepted — the nudge is gone, so they are the browser's again (Back on Windows and Linux) — an accepted consequence.
+Play/pause and volume come from the embedded recording's own controls, not a second app-level transport. Surviving keyboard navigation: `Space` to play/pause, `←`/`→` to seek ∓5 seconds, `↑`/`↓` to walk the marks (wrapping at the ends), and `A`–`Z` to jump straight to that mark — **`M` is no longer a special case**, just the letter for the marker labelled M. A markers-panel row click jumps, never selects. `Alt`+arrows are no longer intercepted — the nudge is gone, so they are the browser's again (Back on Windows and Linux) — an accepted consequence.
 
 Supporting choices:
 
 - **"Ruler" retires from the spoken vocabulary; "Timeline" becomes the term.** The full-width, tick-free, click-to-seek clock below the split is the recording's own strip. Module and DOM names that still say "ruler" are left alone — this is a change to the spoken vocabulary, not a rename of the drawing code.
 - **The per-project stored mode field stays in the schema untouched.** Its default-selection helper is still called when a project is created and by the version-2 migration, so it is not vestigial; only the player's reading and writing of the field goes away. **No migration.**
 - **The player keeps its record-mutation path for exactly one purpose:** stamping the measured duration after load.
-- **The ruler-drawing module is not modified.** Its numbered ticks are hidden with CSS scoped to the player; marker positions and the playhead are percentages of the recording, so the strip is always exactly the content width and never scrolls.
+- **The ruler-drawing module is not modified.** Its numbered ticks are hidden with CSS scoped to the player; the strip's played fill is a percentage of the recording, so it is always exactly the content width and never scrolls. The marks are not drawn on the strip — the markers panel in the side column is where they show.
 
 ## Consequences
 
