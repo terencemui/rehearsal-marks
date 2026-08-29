@@ -115,9 +115,8 @@ export function createSupabaseAuth(env: AuthEnv): SupabaseAuth {
       // The self-service deletion path (T26): supabase-js's deleteUser is
       // admin-only, so the account is removed through the
       // `delete_my_account` RPC — a security-definer function that deletes
-      // the caller's own auth.users row, with the label_sets FK cascade
-      // (migration 20260820120000) taking the contributor's label sets with
-      // it.
+      // the caller's own auth.users row, with the projects FK cascade
+      // (T49, migration 20260828120000) taking their projects with it.
       const { error } = await client.rpc('delete_my_account');
       if (error) throw error;
       // The account is gone; the stored session is dead. Clear it locally so

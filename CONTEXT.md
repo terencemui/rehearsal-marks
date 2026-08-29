@@ -1,6 +1,6 @@
 # Rehearsal Marks
 
-A classical music student pins their score's rehearsal marks to a recording, so they can jump straight to "rehearsal C" instead of scrubbing by ear. Projects live entirely in the browser; the community contributes label sets that apply to the same recordings.
+A classical music student pins their score's rehearsal marks to a recording, so they can jump straight to "rehearsal C" instead of scrubbing by ear. Projects live on the server (ADR-0006): each belongs to a signed-in User and is public by default, so a browseable **public gallery** is the app's front door.
 
 ## Language
 
@@ -25,19 +25,23 @@ _Avoid_: name, title, custom label
 ### Projects and recordings
 
 **Project**:
-A self-contained, editable unit: one recording plus its markers.
+A self-contained, editable unit owned by a signed-in User: one recording plus its name, markers, movements, and visibility. Stored server-side and public by default, so its markings are a contribution unless the owner opts out.
 _Avoid_: file, document, track
 
 **Recording**:
 The performance a project is built on — a YouTube video, streamed from Google.
 _Avoid_: audio, media, clip
 
+**Recording title**:
+The canonical title of the recording's video, fetched once from YouTube when the project is created and never editable afterwards — the gallery groups projects by it, so a user's project rename never mislabels the recording.
+_Avoid_: title, video name
+
 **Movement**:
 A named subdivision of a recording — a self-contained portion of the musical work, such as a symphony's first movement. Each movement has a name and a start time; its extent runs to the next movement's start or the recording's end. A project may carry any number.
 _Avoid_: part, section, track
 
 **Recording identity**:
-The facts that make a label set applicable to exactly one recording: the video ID (stored as its canonical URL), with duration as a soft check.
+The facts that make a project applicable to exactly one recording: the video ID (stored as its canonical URL), with duration as a soft check.
 _Avoid_: fingerprint, checksum
 
 **Canonical URL**:
@@ -54,20 +58,24 @@ _Avoid_: youtube key, video key
 The full-width click-to-seek progress clock below the split — the recording's own strip, a filled bar tracking playback with the elapsed time under its left end and the total duration under its right. It carries no marks; the markers panel is where they show.
 _Avoid_: ruler, tick bar, scrubber
 
-### Community
+### Gallery and sharing
 
-**Label set**:
-Markers plus recording identity for one recording — the community contribution format, copied into a project when loaded.
-_Avoid_: labels file, markers file, annotation set
+**Public gallery**:
+The anonymous browse surface listing published public projects, grouped by recording and newest first — no account is needed to read or play any of them.
+_Avoid_: homepage, catalog, browse
 
-**Commons**:
-The hosted collection of community-contributed label sets, keyed by recording identity — readable by anyone, writable only by a contributor.
-_Avoid_: store, database, backend, catalog
+**User**:
+A signed-in person who owns the projects they create; browsing the public gallery never requires being one.
+_Avoid_: contributor, account holder
 
-**Contributor**:
-A signed-in person who publishes label sets to the Commons and owns the ones they publish; reading the Commons never requires being one.
-_Avoid_: user, author
+**Visibility**:
+Whether a project is public (visible on the public gallery after review) or private (visible to its owner alone, and never reviewed).
+_Avoid_: shared flag, privacy toggle
 
 **Publication status**:
-Whether a label set in the Commons is visible to anonymous readers: pending until a maintainer reviews it, then published — or rejected, when a maintainer denies a pending set (visible to its contributor, who can resubmit it). A contributor with a track record is trusted: their submissions publish without review.
+Whether a public project is visible to anonymous readers: pending until a maintainer reviews it, then published — or rejected, when a maintainer denies a pending project (visible to its owner, who can edit and resubmit it). Meaningful for public projects only; private projects never enter review.
 _Avoid_: state, moderation flag, approved
+
+**Trusted user**:
+A User with a track record of published public projects, whose new public projects publish immediately and whose edits skip review.
+_Avoid_: approved, verified
