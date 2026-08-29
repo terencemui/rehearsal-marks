@@ -1,36 +1,49 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseMarkers } from '../domain';
-import { parseLabelSetRow } from './labelSet';
+import { parseMarkers, parseMovements } from '../domain';
 
 /** The repo-root-relative seed file, checked like a consumer would check it. */
 const seedUrl = resolve(process.cwd(), 'supabase/seed.sql');
 
 /**
- * The seeded Commons content, checked the way the app checks a row: the
- * markers must parse under the domain's own marker rules and the full row
- * must parse under the row parser — a row no reader can parse would be
- * invisible in the Commons forever. The video identity facts (the canonical
- * URL and duration the ticket promises) are pinned here so a seed edit can't
- * silently re-key the row to another recording.
+ * The seeded public project, checked for the invariants that exist today: the
+ * markers and movements must parse under the domain's own rules, and the row
+ * must carry the project shape the ticket promises — owner by email, editable
+ * name distinct from the canonical recording title, public and published. The
+ * video identity facts (the canonical URL and duration the ticket promises)
+ * are pinned here so a seed edit can't silently re-key the row to another
+ * recording. A full projects row parser lands with the client migration
+ * (T50/T51); until then the row's shape is pinned by these SQL-text assertions.
  */
-describe('the seeded Commons label set', () => {
-  it('is one published row for the Tchaikovsky No. 5 video, parseable by the app', () => {
+describe('the seeded public project', () => {
+  it('is one published public project for the Tchaikovsky No. 5 video, with parseable content', () => {
     const seed = readFileSync(seedUrl, 'utf8');
 
     const videoId = firstVideoId(seed);
-    const markers = seedMarkers(seed);
+    const [markers, movements] = seedDocuments(seed);
 
     // The recording identity the ticket promises: the video's canonical URL
     // documented beside the row, and the video's own duration as the row's.
     expect(seed).toMatch(/https:\/\/www\.youtube\.com\/watch\?v=a_B02BZp-5Y/);
     expect(videoId).toBe('a_B02BZp-5Y');
     expect(seed).toMatch(/3036\.0/);
+
+    // The seed is a project, not a label set: it inserts into `projects`, the
+    // owner comes from the maintainer's auth.users email, and the user's
+    // editable name is distinct from the canonical recording title.
+    expect(seed).toMatch(/insert into public\.projects/);
+    expect(seed).toMatch(/where email = 'you@example\.com'/);
+    expect(seed).toMatch(/'Honeck Tchaikovsky 5'/);
+    expect(seed).toMatch(/'Tschaikowsky: 5\. Sinfonie – hr-Sinfonieorchester, Manfred Honeck'/);
+
+    // The seed's whole point is a visible gallery row at launch: public and
+    // published.
+    expect(seed).toMatch(/'public'/);
     expect(seed).toMatch(/'published'/);
 
-    // The markers parse under the domain's own rules — the guard that keeps
-    // a row no reader can parse out of the store. The four movement starts
+    // The markers parse under the domain's own rules — the guard that keeps a
+    // project no reader can parse out of the store. The four movement starts
     // come from the video's chapter list; the rest are development dummies
     // spaced within each movement's range.
     const parsed = parseMarkers(markers);
@@ -41,21 +54,11 @@ describe('the seeded Commons label set', () => {
       2074, 2200, 2400, 2600, 2800, 3000,
     ]);
 
-    // And the row as a whole is one the app can load — the seed's own title
-    // and markers, with the table-derived fields (id, contributor_id, stamps)
-    // filled in as the table would fill them.
-    const row = {
-      id: '3b3a509d-2f7b-4b6d-9c1a-0e2f8f6d9e4a',
-      video_id: videoId,
-      contributor_id: '00000000-0000-4000-8000-000000000000',
-      title: 'Tschaikowsky: 5. Sinfonie – hr-Sinfonieorchester, Manfred Honeck',
-      duration: 3036,
-      markers,
-      publication_status: 'published',
-      created_at: '2026-08-20T00:00:00Z',
-      updated_at: '2026-08-20T00:00:00Z',
-    };
-    expect(() => parseLabelSetRow(row)).not.toThrow();
+    // The movements parse too, carrying the same four starts as their
+    // boundaries (ADR-0005), so the project groups its markers under sticky
+    // movement headers and restarts its rehearsal letters at each one.
+    const parsedMovements = parseMovements(movements);
+    expect(parsedMovements.map((mv) => mv.start)).toEqual([34, 913, 1743, 2074]);
   });
 });
 
@@ -66,9 +69,11 @@ function firstVideoId(seed: string): string {
   return match[1];
 }
 
-/** The markers jsonb literal the seed inserts, as a parsed array. */
-function seedMarkers(seed: string): unknown {
-  const match = /'(\[[\s\S]*?\])'::jsonb/.exec(seed);
-  if (!match) throw new Error('No markers jsonb found in supabase/seed.sql');
-  return JSON.parse(match[1]);
+/** The jsonb document literals the seed inserts, in order: markers, movements. */
+function seedDocuments(seed: string): unknown[] {
+  const matches = [...seed.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)];
+  if (matches.length < 2) {
+    throw new Error('Expected markers and movements jsonb literals in supabase/seed.sql');
+  }
+  return matches.map((match) => JSON.parse(match[1]));
 }

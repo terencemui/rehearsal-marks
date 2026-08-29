@@ -1,49 +1,50 @@
 # Supabase
 
-The hosted Postgres database behind the Commons: the `label_sets` table, with
-Row Level Security as the authorization boundary (ADR-0001).
+The hosted Postgres database behind the app: the `projects` table — the app's
+single server-side concept (ADR-0006) — with Row Level Security as the
+authorization boundary.
 
 - `migrations/` — schema and RLS, one file per change, timestamp-prefixed in
   filename order. Apply with the Supabase CLI (`supabase db push`) against a
   linked project, or run each file in the dashboard's SQL editor.
-- `seed.sql` — content, not schema: the first published label set, so the
-  Commons is never empty. Runs as the postgres role (dashboard SQL editor),
-  never via `authenticated` — see `docs/maintainer-commons.md`.
+- `seed.sql` — content, not schema: the first published public project, so the
+  gallery is never empty. Runs as the postgres role (dashboard SQL editor),
+  never via `authenticated` — see `docs/maintainer-projects.md`.
 
 ## Wiring the app
 
-The app talks to Supabase through the auth layer (`src/auth/`) — the only
-place supabase-js is referenced. Two env vars configure it (see `.env.example`
-at the repo root):
+T49 ships the server surface: the `projects` table and its RLS. The client
+side — the `ProjectsApi` seam that drives it — lands with the client
+migration (T50/T51), which is also when the unconfigured-deployment "not wired
+up" screen arrives. Until then the app still talks to the retired `label_sets`
+table; applying this migration before the client lands breaks the existing
+Commons surface by design, in the sequence the parent ticket (#105) sets out.
+
+Two env vars configure the Supabase client (see `.env.example` at the repo
+root):
 
 - `VITE_SUPABASE_URL` — the project URL (dashboard → Settings → API).
 - `VITE_SUPABASE_ANON_KEY` — the project's anon (public) key. Both values are
   public: the anon key ships with the browser, and RLS is the authorization
   boundary, not the key.
 
-Absent or blank, the app builds and runs unconfigured: every anonymous Commons
-read returns "no labels" (a link create lands in the unmatched path) and
-contributor sign-in reports itself unavailable — browsing, local projects, and
-YouTube playback keep working as usual.
+The consumers of that wiring, once the client lands:
 
-The two consumers of that wiring:
-
-- **Anonymous reads (T21)** — the lookup a YouTube project's creation runs
-  queries the Commons directly over PostgREST with the anon key, no account
-  needed.
-- **Contributor sign-in (T24)** — Google OAuth through supabase-js's auth
-  client; the signed-in contributor is the `contributor_id` behind every
-  `label_sets` row.
-- **Account deletion (T26)** — a signed-in contributor deletes their account
-  through the `delete_my_account` RPC (migration
+- **Anonymous reads** — the public gallery queries `projects` directly over
+  PostgREST with the anon key, no account needed. RLS limits the result to
+  published public projects.
+- **Signed-in writes** — Google OAuth through supabase-js's auth client; the
+  signed-in user is the `owner_id` behind every `projects` row.
+- **Account deletion** — a signed-in user deletes their account through the
+  `delete_my_account` RPC (migration
   `20260820210000_delete_my_account.sql`): a security-definer function that
-  removes the caller's own `auth.users` row, with the `label_sets` FK cascade
-  taking their label sets with it. supabase-js's `deleteUser` is admin-only,
+  removes the caller's own `auth.users` row, with the `projects` FK cascade
+  taking their projects with it. supabase-js's `deleteUser` is admin-only,
   so the RPC is the self-service path.
 
 ## Google sign-in setup
 
-One dashboard configuration, per ADR-0001 — no password login, Google only:
+One dashboard configuration, per ADR-0006 — no password login, Google only:
 
 1. **Authentication → Providers → Google**: enable and fill in the Google
    Cloud OAuth client (client ID and secret) from a Google Cloud project's
@@ -51,6 +52,6 @@ One dashboard configuration, per ADR-0001 — no password login, Google only:
 2. **Authentication → URL Configuration**: add the app's origin to the
    allowed redirect URLs (e.g. `http://localhost:5173` for dev, the deployed
    origin for production) — supabase-js appends the auth callback path.
-3. The `auth.users` id that Google signs in becomes the `contributor_id`
-   behind every `label_sets` row; the client never sends it (the schema
-   defaults it to `auth.uid()`).
+3. The `auth.users` id that Google signs in becomes the `owner_id` behind
+   every `projects` row; the client never sends it (the schema defaults it to
+   `auth.uid()`).
