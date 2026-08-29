@@ -77,7 +77,9 @@ function groupMarkers(
  */
 export function MarkersPanel({
   markers,
-  movements,
+  // Records saved before movements existed (ADR-0005) read the field back as
+  // undefined — default it to the empty, ungrouped list the contract describes.
+  movements = [],
   duration,
   activeId,
   onSeek,

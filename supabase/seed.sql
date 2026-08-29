@@ -4,15 +4,20 @@
 -- so it is never blank. Content and provenance:
 --
 --   Recording:   Tchaikovsky — Symphony No. 5 in E minor, Op. 64
---   Performance: Gustav Mahler Jugendorchester, Franz Welser-Möst,
---                Wiener Musikverein, 19 September 2009
---   Video:       https://www.youtube.com/watch?v=FQzc9c4LOHM
---   Duration:    2790 s (46:30) — the video's own metadata
+--   Performance: hr-Sinfonieorchester – Frankfurt Radio Symphony, Manfred
+--                Honeck, Alte Oper Frankfurt, 23 March 2018
+--   Video:       https://www.youtube.com/watch?v=a_B02BZp-5Y
+--   Duration:    3036 s (50:36) — the video's own metadata
 --
 -- The markers are the four movement starts, taken from the video's own
 -- chapter list (the uploader's description), so every timing is checkable
 -- against the performance itself. Spot-check 2–3 by ear before publishing —
 -- the same step the review checklist asks of every pending row.
+--
+-- Additional dummy markers (no aliases) are spaced within each movement's
+-- range for development/testing: labels derive from time rank within a
+-- movement, so each movement's rows letter themselves A, B, C… restarting at
+-- A per movement (ADR-0005).
 --
 -- The movements (ADR-0005) carry the same four starts as their boundaries, so
 -- a project created from this set groups its markers under sticky movement
@@ -46,21 +51,38 @@ begin
 
   insert into public.label_sets (video_id, contributor_id, title, duration, markers, movements, publication_status)
   values (
-    'FQzc9c4LOHM',
+    'a_B02BZp-5Y',
     maintainer,
-    'Tchaikovsky: Symphony No. 5 in E minor, Op. 64 — Gustav Mahler Jugendorchester, Franz Welser-Möst',
-    2790.0,
+    'Tschaikowsky: 5. Sinfonie – hr-Sinfonieorchester, Manfred Honeck',
+    3036.0,
     '[
-      {"id":"a308978e-edbd-4279-8749-0e684818fea2","time":0.0,"aliases":["I. Andante"],"createdAt":1787184000000},
-      {"id":"ad1fd498-30f8-4642-b7a9-63e74e5100a3","time":831.0,"aliases":["II. Andante"],"createdAt":1787184000000},
-      {"id":"25791492-e717-452d-8bf0-ff157e2df7db","time":1620.0,"aliases":["III. Valse"],"createdAt":1787184000000},
-      {"id":"de5c1cbe-a6ae-44ae-b646-d8e8b406ba37","time":1965.0,"aliases":["IV. Finale"],"createdAt":1787184000000}
+      {"id":"85fdd5e1-7522-492b-8de7-5b145abb3bca","time":34.0,"aliases":["I. Andante"],"createdAt":1787184000000},
+      {"id":"25c8311d-0197-43c6-97f8-2ac12683d2d9","time":150.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"2d87a5cf-39ed-448c-a9c1-6c4a57020fda","time":300.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"55d540ed-4dcf-4741-8de7-e3590dd6c128","time":450.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"edc2b696-a037-44e8-8999-2742f182ad5d","time":600.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"4607fc95-1e2f-47b1-9ab0-85b2f5ab586e","time":750.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"e05f14de-a281-4ff2-97a8-124ef65414b8","time":913.0,"aliases":["II. Andante"],"createdAt":1787184000000},
+      {"id":"51070b65-45b4-49ec-a28e-8c36750f7c46","time":1100.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"901aadf6-5925-4b77-a33b-d42cd006d328","time":1300.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"771bca2c-5cd0-41d9-8d42-2f36c9b360c3","time":1500.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"156626ab-8b28-4361-87ba-2cc00e72b06c","time":1700.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"25629e46-4ee3-4117-88f8-962d7f658753","time":1743.0,"aliases":["III. Valse"],"createdAt":1787184000000},
+      {"id":"067b1090-10e2-4285-8edc-81851900204d","time":1800.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"a9c6e241-7828-41a5-a689-86690acaeca7","time":1900.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"e27415aa-fe1b-4305-ab90-404ea5885157","time":2000.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"49d62d3a-8209-4fb1-bc4b-eb54d9aff1cb","time":2074.0,"aliases":["IV. Finale"],"createdAt":1787184000000},
+      {"id":"ac11c10a-8e73-402e-bbd7-307b68f2a8dd","time":2200.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"5165a765-cbf5-4967-8d5b-2edab0c6f327","time":2400.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"69d448a3-980a-44c8-a120-3aa62453dabd","time":2600.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"14299544-c1a0-4534-aab5-3c00205366cf","time":2800.0,"aliases":[],"createdAt":1787184000000},
+      {"id":"7e9146c7-7951-4881-915d-9abbfba79452","time":3000.0,"aliases":[],"createdAt":1787184000000}
     ]'::jsonb,
     '[
-      {"id":"bb27d39e-62c5-4b0a-9b1a-8e5f2f3a2c11","name":"I. Andante","start":0.0},
-      {"id":"c14e39e0-4a7d-4c2e-b4d7-0a9f8e7d6c55","name":"II. Andante cantabile","start":831.0},
-      {"id":"d09f5a4b-3e6d-4a9c-b5e8-1b2c3d4e5f66","name":"III. Valse","start":1620.0},
-      {"id":"e05c6b7d-2f8e-4b0a-a6f9-2c3d4e5f6a77","name":"IV. Finale","start":1965.0}
+      {"id":"ab91b769-5670-4444-af88-5edc6d4fac5e","name":"I. Andante","start":34.0},
+      {"id":"ffc7d67b-a242-444b-aad1-0c3c346cc65d","name":"II. Andante cantabile","start":913.0},
+      {"id":"3882693d-4cbd-46f8-8204-ee4792bca137","name":"III. Valse","start":1743.0},
+      {"id":"9277e368-2a99-4932-9a34-fcdf0a7e7a5a","name":"IV. Finale","start":2074.0}
     ]'::jsonb,
     'published'
   )

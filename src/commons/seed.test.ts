@@ -24,15 +24,22 @@ describe('the seeded Commons label set', () => {
 
     // The recording identity the ticket promises: the video's canonical URL
     // documented beside the row, and the video's own duration as the row's.
-    expect(seed).toMatch(/https:\/\/www\.youtube\.com\/watch\?v=FQzc9c4LOHM/);
-    expect(videoId).toBe('FQzc9c4LOHM');
-    expect(seed).toMatch(/2790\.0/);
+    expect(seed).toMatch(/https:\/\/www\.youtube\.com\/watch\?v=a_B02BZp-5Y/);
+    expect(videoId).toBe('a_B02BZp-5Y');
+    expect(seed).toMatch(/3036\.0/);
     expect(seed).toMatch(/'published'/);
 
     // The markers parse under the domain's own rules — the guard that keeps
-    // a row no reader can parse out of the store.
+    // a row no reader can parse out of the store. The four movement starts
+    // come from the video's chapter list; the rest are development dummies
+    // spaced within each movement's range.
     const parsed = parseMarkers(markers);
-    expect(parsed.map((m) => m.time)).toEqual([0, 831, 1620, 1965]);
+    expect(parsed.map((m) => m.time)).toEqual([
+      34, 150, 300, 450, 600, 750,
+      913, 1100, 1300, 1500, 1700,
+      1743, 1800, 1900, 2000,
+      2074, 2200, 2400, 2600, 2800, 3000,
+    ]);
 
     // And the row as a whole is one the app can load — the seed's own title
     // and markers, with the table-derived fields (id, contributor_id, stamps)
@@ -41,9 +48,8 @@ describe('the seeded Commons label set', () => {
       id: '3b3a509d-2f7b-4b6d-9c1a-0e2f8f6d9e4a',
       video_id: videoId,
       contributor_id: '00000000-0000-4000-8000-000000000000',
-      title:
-        'Tchaikovsky: Symphony No. 5 in E minor, Op. 64 — Gustav Mahler Jugendorchester, Franz Welser-Möst',
-      duration: 2790,
+      title: 'Tschaikowsky: 5. Sinfonie – hr-Sinfonieorchester, Manfred Honeck',
+      duration: 3036,
       markers,
       publication_status: 'published',
       created_at: '2026-08-20T00:00:00Z',

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LoadResult } from '../audio';
 import { YouTubePlaybackError } from '../audio/errors';
 import { canonicalYouTubeUrl } from '../domain';
-import { createAutosave } from '../storage';
+import { createAutosave, type ProjectRecord } from '../storage';
 import { mockController } from '../test/controller-fixture';
 import { youtubeLoad } from '../test/load-fixture';
 import { marker } from '../test/marker-fixture';
@@ -792,6 +792,28 @@ describe('Player — the timeline bar and markers (T38)', () => {
     // that the prototype only sketched with a playhead.
     fireEvent.click(headers[1]);
     expect(controller.seek).toHaveBeenLastCalledWith(831);
+  });
+
+  it('renders a flat list for a record saved before movements existed — the field is absent, not empty', async () => {
+    // A project stored before ADR-0005 read its movements back as undefined —
+    // the storage version never bumped for the field, so old records keep their
+    // markers and lose nothing else. The panel must treat that as the empty,
+    // ungrouped list the contract describes instead of crashing the render.
+    const record = projectRecord({
+      markers: [marker('a', 10), marker('b', 831), marker('c', 1620)],
+    }) as ProjectRecord & { movements?: unknown };
+    delete (record as { movements?: unknown }).movements;
+
+    const { container } = await renderLoadedPlayer(record as ProjectRecord);
+
+    // No movement headers — the flat, pre-movement panel.
+    expect(container.querySelectorAll('.player-movement-header')).toHaveLength(0);
+    const rows = markerRows(container);
+    expect(rows.map((r) => r.querySelector('.player-marker-title')!.textContent)).toEqual([
+      'A',
+      'B',
+      'C',
+    ]);
   });
 
   it('retires the zoom machinery: no scroll shell, no content-width fit, no reveal-on-jump', async () => {
