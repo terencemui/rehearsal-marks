@@ -100,19 +100,29 @@ export function fakeProjectsApi(): FakeProjectsApi {
       return project;
     }),
 
-    saveProject: vi.fn(async (id: string, update: ProjectUpdate): Promise<void> => {
+    saveProject: vi.fn(async (id: string, update: ProjectUpdate): Promise<ServerProject> => {
       throwIfFailing('saveProject');
       const project = projects.get(id);
       if (project === undefined) {
         throw new ProjectsError('This project was not found.', 'not-found');
       }
-      projects.set(id, {
+      const next: ServerProject = {
         ...project,
         name: update.name ?? project.name,
         markers: update.markers ?? project.markers,
         movements: update.movements ?? project.movements,
         updatedAt: Date.now(),
-      });
+      };
+      // The T49 review trigger's general rule: an owner's edit to a public
+      // project that was not pending returns it to the queue, so the returned
+      // row and the list badge reflect the demotion. (A trusted owner's edit
+      // stays published — the fake has no trust notion; the server enforces
+      // that exception.)
+      if (next.visibility === 'public' && project.publicationStatus !== 'pending') {
+        next.publicationStatus = 'pending';
+      }
+      projects.set(id, next);
+      return next;
     }),
 
     setVisibility: vi.fn(async (id: string, visibility: ProjectVisibility): Promise<void> => {

@@ -91,6 +91,27 @@ export interface ProjectUpdate {
 }
 
 /**
+ * Whether a save returned a public project to the review queue — the review
+ * surface the save indicator shows (T52). The server, via the T49 review
+ * trigger, is the only writer of publication status; the caller compares the
+ * review state it loaded against the state the save's response carries. Only a
+ * *public* project that was not pending can re-enter review: a trusted owner's
+ * edit stays published, and an already-pending project stays pending, so
+ * neither is a return.
+ */
+export function returnsToReview(
+  loaded: { visibility: ProjectVisibility; publicationStatus: PublicationStatus },
+  saved: { visibility: ProjectVisibility; publicationStatus: PublicationStatus },
+): boolean {
+  return (
+    saved.visibility === 'public' &&
+    saved.publicationStatus === 'pending' &&
+    loaded.visibility === 'public' &&
+    loaded.publicationStatus !== 'pending'
+  );
+}
+
+/**
  * Parses one `projects` row as PostgREST returns it, mapping snake_case to
  * the app's camelCase and routing the content documents through the domain's
  * own parsers — the same rule the project-file and label-set readers applied:

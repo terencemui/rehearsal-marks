@@ -64,8 +64,17 @@ export function createSupabaseProjectsApi(
       if (update.name !== undefined) row.name = update.name;
       if (update.markers !== undefined) row.markers = update.markers;
       if (update.movements !== undefined) row.movements = update.movements;
-      const { error } = await client.from('projects').update(row).eq('id', id);
+      // Return the row the server holds after the write — the review trigger
+      // may have demoted a published edit to pending, and the caller surfaces
+      // that (T52). The owner's own select grant covers the returned row.
+      const { data, error } = await client
+        .from('projects')
+        .update(row)
+        .eq('id', id)
+        .select()
+        .single();
       if (error) throw postgrestErrorToProjectsError(error);
+      return parseProjectRow(data);
     },
 
     async setVisibility(id, visibility) {

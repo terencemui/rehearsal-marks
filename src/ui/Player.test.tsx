@@ -28,7 +28,7 @@ const appCss = readFileSync('src/ui/app.css', 'utf8');
  * the duration tests below — the player itself just mutates and flushes.
  */
 function testAutosave(record: ServerProject): { autosave: Autosave; save: ReturnType<typeof vi.fn> } {
-  const save = vi.fn(async () => {});
+  const save = vi.fn(async (record: ServerProject) => record);
   const autosave = createAutosave(record, { save });
   return { autosave, save };
 }

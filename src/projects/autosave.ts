@@ -1,12 +1,15 @@
-import type { ServerProject, ProjectUpdate } from './types';
+import { returnsToReview } from './types';
+import type { ProjectVisibility, PublicationStatus, ServerProject, ProjectUpdate } from './types';
 
 /**
  * The save-state line's vocabulary: `dirty` and `saving` both read as
- * "Saving…" in the UI; `error` is the one failure state the user must see.
- * There is no user-facing save anywhere — `flush` settles pending writes on
- * session exit, page teardown, and the error card's retry.
+ * "Saving…" in the UI; `saved-review` is a save that returned a public
+ * project to the review queue (T52), reading as "back to review"; `error` is
+ * the one failure state the user must see. There is no user-facing save
+ * anywhere — `flush` settles pending writes on session exit, page teardown,
+ * and the error card's retry.
  */
-export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'saved-review' | 'error';
 
 /**
  * Debounced autosave over one server project: every mutation is applied to
@@ -39,7 +42,15 @@ export interface Autosave {
 }
 
 export interface AutosaveOptions {
-  save: (record: ServerProject) => Promise<void>;
+  /**
+   * Writes the record and returns the row the server holds after the write.
+   * The return is the truth about the review state: the T49 trigger may have
+   * returned a published project to pending, and the controller's status
+   * surfaces that (T52). A save that wrote nothing the server can persist
+   * still returns the row the server last confirmed, so the caller's contract
+   * is uniform.
+   */
+  save: (record: ServerProject) => Promise<ServerProject>;
   /** Debounce window; defaults to the spec's ~500ms. */
   debounceMs?: number;
 }
@@ -53,6 +64,14 @@ export function createAutosave(
   let savedVersion = 0;
   /** The projection the server last confirmed holding — the skip's comparison. */
   let lastSavedProjection = persistedProjection(initial);
+  /**
+   * The review state the save line compares against: what was loaded, and what
+   * the last save's response carried. The server owns publication status — a
+   * mutation never rewrites it in the record — so the surface is tracked here,
+   * next to the write that changes it.
+   */
+  const loadedReview = reviewOf(initial);
+  let lastSavedReview = loadedReview;
   let status: SaveStatus = 'idle';
   let lastError: Error | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -90,7 +109,9 @@ export function createAutosave(
     const version = currentVersion;
     setStatus('saving');
     try {
-      await save(current);
+      // The save returns the row the server holds after the write — the truth
+      // about whether a published edit went back to the review queue.
+      lastSavedReview = reviewOf(await save(current));
       savedVersion = version;
       // The server now holds what was just saved — whether the wire wrote it
       // or skipped it as already-persisted, the known state has caught up.
@@ -100,7 +121,13 @@ export function createAutosave(
       setStatus('error');
       throw lastError;
     }
-    setStatus(currentVersion > savedVersion ? 'dirty' : 'saved');
+    setStatus(
+      currentVersion > savedVersion
+        ? 'dirty'
+        : returnsToReview(loadedReview, lastSavedReview)
+          ? 'saved-review'
+          : 'saved',
+    );
   }
 
   return {
@@ -176,8 +203,16 @@ function sameProjection(a: ProjectUpdate, b: ProjectUpdate): boolean {
   );
 }
 
+/** The review state a record carries — the save line's comparison key. */
+function reviewOf(project: ServerProject): {
+  visibility: ProjectVisibility;
+  publicationStatus: PublicationStatus;
+} {
+  return { visibility: project.visibility, publicationStatus: project.publicationStatus };
+}
+
 export interface ProjectSaveApi {
-  saveProject(id: string, update: ProjectUpdate): Promise<void>;
+  saveProject(id: string, update: ProjectUpdate): Promise<ServerProject>;
 }
 
 /**
@@ -194,12 +229,22 @@ export interface ProjectSaveApi {
 export function createProjectSave(
   api: ProjectSaveApi,
   initial: ServerProject,
-): (record: ServerProject) => Promise<void> {
+): (record: ServerProject) => Promise<ServerProject> {
   let lastPersisted = persistedProjection(initial);
-  return async (next: ServerProject): Promise<void> => {
+  // The full row the server last confirmed holding. A skipped save returns
+  // this — never the caller's record, whose loaded publication status the
+  // server's demotion never reconciles into (T52).
+  let lastSavedRow = initial;
+  return async (next: ServerProject): Promise<ServerProject> => {
     const projection = persistedProjection(next);
-    if (sameProjection(projection, lastPersisted)) return;
-    await api.saveProject(next.id, projection);
+    // A skipped save wrote nothing, so the row the server holds is unchanged —
+    // the last confirmed row is the honest answer, and no new review return
+    // can have happened.
+    if (sameProjection(projection, lastPersisted)) return lastSavedRow;
+    const saved = await api.saveProject(next.id, projection);
     lastPersisted = projection;
+    // The server's own row: the review trigger's demotion, if any, rides here.
+    lastSavedRow = saved;
+    return saved;
   };
 }

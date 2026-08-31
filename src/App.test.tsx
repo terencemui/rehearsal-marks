@@ -406,6 +406,45 @@ describe('App Projects workspace', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
   });
 
+  it('surfaces in the save line that renaming a published project returned it to review', async () => {
+    // The T49 trigger returns an owner's edit of a published public project to
+    // pending (T52); the save line must say so, and the list badge follows.
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    await user.click(screen.getByRole('button', { name: 'Rename' }));
+    const input = screen.getByRole('textbox', { name: 'Project name' });
+    await user.clear(input);
+    await user.type(input, 'Brahms 2{enter}');
+
+    expect(await screen.findByText('Saved — back to review')).toBeInTheDocument();
+    expect(screen.getByText('Pending review')).toBeInTheDocument();
+    expect(api.get('project-1')!.publicationStatus).toBe('pending');
+  });
+
+  it('does not claim a return to review when renaming a private project', async () => {
+    // Private work never enters review, so its save line stays plain.
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ visibility: 'private', publicationStatus: 'pending' }));
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    await user.click(screen.getByRole('button', { name: 'Rename' }));
+    const input = screen.getByRole('textbox', { name: 'Project name' });
+    await user.clear(input);
+    await user.type(input, 'Brahms 2{enter}');
+
+    expect(await screen.findByText('Brahms 2')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+    expect(screen.queryByText('Saved — back to review')).not.toBeInTheDocument();
+  });
+
   it('deletes after confirmation and empties the workspace', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
