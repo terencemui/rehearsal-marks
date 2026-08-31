@@ -13,12 +13,12 @@ authorization boundary.
 
 ## Wiring the app
 
-T49 ships the server surface: the `projects` table and its RLS. The client
-side — the `ProjectsApi` seam that drives it — lands with the client
-migration (T50/T51), which is also when the unconfigured-deployment "not wired
-up" screen arrives. Until then the app still talks to the retired `label_sets`
-table; applying this migration before the client lands breaks the existing
-Commons surface by design, in the sequence the parent ticket (#105) sets out.
+The app is fully server-side (ADR-0006): every screen reads and writes the
+`projects` table through the `ProjectsApi` seam, and an unconfigured
+deployment — absent the two env vars below — renders the "not wired up"
+screen instead of the app. The browser stores and the `label_sets` era
+(ADR-0001's Commons) are retired: nothing of the user's data lives in the
+browser.
 
 Two env vars configure the Supabase client (see `.env.example` at the repo
 root):
@@ -28,7 +28,7 @@ root):
   public: the anon key ships with the browser, and RLS is the authorization
   boundary, not the key.
 
-The consumers of that wiring, once the client lands:
+The consumers of that wiring:
 
 - **Anonymous reads** — the public gallery queries `projects` directly over
   PostgREST with the anon key, no account needed. RLS limits the result to

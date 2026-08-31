@@ -6,10 +6,10 @@
  * authorization boundary (ADR-0006), so a row this can return is a published
  * public project, banned owners excluded.
  *
- * The read rides a raw text fetch with the anon-key header pair, exactly like
- * the Commons read (`src/commons/load.ts`) — the anonymous surface needs no
- * session and no supabase-js client. An unconfigured deployment (absent env)
- * is null, the honest "not wired up" case the shell renders as its own screen.
+ * The read rides a raw text fetch with the anon-key header pair — the
+ * anonymous surface needs no session and no supabase-js client. An
+ * unconfigured deployment (absent env) is null, the honest "not wired up"
+ * case the shell renders as its own screen.
  */
 
 import { parseMarkers, parseMovements } from '../domain';
@@ -73,7 +73,7 @@ function projectsQuery(
   const url = new URL('/rest/v1/projects', config.supabaseUrl);
   url.searchParams.set('select', select);
   // RLS already bounds anon to published public rows; the filter is explicit
-  // belt-and-suspenders, the same agreement the Commons read relies on.
+  // belt-and-suspenders, so a policy drift cannot leak pending rows.
   url.searchParams.set('publication_status', 'eq.published');
   return url;
 }

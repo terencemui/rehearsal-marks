@@ -106,8 +106,8 @@ describe('canonicalYouTubeUrl', () => {
   });
 
   it('round-trips every accepted form through one identity', () => {
-    // The identity claim the label-set matching rests on: whatever form was
-    // pasted, two links naming the same video produce the same canonical URL.
+    // The identity claim the app's recording identity rests on: whatever form
+    // was pasted, two links naming the same video produce the same canonical URL.
     const forms = [
       `https://youtu.be/${ID}?t=1`,
       `https://www.youtube.com/shorts/${ID}`,
