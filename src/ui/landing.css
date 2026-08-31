@@ -1,0 +1,27 @@
+/* The anonymous home: a short page that points at sign-in and the future gallery. */
+
+.landing {
+  max-width: 36em;
+}
+
+.landing-notice {
+  color: #9f1239;
+}
+
+.landing p {
+  color: #444;
+}
+
+.landing-sign-in {
+  padding: 8px 16px;
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #fff;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.landing-sign-in:hover {
+  background: #0d6259;
+}

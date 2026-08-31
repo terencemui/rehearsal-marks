@@ -1,6 +1,6 @@
-/* The header sign-in surface: status and action, one quiet line. */
+/* The navbar sign-in surface: status and action, one quiet line. */
 
-.contributor-status {
+.user-status {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -8,7 +8,7 @@
   color: #444;
 }
 
-.contributor-status button {
+.user-status button {
   padding: 6px 12px;
   border: 1px solid #0f766e;
   border-radius: 6px;
@@ -18,24 +18,19 @@
   font-size: 14px;
 }
 
-.contributor-status button:hover {
+.user-status button:hover {
   background: #0f766e;
   color: #fff;
 }
 
-.contributor-status-unavailable {
-  font-style: italic;
-  cursor: help;
-}
-
-.contributor-account {
+.user-account {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
 }
 
-.contributor-account-line {
+.user-account-line {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -43,18 +38,18 @@
 
 /* Account deletion is a one-way door: the action and its confirmation carry
    the danger color, apart from the quiet teal sign-out. */
-.contributor-delete {
+.user-delete {
   border-color: #b91c1c;
   color: #b91c1c;
 }
 
-.contributor-delete:hover,
-.contributor-delete-confirm:hover {
+.user-delete:hover,
+.user-delete-confirm:hover {
   background: #b91c1c;
   color: #fff;
 }
 
-.contributor-confirm-delete {
+.user-confirm-delete {
   margin: 0;
   max-width: 28em;
   font-size: 13px;
@@ -65,13 +60,13 @@
   gap: 8px;
 }
 
-.contributor-delete-confirm {
+.user-delete-confirm {
   background: #b91c1c;
   border-color: #b91c1c;
   color: #fff;
 }
 
-.contributor-notice {
+.user-notice {
   margin: 0;
   max-width: 24em;
   font-size: 13px;

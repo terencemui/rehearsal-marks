@@ -1,32 +1,36 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createStorage } from '../storage';
-import type { ProjectRecord } from '../storage';
 import { createProjectFromYouTubeLink } from './create';
 import type { YouTubeDependencies } from './create';
+import type { ProjectValues } from '../projects/types';
+import { serverProject } from '../test/server-project-fixture';
 
 const ID = 'dQw4w9WgXcQ';
 const CANONICAL = `https://www.youtube.com/watch?v=${ID}`;
 const TITLE = 'Brahms — Intermezzo Op. 118 No. 2';
 
-/** Pipeline dependencies writing into a fresh fake-indexeddb database. */
-async function dependencies(overrides: Partial<YouTubeDependencies> = {}) {
-  const storage = await createStorage({ name: `youtube-test-${crypto.randomUUID()}` });
-  return {
-    storage,
-    deps: {
-      fetchTitle: vi.fn<(url: string) => Promise<string | null>>(async () => TITLE),
-      // No community labels by default: the bare-link case is the baseline.
-      loadCommunityLabels: vi.fn(async () => null),
-      save: (record: ProjectRecord) => storage.projects.save(record),
-      now: () => 1_700_000_000_000,
-      ...overrides,
-    },
+/**
+ * Pipeline dependencies against a fake server: `create` records the values it
+ * is handed and answers with the stored row — the server's own row, ownership
+ * and stamps included, exactly as the real adapter returns it.
+ */
+function dependencies(overrides: Partial<YouTubeDependencies> = {}) {
+  const created: ProjectValues[] = [];
+  const deps: YouTubeDependencies = {
+    fetchTitle: vi.fn(async () => TITLE),
+    create: vi.fn(async (values: ProjectValues) => {
+      created.push(values);
+      // The server owns identity, status, and stamps; only the client-written
+      // fields carry over.
+      return serverProject({ ...values, id: 'project-created', createdAt: 0, updatedAt: 0 });
+    }),
+    ...overrides,
   };
+  return { deps, created };
 }
 
 describe('createProjectFromYouTubeLink', () => {
-  it('creates a YouTube project whose identity is the video ID', async () => {
-    const { deps, storage } = await dependencies();
+  it('creates a bare YouTube project whose identity is the video ID', async () => {
+    const { deps, created } = dependencies();
 
     const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
 
@@ -35,14 +39,12 @@ describe('createProjectFromYouTubeLink', () => {
     // The video ID is the recording's identity — no upload facts exist on the
     // record at all.
     expect(outcome.project.videoId).toBe(ID);
-    expect(outcome.project.markers).toEqual([]);
-
-    const stored = await storage.projects.get(outcome.project.id);
-    expect(stored?.videoId).toBe(ID);
+    expect(created).toHaveLength(1);
+    expect(created[0].videoId).toBe(ID);
   });
 
   it('records the video ID as the recording identity, whatever form was pasted', async () => {
-    const { deps } = await dependencies();
+    const { deps } = dependencies();
 
     const outcome = await createProjectFromYouTubeLink(`https://youtu.be/${ID}?t=42`, deps);
 
@@ -54,13 +56,14 @@ describe('createProjectFromYouTubeLink', () => {
   });
 
   it('names the project after the video title', async () => {
-    const { deps } = await dependencies();
+    const { deps, created } = dependencies();
 
     const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.project.name).toBe(TITLE);
+    expect(created[0].name).toBe(TITLE);
   });
 
   it.each([
@@ -71,7 +74,7 @@ describe('createProjectFromYouTubeLink', () => {
     // A title this app cannot read is not a reason to refuse the project: the
     // video may still play, and an unplayable one is the player's story to
     // tell. The name falls back to something identifying rather than empty.
-    const { deps } = await dependencies({
+    const { deps } = dependencies({
       fetchTitle: fetchTitle as YouTubeDependencies['fetchTitle'],
     });
 
@@ -84,105 +87,84 @@ describe('createProjectFromYouTubeLink', () => {
   });
 
   it('trims a title that arrives padded', async () => {
-    const { deps } = await dependencies({ fetchTitle: async () => `  ${TITLE}\n` });
+    const { deps } = dependencies({ fetchTitle: async () => `  ${TITLE}\n` });
 
     const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
 
     expect(outcome.ok && outcome.project.name).toBe(TITLE);
   });
 
-  it('opens in Label mode, because a bare link arrives with no marks', async () => {
-    // The posture is stamped at creation and the player reads it, so nothing
-    // else gets to decide: a project with an empty timeline must land with
-    // the marking tools in reach, not read-only.
-    const { deps } = await dependencies();
+  it('creates a bare timeline: no markers, no movements, a zero duration', async () => {
+    // Nothing decodes and nothing is copied in (T51): the owner's marks are
+    // their own. Duration is 0 because oEmbed reports none; the embed corrects
+    // the in-memory duration once it loads, and the server never persists it.
+    const { deps, created } = dependencies();
 
     const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.project.markers).toEqual([]);
-    expect(outcome.project.playerMode).toBe('label');
+    expect(outcome.project.movements).toEqual([]);
+    expect(created[0].markers).toEqual([]);
+    expect(created[0].movements).toEqual([]);
+    expect(created[0].duration).toBe(0);
   });
 
-  it('stamps both timestamps from the injected clock', async () => {
-    const { deps } = await dependencies();
+  it('carries the canonical recording title, fixed at creation', async () => {
+    // The user's own name starts equal to the title and is the only editable
+    // half; the recording title stays the canonical fact.
+    const { deps, created } = dependencies();
 
     const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.project.createdAt).toBe(1_700_000_000_000);
-    expect(outcome.project.updatedAt).toBe(1_700_000_000_000);
+    expect(created[0].recordingTitle).toBe(TITLE);
   });
 
   it.each([
     ['a playlist link', 'https://www.youtube.com/playlist?list=PLabcdef', /playlist/i],
     ['a malformed link', 'not a youtube link', /YouTube video link/],
     ['an empty field', '', /YouTube video link/],
-  ])('rejects %s with guidance and stores nothing', async (_case, input, expected) => {
-    const { deps, storage } = await dependencies();
+  ])('rejects %s with guidance and creates nothing', async (_case, input, expected) => {
+    const { deps } = dependencies();
 
     const outcome = await createProjectFromYouTubeLink(input, deps);
 
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.guidance).toMatch(expected);
-    expect(await storage.projects.list()).toEqual([]);
+    expect(deps.create).not.toHaveBeenCalled();
     // A rejected link is decided before any network call — nothing is asked
     // about a video that was never named.
     expect(deps.fetchTitle).not.toHaveBeenCalled();
   });
 
-  it('propagates a save failure instead of reporting a project that was never saved', async () => {
-    const { deps } = await dependencies({
-      save: async () => {
-        throw new Error('save failed');
+  it('propagates a create failure instead of reporting a project that was never saved', async () => {
+    const { deps } = dependencies({
+      create: async () => {
+        throw new Error('create failed');
       },
     });
 
-    await expect(createProjectFromYouTubeLink(CANONICAL, deps)).rejects.toThrow('save failed');
+    await expect(createProjectFromYouTubeLink(CANONICAL, deps)).rejects.toThrow('create failed');
   });
 
-  it('copies a loaded community label set into the project as its own marks', async () => {
-    const community = {
-      markers: [
-        { id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 },
-        { id: 'm2', time: 222.35, aliases: [], createdAt: 2 },
-      ],
+  it('asks the server for nothing the server owns — identity, status, and stamps are not in the values', async () => {
+    // The values are exactly the client-writable create fields; the server
+    // decides ownership, visibility, publication status, and timestamps.
+    const { deps, created } = dependencies();
+
+    await createProjectFromYouTubeLink(CANONICAL, deps);
+
+    expect(created[0]).toEqual({
+      name: TITLE,
+      recordingTitle: TITLE,
+      videoId: ID,
+      duration: 0,
+      markers: [],
       movements: [],
-      duration: 604.2,
-    };
-    const { deps } = await dependencies({
-      loadCommunityLabels: vi.fn(async () => community),
     });
-
-    const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
-
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.project.markers).toEqual(community.markers);
-    // The set's duration seeds the record, so a project with marks has an
-    // honest timeline before the embed reports its own.
-    expect(outcome.project.duration).toBe(604.2);
-    // Marks in hand means immediately practiceable: the source's own default.
-    expect(outcome.project.playerMode).toBe('playback');
-    // The loader is asked about the video's identity, not the pasted text.
-    expect(deps.loadCommunityLabels).toHaveBeenCalledWith(ID);
-  });
-
-  it('still creates the project when the community lookup fails outright', async () => {
-    const { deps } = await dependencies({
-      loadCommunityLabels: vi.fn(async () => {
-        throw new Error('offline');
-      }),
-    });
-
-    const outcome = await createProjectFromYouTubeLink(CANONICAL, deps);
-
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.project.markers).toEqual([]);
-    expect(outcome.project.playerMode).toBe('label');
   });
 });

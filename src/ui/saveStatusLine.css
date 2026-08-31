@@ -1,0 +1,28 @@
+/* The project page's save-state line: a quiet status that turns into a
+   failure with a retry. */
+
+.save-status {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #666;
+}
+
+.save-status-error {
+  color: #9a3412;
+}
+
+.save-status-retry {
+  margin-left: 8px;
+  padding: 2px 10px;
+  border: 1px solid #b91c1c;
+  border-radius: 6px;
+  background: none;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.save-status-retry:hover {
+  background: #b91c1c;
+  color: #fff;
+}

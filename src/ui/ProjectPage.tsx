@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import type { AudioController } from '../audio';
-import { createAutosave } from '../storage';
-import type { Autosave, ProjectRecord, SaveStatus, Storage } from '../storage';
+import { createAutosave, createProjectSave } from '../projects/autosave';
+import type { Autosave } from '../projects/autosave';
+import type { ProjectsApi } from '../projects/api';
+import type { SaveStatus } from '../projects/autosave';
 import { NotFoundPage } from './NotFoundPage';
 import { Player } from './Player';
+import { SaveStatusLine } from './SaveStatusLine';
 
-/** One project page session: the autosave over the record and its controller. */
+/** One project page session: the autosave over the loaded project and its controller. */
 interface ProjectSession {
   /** The project id this session was built for — keys the Player by project. */
   projectId: string;
@@ -15,8 +18,8 @@ interface ProjectSession {
 }
 
 export interface ProjectPageProps {
-  /** The open persistence layer — the record is read and written through it. */
-  storage: Storage;
+  /** The server-project surface — the record is read and written through it. */
+  projectsApi: ProjectsApi;
   /** Test seam: the audio controller each page session runs on. */
   controllerFactory: () => AudioController;
   /**
@@ -30,23 +33,24 @@ export interface ProjectPageProps {
 }
 
 /**
- * The project page (T45): route-as-session. `/projects/:id` reads the record
- * from storage, builds the autosave and the audio controller, and renders the
- * player — the URL is the source of truth, so a refresh restores the same
- * player and browser Back is the exit. There is no App-level open session
- * anymore: each page mounts its own and tears it down on unmount (flushing
- * the session's one write, the measured duration, and reporting the result),
- * so navigating away — Back, a navbar link, or a direct swap to another
- * project page — closes it cleanly and the next page opens its own.
+ * The project page (T45): route-as-session. `/projects/:id` reads the project
+ * from the server (RLS decides what the session may see — an owner's own
+ * project in any status, or a published public one), builds the autosave over
+ * it and the audio controller, and renders the player under a visible
+ * save-status line (T51) — the URL is the source of truth, so a refresh
+ * restores the same player and browser Back is the exit. There is no App-level
+ * open session anymore: each page mounts its own and tears it down on unmount
+ * (flushing the session's pending writes and reporting the result), so
+ * navigating away closes it cleanly and the next page opens its own.
  *
- * A project id that names no record shows the not-found page (T47) instead of
- * a blank or broken surface, with the way back to the Projects list in the
- * page itself; a read that fails (a transient storage error, not a missing
- * row) keeps landing on the Projects home with the failure on the workspace's
+ * A project id that names no row shows the not-found page (T47) instead of a
+ * blank or broken surface, with the way back to the Projects list in the page
+ * itself; a read that fails (a transient server error, not a missing row)
+ * keeps landing on the Projects home with the failure on the workspace's
  * notice line, since "not found" would misdescribe a store that was merely
  * unreachable.
  */
-export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice }: ProjectPageProps) {
+export function ProjectPage({ projectsApi, controllerFactory, onExitStatus, onNotice }: ProjectPageProps) {
   const { id } = useParams();
   const [session, setSession] = useState<ProjectSession | null>(null);
   /**
@@ -58,7 +62,7 @@ export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice
   const [missingId, setMissingId] = useState<string | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   // The callbacks are read from refs so the session-build effect's deps stay
-  // the stable inputs (the id, the storage, the seam) — the same mount-only
+  // the stable inputs (the id, the api, the seam) — the same mount-only
   // rule the shell applies to its inline controller factories.
   const onExitStatusRef = useRef(onExitStatus);
   onExitStatusRef.current = onExitStatus;
@@ -89,19 +93,21 @@ export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice
     setSession(null);
     setMissingId(null);
     setReadFailed(false);
-    void storage.projects
-      .get(id)
-      .then((record) => {
+    void projectsApi
+      .getProject(id)
+      .then((project) => {
         if (cancelled) return;
-        if (record === undefined) {
-          // A stale row (another tab deleted it) — the not-found page.
+        if (project === null) {
+          // A row that no longer exists — the not-found page.
           setMissingId(id);
           return;
         }
         built = {
           projectId: id,
-          autosave: createAutosave(record, {
-            save: (next: ProjectRecord) => storage.projects.save(next),
+          autosave: createAutosave(project, {
+            // The wire: persist only what changes (and nothing when the
+            // player's in-memory duration stamp is the only mutation).
+            save: createProjectSave(projectsApi, project),
           }),
           controller: controllerFactory(),
         };
@@ -116,16 +122,16 @@ export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice
       cancelled = true;
       if (built !== null) tearDown(built);
     };
-    // The session is rebuilt only when the routed id, the storage, or the
-    // seam changes — never on the shell's incidental re-renders.
-  }, [id, storage, controllerFactory]);
+    // The session is rebuilt only when the routed id, the api, or the seam
+    // changes — never on the shell's incidental re-renders.
+  }, [id, projectsApi, controllerFactory]);
 
   // A record that no longer exists is its own surface now (T47): the
   // not-found page, with the way back in the page itself. The check compares
   // the flagged id to the routed id, so a stale flag from a previous id can
   // never paint this page on a live project's URL. The silent bounce to `/`
   // is left for the impossible no-id case and for a read failure — a
-  // transient storage error is not "not found", so the notice says what went
+  // transient server error is not "not found", so the notice says what went
   // wrong and home is the honest landing.
   if (missingId === id) {
     return <NotFoundPage />;
@@ -140,12 +146,16 @@ export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice
 
   // Keyed by project: a fresh recording must start a fresh player — the zoom
   // level, marker state, and selection are per-session, never carried across
-  // recordings.
+  // recordings. The save-status line rides above the player, a live
+  // subscription to the session's autosave.
   return (
-    <Player
-      key={session.projectId}
-      autosave={session.autosave}
-      controller={session.controller}
-    />
+    <>
+      <SaveStatusLine autosave={session.autosave} />
+      <Player
+        key={session.projectId}
+        autosave={session.autosave}
+        controller={session.controller}
+      />
+    </>
   );
 }

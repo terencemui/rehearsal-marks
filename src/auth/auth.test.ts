@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  AUTH_UNAVAILABLE_REASON,
-  createAuthController,
-  contributorFromUser,
-} from './controller';
-import type { Contributor, SupabaseAuth } from './controller';
+import { createAuthController, userFromUser } from './controller';
+import type { SupabaseAuth, User } from './controller';
 
 /**
  * The backend surface the controller drives, faked the way the audio tests
@@ -23,16 +19,16 @@ function fakeBackend(overrides: Partial<SupabaseAuth> = {}): SupabaseAuth {
   };
 }
 
-const CONTRIBUTOR: Contributor = {
-  id: 'contributor-1',
+const USER: User = {
+  id: 'user-1',
   name: 'Ava Cellist',
   email: 'ava@example.com',
 };
 
-describe('contributorFromUser', () => {
+describe('userFromUser', () => {
   it('takes the display name Google provides', () => {
     expect(
-      contributorFromUser({
+      userFromUser({
         id: 'u1',
         email: 'ava@example.com',
         user_metadata: { full_name: 'Ava Cellist' },
@@ -41,7 +37,7 @@ describe('contributorFromUser', () => {
   });
 
   it('falls back to the email when the provider sends no name', () => {
-    expect(contributorFromUser({ id: 'u1', email: 'ava@example.com', user_metadata: {} })).toEqual({
+    expect(userFromUser({ id: 'u1', email: 'ava@example.com', user_metadata: {} })).toEqual({
       id: 'u1',
       name: 'ava@example.com',
       email: 'ava@example.com',
@@ -50,7 +46,7 @@ describe('contributorFromUser', () => {
 
   it('tolerates a blank provider name', () => {
     expect(
-      contributorFromUser({ id: 'u1', email: 'ava@example.com', user_metadata: { full_name: '  ' } }),
+      userFromUser({ id: 'u1', email: 'ava@example.com', user_metadata: { full_name: '  ' } }),
     ).toEqual({ id: 'u1', name: 'ava@example.com', email: 'ava@example.com' });
   });
 });
@@ -63,18 +59,18 @@ describe('createAuthController', () => {
   });
 
   it('restores a signed-in session the backend already holds', async () => {
-    const backend = fakeBackend({ getSession: vi.fn(async () => CONTRIBUTOR) });
+    const backend = fakeBackend({ getSession: vi.fn(async () => USER) });
     const controller = createAuthController(backend);
 
     // The restore is async; the first snapshot is anonymous, the restore
     // lands as soon as getSession resolves.
     await vi.waitFor(() => {
-      expect(controller.getState()).toEqual({ kind: 'signed-in', contributor: CONTRIBUTOR });
+      expect(controller.getState()).toEqual({ kind: 'signed-in', user: USER });
     });
   });
 
   it('lands signed-in when the backend publishes a session', async () => {
-    const listeners = new Set<(contributor: Contributor | null) => void>();
+    const listeners = new Set<(user: User | null) => void>();
     const backend = fakeBackend({
       onAuthStateChange: vi.fn((listener) => {
         listeners.add(listener);
@@ -85,20 +81,20 @@ describe('createAuthController', () => {
     const states: unknown[] = [];
     controller.subscribe((state) => states.push(state));
 
-    for (const listener of listeners) listener(CONTRIBUTOR);
+    for (const listener of listeners) listener(USER);
 
     await vi.waitFor(() => {
-      expect(controller.getState()).toEqual({ kind: 'signed-in', contributor: CONTRIBUTOR });
-      expect(states.at(-1)).toEqual({ kind: 'signed-in', contributor: CONTRIBUTOR });
+      expect(controller.getState()).toEqual({ kind: 'signed-in', user: USER });
+      expect(states.at(-1)).toEqual({ kind: 'signed-in', user: USER });
     });
   });
 
   it('signs in with Google and lands signed-in when the flow completes', async () => {
-    const listeners = new Set<(contributor: Contributor | null) => void>();
+    const listeners = new Set<(user: User | null) => void>();
     const signIn = vi.fn(async () => {
       // The redirect flow's return: the backend publishes the session
       // through onAuthStateChange, not through the signIn promise.
-      for (const listener of listeners) listener(CONTRIBUTOR);
+      for (const listener of listeners) listener(USER);
     });
     const backend = fakeBackend({
       signInWithGoogle: signIn,
@@ -112,7 +108,7 @@ describe('createAuthController', () => {
     await controller.signInWithGoogle();
 
     expect(signIn).toHaveBeenCalledOnce();
-    expect(controller.getState()).toEqual({ kind: 'signed-in', contributor: CONTRIBUTOR });
+    expect(controller.getState()).toEqual({ kind: 'signed-in', user: USER });
   });
 
   it('a failed restore starts anonymous without rejecting', async () => {
@@ -127,7 +123,7 @@ describe('createAuthController', () => {
 
   it('a failed sign-in attempt never wipes an existing session', async () => {
     const backend = fakeBackend({
-      getSession: vi.fn(async () => CONTRIBUTOR),
+      getSession: vi.fn(async () => USER),
       signInWithGoogle: vi.fn(async () => { throw new Error('nope'); }),
     });
     const controller = createAuthController(backend);
@@ -140,7 +136,7 @@ describe('createAuthController', () => {
     const state = controller.getState();
     expect(state.kind).toBe('signed-in');
     if (state.kind === 'signed-in') {
-      expect(state.contributor).toEqual(CONTRIBUTOR);
+      expect(state.user).toEqual(USER);
       expect(state.notice).toMatch(/didn't work/i);
     }
   });
@@ -164,9 +160,9 @@ describe('createAuthController', () => {
   });
 
   it('signs out back to anonymous', async () => {
-    const listeners = new Set<(contributor: Contributor | null) => void>();
+    const listeners = new Set<(user: User | null) => void>();
     const backend = fakeBackend({
-      getSession: vi.fn(async () => CONTRIBUTOR),
+      getSession: vi.fn(async () => USER),
       signOut: vi.fn(async () => {
         for (const listener of listeners) listener(null);
       }),
@@ -189,9 +185,9 @@ describe('createAuthController', () => {
     // supabase-js's real ordering: removeCurrentSession fires SIGNED_OUT,
     // then the API error surfaces. The state must reflect what the backend
     // actually did, not what the error alone suggests.
-    const listeners = new Set<(contributor: Contributor | null) => void>();
+    const listeners = new Set<(user: User | null) => void>();
     const backend = fakeBackend({
-      getSession: vi.fn(async () => CONTRIBUTOR),
+      getSession: vi.fn(async () => USER),
       signOut: vi.fn(async () => {
         for (const listener of listeners) listener(null);
         throw new Error('nope');
@@ -219,7 +215,7 @@ describe('createAuthController', () => {
     // The other real failure: the local session could not even be read, so
     // nothing was removed — the state stays signed-in and honest.
     const backend = fakeBackend({
-      getSession: vi.fn(async () => CONTRIBUTOR),
+      getSession: vi.fn(async () => USER),
       signOut: vi.fn(async () => {
         throw new Error('nope');
       }),
@@ -238,9 +234,9 @@ describe('createAuthController', () => {
     }
   });
 
-  it('deletes the signed-in contributor account and returns to anonymous', async () => {
+  it('deletes the signed-in account and returns to anonymous', async () => {
     const backend = fakeBackend({
-      getSession: vi.fn(async () => CONTRIBUTOR),
+      getSession: vi.fn(async () => USER),
       deleteAccount: vi.fn(async () => {}),
     });
     const controller = createAuthController(backend);
@@ -256,7 +252,7 @@ describe('createAuthController', () => {
 
   it('a failed account deletion keeps the signed-in state with an honest notice', async () => {
     const backend = fakeBackend({
-      getSession: vi.fn(async () => CONTRIBUTOR),
+      getSession: vi.fn(async () => USER),
       deleteAccount: vi.fn(async () => {
         throw new Error('nope');
       }),
@@ -271,7 +267,7 @@ describe('createAuthController', () => {
     const state = controller.getState();
     expect(state.kind).toBe('signed-in');
     if (state.kind === 'signed-in') {
-      expect(state.contributor).toEqual(CONTRIBUTOR);
+      expect(state.user).toEqual(USER);
       expect(state.notice).toMatch(/didn't work/i);
     }
   });
@@ -287,24 +283,8 @@ describe('createAuthController', () => {
     expect(controller.getState()).toEqual({ kind: 'anonymous' });
   });
 
-  it('is unavailable when there is no backend, and sign-in is a no-op', async () => {
-    const controller = createAuthController(null);
-
-    expect(controller.getState()).toEqual({
-      kind: 'unavailable',
-      reason: AUTH_UNAVAILABLE_REASON,
-    });
-    await controller.signInWithGoogle();
-    await controller.signOut();
-    await controller.deleteAccount();
-    expect(controller.getState()).toEqual({
-      kind: 'unavailable',
-      reason: AUTH_UNAVAILABLE_REASON,
-    });
-  });
-
   it('stops publishing after destroy', async () => {
-    const listeners = new Set<(contributor: Contributor | null) => void>();
+    const listeners = new Set<(user: User | null) => void>();
     const backend = fakeBackend({
       onAuthStateChange: vi.fn((listener) => {
         listeners.add(listener);
@@ -316,7 +296,7 @@ describe('createAuthController', () => {
     controller.subscribe(listener);
     controller.destroy();
 
-    for (const handler of listeners) handler(CONTRIBUTOR);
+    for (const handler of listeners) handler(USER);
 
     expect(listener).not.toHaveBeenCalled();
   });

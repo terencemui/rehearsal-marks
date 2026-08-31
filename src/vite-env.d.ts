@@ -2,9 +2,9 @@
 
 interface ImportMetaEnv {
   /**
-   * The Supabase project URL behind the Commons (ADR-0001). Absent or blank,
-   * sign-in reports itself unavailable and browsing is untouched — see
-   * `supabase/README.md` for the wiring contract.
+   * The Supabase project URL behind the app's server (ADR-0006). Absent or
+   * blank, the app renders the not-wired-up screen — see `supabase/README.md`
+   * for the wiring contract.
    */
   readonly VITE_SUPABASE_URL?: string;
   /** The Supabase project's anon (public) key — same unavailability rule. */

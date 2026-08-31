@@ -3,18 +3,14 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { labelSetRow } from './test/commons-fixture';
-import { createStorage } from './storage';
-import type { Storage } from './storage';
-import { createAuthController } from './auth';
+import type { LoadOptions } from './audio';
 import { mockAuth } from './test/auth-fixture';
-import { mockCommonsWrite } from './test/commons-write-fixture';
+import type { MockAuthBackend } from './test/auth-fixture';
 import { mockController } from './test/controller-fixture';
-import { youtubeLoad } from './test/load-fixture';
-import { projectRecord } from './test/project-fixture';
-import { closeTestStorages, testStorage } from './test/storage-fixture';
+import { fakeProjectsApi } from './test/projects-fixture';
+import type { FakeProjectsApi } from './test/projects-fixture';
+import { serverProject } from './test/server-project-fixture';
 import { waitForPlayerSettled } from './test/settle-player';
-import type { CommunityLabelSet } from './youtube/community';
 import App from './App';
 
 /** The renderApp knobs — every App seam, named so a test reaches one without
@@ -22,31 +18,33 @@ import App from './App';
 interface RenderAppOptions {
   /** The audio-controller seam, like App's controllerFactory. */
   controller?: ReturnType<typeof mockController>;
-  /** An already-opened storage; the app opens its own when absent. */
-  storage?: Storage;
+  /** The server-project surface, like App's projectsApiFactory. */
+  api?: FakeProjectsApi;
   /** The video-title lookup, so tests never reach the network. */
   fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
-  /** The community label-set lookup. */
-  loadCommunityLabels?: (videoId: string) => Promise<CommunityLabelSet | null>;
-  /** The Commons write seam, like App's commonsWriteFactory. */
-  commons?: ReturnType<typeof mockCommonsWrite>;
+  /** The Google sign-in seam, like App's authFactory. */
+  auth?: ReturnType<typeof mockAuth>;
   /** The starting URL the memory router serves — the refresh/landing case. */
   initialEntry?: string;
 }
 
-/** Renders the app on a fresh fake-indexeddb database with a mocked seam,
- * served by a memory router — the one App-level seam, so the tests control
- * the starting URL and can drive Back and Forward (T44). */
-async function renderApp({
+/**
+ * Renders the app on a fake server project surface with mocked seams, served
+ * by a memory router — the one App-level seam, so the tests control the
+ * starting URL and can drive Back and Forward (T44). App's env gate (T51)
+ * needs a wired env to reach the shell at all, so every test stubs one; the
+ * api and auth seams keep the test off the network — no supabase-js client is
+ * ever constructed.
+ */
+function renderApp({
   controller = mockController(),
-  storage,
+  api = fakeProjectsApi(),
   fetchTitle = async () => VIDEO_TITLE,
-  loadCommunityLabels = async () => null,
-  commons = mockCommonsWrite(),
+  auth = mockAuth(),
   initialEntry = '/',
 }: RenderAppOptions = {}) {
-  const opened = storage ?? (await testStorage());
-  const auth = mockAuth();
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key');
   /** The memory history's Back/Forward, driven like the browser's buttons. */
   let go: (delta: number) => void = () => {};
   /** Programmatic navigation to a path — the memory router's address bar. */
@@ -58,7 +56,7 @@ async function renderApp({
    * closure reference), so the probe writes the path here and the returned
    * `currentPath` reads it fresh.
    */
-  const pathRef: { current: string } = { current: '/' };
+  const pathRef: { current: string } = { current: initialEntry };
   /** A probe inside the router that hands the helpers the navigate function and
    * the live location. The async act with a microtask yield is deliberate: React
    * 19 defers the history listener's location update, and a synchronous act would
@@ -88,22 +86,19 @@ async function renderApp({
       <HistoryProbe />
       <App
         controllerFactory={() => controller}
-        storage={opened}
-        // Stubbed by default so no test reaches YouTube's oEmbed endpoint or
-        // the community index, and no test constructs a supabase-js client.
+        projectsApiFactory={() => api}
+        // Stubbed by default so no test reaches YouTube's oEmbed endpoint, and
+        // no test constructs a supabase-js client.
         fetchTitle={fetchTitle}
-        loadCommunityLabels={loadCommunityLabels}
         authFactory={() => auth.controller}
-        commonsWriteFactory={() => commons.controller}
       />
     </MemoryRouter>,
   );
   return {
     ...view,
-    storage: opened,
+    api,
     controller,
     auth: auth.backend,
-    commons: commons.backend,
     go,
     navigateTo,
     currentPath: () => pathRef.current,
@@ -114,16 +109,30 @@ const VIDEO_ID = 'dQw4w9WgXcQ';
 const YOUTUBE_CANONICAL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
 const VIDEO_TITLE = 'Brahms — Intermezzo Op. 118 No. 2';
 
-/** The minimal fetch surface App.tsx consumes. */
-function jsonResponse(body: string) {
-  return { ok: true, text: async () => body, blob: async () => new Blob([body]) };
-}
-
-afterEach(async () => {
-  await closeTestStorages();
+afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
+
+/** The navbar's sign-in control — the landing's own button is a second, distinct one. */
+function navSignIn(): HTMLElement {
+  return within(screen.getByRole('navigation')).getByRole('button', {
+    name: 'Sign in with Google',
+  });
+}
+
+/**
+ * Signs in as Ava Cellist through the navbar, publishing the session the way
+ * the real backend's redirect round-trip would.
+ */
+async function signIn(
+  user: ReturnType<typeof userEvent.setup>,
+  backend: MockAuthBackend,
+): Promise<void> {
+  await user.click(navSignIn());
+  act(() => backend.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
+  await screen.findByText('Signed in as Ava Cellist');
+}
 
 /** Types a link into the create surface's link input and submits it. */
 async function pasteLink(user: ReturnType<typeof userEvent.setup>, url: string) {
@@ -147,16 +156,16 @@ async function waitForWorkspaceRow(name: string): Promise<void> {
  * Drives a link create whose title lookup is held open, then navigates away to
  * Help while it is still in flight — the shared "create lands behind a
  * navigation" setup (T45, T46). Returns the release, which drains the create's
- * continuation (title → labels → token check → list refresh) inside act, so the
- * tests assert only the aftermath.
+ * continuation (title → server create → token check → list refresh) inside
+ * act, so the tests assert only the aftermath.
  */
 async function createBehindNavigation(): Promise<{
-  storage: Storage;
+  api: FakeProjectsApi;
   controller: ReturnType<typeof mockController>;
   release: () => Promise<void>;
 }> {
   const user = userEvent.setup();
-  const storage = await testStorage();
+  const api = fakeProjectsApi();
   let releaseTitle!: () => void;
   const pendingTitle = new Promise<void>((resolve) => {
     releaseTitle = resolve;
@@ -164,20 +173,21 @@ async function createBehindNavigation(): Promise<{
   const controller = mockController({
     load: vi.fn(async () => ({ duration: 372 })),
   });
-  await renderApp({
+  const { auth } = renderApp({
+    api,
     controller,
-    storage,
     fetchTitle: async () => {
       await pendingTitle;
       return VIDEO_TITLE;
     },
   });
+  await signIn(user, auth);
   await pasteLink(user, YOUTUBE_CANONICAL);
   // The title lookup is still in flight; the user navigates away to Help.
   await user.click(screen.getByRole('link', { name: 'Help' }));
   expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
   return {
-    storage,
+    api,
     controller,
     release: async () => {
       await act(async () => {
@@ -190,17 +200,24 @@ async function createBehindNavigation(): Promise<{
   };
 }
 
+/** Narrows a captured `load` call's options to the YouTube arm. */
+function youtubeLoad(options: LoadOptions): Extract<LoadOptions, { source: 'youtube' }> {
+  if (options.source !== 'youtube') throw new Error('Expected a YouTube load.');
+  return options;
+}
+
 describe('App create from a YouTube link', () => {
-  it('opens a freshly pasted link in Label mode, and the player is read-only over the empty timeline', async () => {
-    // End to end, the behaviour the stamped mode and the player have to agree
-    // on: a project with an empty timeline is still a label-mode record (the
-    // create pipeline stamps it), and the T39 player is read-only over markers
-    // whatever the mode — no transport, no posture toggle, no Add marker.
+  it('opens a freshly pasted link on the new project’s page — a bare server project, read-only', async () => {
+    // End to end: a pasted link creates a bare server project (T51) — nothing
+    // decodes, nothing is copied in — and the T39 player is read-only over
+    // markers whatever the record: no transport, no posture toggle, no Add
+    // marker.
     const user = userEvent.setup();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { storage } = await renderApp({ controller });
+    const { api, auth } = renderApp({ controller });
+    await signIn(user, auth);
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -210,249 +227,91 @@ describe('App create from a YouTube link', () => {
     expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
 
-    const [summary] = await storage.projects.list();
-    expect((await storage.projects.get(summary.id))!.playerMode).toBe('label');
-  });
-
-  it('copies a loaded community label set in, and the player shows the copied marks', async () => {
-    // The labeled-performance story: a video someone already marked loads its
-    // label set at creation, so the project is immediately practiceable — the
-    // marks render as marker rows, and the T39 player is read-only over them.
-    const user = userEvent.setup();
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 604.2 })),
-    });
-    const community: CommunityLabelSet = {
-      markers: [{ id: 'm1', time: 10, aliases: ['Recap'], createdAt: 1 }],
-      movements: [],
-      duration: 604.2,
-    };
-    const { storage } = await renderApp({
-      controller,
-      fetchTitle: async () => VIDEO_TITLE,
-      loadCommunityLabels: async () => community,
-    });
-
-    await pasteLink(user, YOUTUBE_CANONICAL);
-
-    await screen.findByRole('heading', { name: VIDEO_TITLE });
-    // The copied marks render as marker rows — the first label in time order.
-    expect(await screen.findByRole('button', { name: /A — Recap/ })).toBeInTheDocument();
-    // No posture toggle, no Add marker — the transport is gone (T39).
-    expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
-
-    const [summary] = await storage.projects.list();
-    const stored = (await storage.projects.get(summary.id))!;
-    expect(stored.markers).toEqual(community.markers);
-    expect(stored.playerMode).toBe('playback');
-    expect(stored.duration).toBe(604.2);
-  });
-
-  it('consults the hosted Commons by default and copies a published set in', async () => {
-    // The real transport, end to end: a wired app (Vite env set) queries the
-    // Commons at creation, and a published set for the video becomes the
-    // project's own editable copy, opening in Playback mode. No loadCommunityLabels
-    // prop is passed — this is the app's default wiring.
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://abccompany.supabase.co');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key-1');
-    const row = labelSetRow({ title: VIDEO_TITLE });
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/rest/v1/label_sets')) {
-        return jsonResponse(JSON.stringify([row]));
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const user = userEvent.setup();
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 604.2 })),
-    });
-    const opened = await testStorage();
-    render(
-      <MemoryRouter>
-        <App
-          controllerFactory={() => controller}
-          storage={opened}
-          fetchTitle={async () => VIDEO_TITLE}
-        />
-      </MemoryRouter>,
+    // The created row is bare: the client wrote name, recording title, video
+    // ID, an empty timeline, and a zero duration — the server owns the rest.
+    const [created] = await api.listMyProjects();
+    expect(api.get(created.id)).toEqual(
+      expect.objectContaining({
+        name: VIDEO_TITLE,
+        recordingTitle: VIDEO_TITLE,
+        videoId: VIDEO_ID,
+        duration: 0,
+        markers: [],
+        movements: [],
+      }),
     );
-
-    await pasteLink(user, YOUTUBE_CANONICAL);
-
-    await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(await screen.findByRole('button', { name: /A — Recap/ })).toBeInTheDocument();
-    // The one query was the anonymous published read, keyed on the video ID.
-    const [requested] = fetchMock.mock.calls[0] as [string];
-    expect(requested).toContain(`video_id=eq.${VIDEO_ID}`);
-    expect(requested).toContain('publication_status=eq.published');
-    const [summary] = await opened.projects.list();
-    const stored = (await opened.projects.get(summary.id))!;
-    expect(stored.markers).toEqual(row.markers);
-    expect(stored.playerMode).toBe('playback');
-  });
-
-  it('reads a missing Commons config as no labels, without touching the network', async () => {
-    // The default transport is inert without Vite env — a dev build or a
-    // test run never queries anything, and a link create lands in the
-    // unmatched path with the empty state explained. Stub the vars empty so
-    // a local .env.local cannot wire the transport in: this test is about
-    // the unconfigured app, whatever the machine carries.
-    vi.stubEnv('VITE_SUPABASE_URL', '');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
-    const fetchMock = vi.fn(async () => {
-      throw new Error('unexpected fetch');
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const user = userEvent.setup();
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 372 })),
-    });
-    const opened = await testStorage();
-    render(
-      <MemoryRouter>
-        <App
-          controllerFactory={() => controller}
-          storage={opened}
-          fetchTitle={async () => VIDEO_TITLE}
-        />
-      </MemoryRouter>,
-    );
-
-    await pasteLink(user, YOUTUBE_CANONICAL);
-
-    await screen.findByRole('heading', { name: VIDEO_TITLE });
-    // No posture toggle and no empty-timeline note — the player is read-only
-    // and the lack of labels is simply what the empty timeline is.
-    expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
-    expect(screen.queryByText(/no community labels loaded/i)).not.toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
-    const [summary] = await opened.projects.list();
-    expect((await opened.projects.get(summary.id))!.markers).toEqual([]);
-  });
-
-  it('lands in the same player session an upload does', async () => {
-    const user = userEvent.setup();
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 372 })),
-    });
-    const { storage } = await renderApp({ controller });
-
-    await pasteLink(user, YOUTUBE_CANONICAL);
-
-    // The player, named after the video, with the split view an upload gets.
-    expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
-    // The load settles through the one marker a render helper waits on — the
-    // root's `data-settled` flag, set on the success and failure paths alike
-    // (the heading appears on mount, before the load lands).
     await waitForPlayerSettled();
-
-    // A YouTube record stores no audio bytes — the URL is the whole input.
-    const [stored] = await storage.projects.list();
-    expect(stored.name).toBe(VIDEO_TITLE);
-    expect((await storage.projects.get(stored.id))!.videoId).toBe(VIDEO_ID);
   });
 
   it('records the video ID as identity whatever form was pasted', async () => {
     const user = userEvent.setup();
-    const { storage } = await renderApp();
+    const fetched: string[] = [];
+    const { api, auth } = renderApp({
+      fetchTitle: async (url) => {
+        fetched.push(url);
+        return VIDEO_TITLE;
+      },
+    });
+    await signIn(user, auth);
 
     await pasteLink(user, `https://youtu.be/${VIDEO_ID}?t=42`);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    const [stored] = await storage.projects.list();
-    expect((await storage.projects.get(stored.id))!.videoId).toBe(VIDEO_ID);
-  });
-
-  it.each([
-    ['a playlist', 'https://www.youtube.com/playlist?list=PLabcdef', /playlist/i],
-    ['a malformed link', 'https://example.com/not-a-video', /YouTube video link/],
-  ])('rejects %s with guidance and stores nothing', async (_case, url, expected) => {
-    const user = userEvent.setup();
-    const { storage } = await renderApp();
-
-    await pasteLink(user, url);
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(expected);
-    // Still on the workspace — a rejection never opens a player.
-    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-    expect(await storage.projects.list()).toEqual([]);
+    const [created] = await api.listMyProjects();
+    expect(api.get(created.id)!.videoId).toBe(VIDEO_ID);
+    // The title lookup asked about the canonical form, not the pasted one.
+    expect(fetched).toEqual([YOUTUBE_CANONICAL]);
+    await waitForPlayerSettled();
   });
 
   it('still creates the project when the title cannot be read', async () => {
     const user = userEvent.setup();
-    const { storage } = await renderApp({ controller: mockController(), fetchTitle: async () => null });
+    const { api, auth } = renderApp({ fetchTitle: async () => null });
+    await signIn(user, auth);
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
-    // Offline, or a video whose title is not public: the project is still the
-    // user's to keep, named by something they can recognize and rename.
-    expect(await screen.findByRole('heading', { name: `YouTube video ${VIDEO_ID}` })).toBeInTheDocument();
-    expect(await storage.projects.list()).toHaveLength(1);
+    expect(
+      await screen.findByRole('heading', { name: `YouTube video ${VIDEO_ID}` }),
+    ).toBeInTheDocument();
+    const [created] = await api.listMyProjects();
+    expect(created.name).toBe(`YouTube video ${VIDEO_ID}`);
+    await waitForPlayerSettled();
   });
 
-  it('surfaces a save failure on the link input', async () => {
+  it('surfaces a create failure on the link input', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    const brokenStorage: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        save: async () => {
-          throw new Error('IndexedDB unavailable');
-        },
-      },
-    };
-    await renderApp({ controller: mockController(), storage: brokenStorage });
+    const api = fakeProjectsApi();
+    api.failNext('createProject');
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/something went wrong creating the project/i);
-    // The guidance belongs to the field that produced it: the link input is
-    // marked invalid.
-    expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-  });
-
-  it('reopens a stored YouTube project', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(
-      projectRecord({ name: 'Brahms on YouTube', videoId: VIDEO_ID, duration: 372 }),
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Something went wrong creating the project. Please try again.',
     );
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 372 })),
-    });
-    const { container } = await renderApp({ controller, storage });
-
-    await user.click(await screen.findByRole('button', { name: /Brahms on YouTube/ }));
-
-    await screen.findByRole('heading', { name: 'Brahms on YouTube' });
-    // Reopening is the other way into a YouTube session: the same arm of the
-    // seam, loading the stored URL — there is no blob on this path.
-    expect(youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]).url).toBe(YOUTUBE_CANONICAL);
-    expect(container.querySelector('.player-ruler')).toBeInTheDocument();
+    expect(await api.listMyProjects()).toEqual([]);
   });
 
   it('offers the YouTube link input on the create surface, and no file picker', async () => {
-    await renderApp();
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
 
-    const surface = await screen.findByRole('region', { name: 'Create project' });
-    expect(surface).toContainElement(screen.getByRole('button', { name: /create from link/i }));
-    expect(surface).toContainElement(screen.getByLabelText(/paste a YouTube link/i));
-    expect(screen.queryByRole('button', { name: 'Create project' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Create project' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/paste a YouTube link/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/audio file/i)).not.toBeInTheDocument();
   });
 });
 
 describe('App Projects workspace', () => {
   it('lists stored projects with name, duration, marker count, and last-modified on start', async () => {
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
-    await renderApp({ controller: mockController(), storage });
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
 
     expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
     // The row's meta: duration · marker count · last-modified. The fixture's
@@ -463,7 +322,9 @@ describe('App Projects workspace', () => {
   });
 
   it('shows the empty state pointing at pasting a YouTube link, and no library surface', async () => {
-    const { storage } = await renderApp();
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
 
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByText(/paste a YouTube link above to start marking/i)).toBeInTheDocument();
@@ -472,19 +333,18 @@ describe('App Projects workspace', () => {
     expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Library' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /browse the library/i })).not.toBeInTheDocument();
-
-    storage.close();
   });
 
   it('reopens a project and plays it from its canonical URL, markers intact', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    const record = projectRecord();
-    await storage.projects.save(record);
+    const api = fakeProjectsApi();
+    const project = serverProject();
+    api.seed(project);
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 123.456 })),
     });
-    await renderApp({ controller, storage });
+    const { auth } = renderApp({ api, controller });
+    await signIn(user, auth);
 
     await user.click(await screen.findByRole('button', { name: /Brahms/ }));
 
@@ -493,33 +353,36 @@ describe('App Projects workspace', () => {
     // come with the record.
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     const loadOptions = youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]);
-    expect(loadOptions.url).toBe(`https://www.youtube.com/watch?v=${record.videoId}`);
-    expect(await storage.projects.get(record.id)).toEqual(
-      expect.objectContaining({ markers: record.markers }),
-    );
+    expect(loadOptions.url).toBe(YOUTUBE_CANONICAL);
+    // A visit writes nothing — the server row is exactly what was read.
+    expect(api.get(project.id)).toEqual(expect.objectContaining({ markers: project.markers }));
+    await waitForPlayerSettled();
   });
 
   it('returns to the workspace from the player and lists the new project', async () => {
     const user = userEvent.setup();
-    const { storage } = await renderApp();
+    const { api, auth } = renderApp();
+    await signIn(user, auth);
 
     await pasteLink(user, YOUTUBE_CANONICAL);
     await screen.findByRole('heading', { name: VIDEO_TITLE });
+    await waitForPlayerSettled();
 
     // The navbar's Projects link is the way home now — the player carries no
     // nav of its own (T45).
     await user.click(screen.getByRole('link', { name: 'Projects' }));
 
     await waitForWorkspaceRow(VIDEO_TITLE);
-    expect(await storage.projects.list()).toHaveLength(1);
+    expect(await api.listMyProjects()).toHaveLength(1);
   });
 
   it('renames inline, persists, and moves the renamed project to the top', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord({ id: 'older', name: 'Older', updatedAt: 1_000 }));
-    await storage.projects.save(projectRecord({ id: 'newer', name: 'Newer', updatedAt: 2_000 }));
-    await renderApp({ controller: mockController(), storage });
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'older', name: 'Older', updatedAt: 1_000 }));
+    api.seed(serverProject({ id: 'newer', name: 'Newer', updatedAt: 2_000 }));
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
     await screen.findByText('Newer');
 
     const rows = screen.getAllByRole('listitem');
@@ -531,9 +394,9 @@ describe('App Projects workspace', () => {
     await user.type(input, 'Brahms 2{enter}');
 
     await screen.findByText('Brahms 2');
-    const stored = await storage.projects.get('older');
-    expect(stored!.name).toBe('Brahms 2');
-    expect(stored!.updatedAt).toBeGreaterThan(2_000);
+    const stored = api.get('older')!;
+    expect(stored.name).toBe('Brahms 2');
+    expect(stored.updatedAt).toBeGreaterThan(2_000);
     // The rename re-stamps updatedAt, so the renamed row is now newest.
     const reordered = screen.getAllByRole('listitem');
     expect(within(reordered[0]).getByText('Brahms 2')).toBeInTheDocument();
@@ -542,9 +405,10 @@ describe('App Projects workspace', () => {
 
   it('deletes after confirmation and empties the workspace', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
-    await renderApp({ controller: mockController(), storage });
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
@@ -555,25 +419,18 @@ describe('App Projects workspace', () => {
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
 
     expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(await storage.projects.list()).toEqual([]);
+    expect(await api.listMyProjects()).toEqual([]);
   });
 
-  it('shows the save-failed state when a rename hits a failing store', async () => {
+  it('shows the save-failed state when a rename hits a failing server', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
-    const brokenStorage: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        save: async () => {
-          throw new Error('IndexedDB unavailable');
-        },
-      },
-    };
-    await renderApp({ controller: mockController(), storage: brokenStorage });
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    api.failNext('saveProject');
     const row = screen.getByRole('listitem');
     await user.click(within(row).getByRole('button', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Project name' });
@@ -583,22 +440,10 @@ describe('App Projects workspace', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Save failed.');
   });
 
-  it('persists projects across a page reload', async () => {
-    const name = `reload-${crypto.randomUUID()}`;
-    const first = await createStorage({ name });
-    await first.projects.save(projectRecord());
-    first.close();
-
-    // A reload: a fresh App opens a fresh connection to the same database.
-    const reopened = await createStorage({ name });
-    await renderApp({ controller: mockController(), storage: reopened });
-    expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
-    reopened.close();
-  });
-
   it('navigates between the workspace pages, and the navbar marks the active page', async () => {
     const user = userEvent.setup();
-    await renderApp();
+    const { auth } = renderApp();
+    await signIn(user, auth);
 
     await user.click(screen.getByRole('link', { name: 'Help' }));
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
@@ -613,8 +458,8 @@ describe('App Projects workspace', () => {
 
   it('drops an in-flight page read when the user navigates away', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
     let releaseRead!: () => void;
     const pendingGet = new Promise<void>((resolve) => {
       releaseRead = resolve;
@@ -622,17 +467,12 @@ describe('App Projects workspace', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 123.456 })),
     });
-    const slowStorage: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        get: async (id) => {
-          await pendingGet;
-          return storage.projects.get(id);
-        },
-      },
-    };
-    await renderApp({ controller, storage: slowStorage });
+    vi.mocked(api.getProject).mockImplementation(async (id) => {
+      await pendingGet;
+      return api.get(id) ?? null;
+    });
+    const { auth } = renderApp({ api, controller });
+    await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
     // The row click navigates to the project page; its record read is slow.
@@ -649,56 +489,13 @@ describe('App Projects workspace', () => {
     expect(screen.queryByRole('heading', { name: 'Brahms Op. 118 No. 2' })).not.toBeInTheDocument();
   });
 
-  it('surfaces a failed final save on exit', async () => {
-    const user = userEvent.setup();
-    const storage = await testStorage();
-    let saves = 0;
-    // The create's first save succeeds; every later save hits a failing store.
-    const flaky: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        save: async (record) => {
-          saves += 1;
-          if (saves > 1) throw new Error('IndexedDB unavailable');
-          await storage.projects.save(record);
-        },
-      },
-    };
-    const controller = mockController({
-      // A different duration guarantees the player schedules a write.
-      load: vi.fn(async () => ({ duration: 42 })),
-    });
-    await renderApp({ controller, storage: flaky });
-    await pasteLink(user, YOUTUBE_CANONICAL);
-    await screen.findByRole('heading', { name: VIDEO_TITLE });
-    // The player's only write — the measured-duration stamp — fails against
-    // the flaky store. With the in-player status line gone (T37), wait on the
-    // write itself before leaving the player.
-    await vi.waitFor(() => expect(saves).toBeGreaterThanOrEqual(2));
-
-    // The navbar's Projects link leaves the player; the page's teardown flush
-    // fails too, and the shell's exit channel reports the failure on the
-    // workspace's save line.
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
-
-    expect(await screen.findByRole('status')).toHaveTextContent('Save failed.');
-  });
-
   it('reports a failed delete as its own notice, not as a save error', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord());
-    const broken: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        remove: async () => {
-          throw new Error('IndexedDB unavailable');
-        },
-      },
-    };
-    await renderApp({ controller: mockController(), storage: broken });
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    api.failNext('deleteProject');
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
@@ -709,118 +506,121 @@ describe('App Projects workspace', () => {
       'Something went wrong deleting the project.',
     );
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
-    expect(await storage.projects.list()).toHaveLength(1);
+    expect(await api.listMyProjects()).toHaveLength(1);
   });
 });
 
-describe('App contributor sign-in', () => {
-  it('shows Sign in with Google to an anonymous visitor, who can use the whole app', async () => {
-    const { storage } = await renderApp();
-    const user = userEvent.setup();
+describe('App user sign-in', () => {
+  it('lands an anonymous visitor on the minimal home — no create surface', async () => {
+    renderApp();
 
-    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
-
-    // No account, no prompt: an anonymous visitor creates and gets a project.
-    await pasteLink(user, YOUTUBE_CANONICAL);
-    expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
-    expect(await storage.projects.list()).toHaveLength(1);
+    // The anonymous home is the landing (T51): what the app is, and that
+    // creating and saving needs sign-in. No create surface, no workspace.
+    expect(screen.getByRole('heading', { name: /Mark your rehearsal/ })).toBeInTheDocument();
+    expect(screen.getByText(/creating and saving projects requires signing in/i)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Create project' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Projects' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/paste a YouTube link/i)).not.toBeInTheDocument();
+    // The landing itself carries the way in.
+    expect(
+      within(screen.getByRole('region', { name: 'Welcome' })).getByRole('button', {
+        name: 'Sign in with Google',
+      }),
+    ).toBeInTheDocument();
   });
 
-  it('signs in with Google and shows the contributor in the header', async () => {
-    const { auth } = await renderApp();
+  it('signs in with Google and shows the user in the header', async () => {
     const user = userEvent.setup();
+    const { auth } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    await user.click(navSignIn());
 
     expect(auth.signInWithGoogle).toHaveBeenCalledOnce();
     // The redirect round-trip lands the session through the backend's events.
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
 
     expect(await screen.findByText('Signed in as Ava Cellist')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
-    // The sign-in prompt is gone once the contributor is signed in.
+    // The sign-in prompt is gone once the user is signed in.
     expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
   });
 
-  it('signing out returns to anonymous browsing and leaves local projects untouched', async () => {
-    const { storage, auth } = await renderApp();
+  it('signing out returns to the anonymous landing', async () => {
     const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Brahms Op. 118 No. 2');
 
-    await pasteLink(user, YOUTUBE_CANONICAL);
-    await screen.findByRole('heading', { name: VIDEO_TITLE });
-    // Back to the workspace with the saved project.
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
-    await waitForWorkspaceRow(VIDEO_TITLE);
-
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
-    await screen.findByText('Signed in as Ava Cellist');
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
-    // Anonymous again, and the workspace row is exactly what it was before.
-    expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
-    const projects = await storage.projects.list();
-    expect(projects.map((p) => p.name)).toEqual([VIDEO_TITLE]);
+    // Anonymous again — the landing, and the workspace list is gone.
+    expect(await screen.findByRole('heading', { name: /Mark your rehearsal/ })).toBeInTheDocument();
+    expect(screen.queryByText('Brahms Op. 118 No. 2')).not.toBeInTheDocument();
+    // The project itself is untouched — it lives on the server, not the shell.
+    expect(api.get('project-1')).toBeDefined();
   });
 
   it('degrades a failed sign-in to anonymous browsing with a notice', async () => {
-    const { auth } = await renderApp();
     const user = userEvent.setup();
+    const { auth } = renderApp();
 
     auth.failNextSignIn();
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    await user.click(navSignIn());
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/didn't work/i);
-    // The app never blocked on the failure: the workspace is still live.
-    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    // The app never blocked on the failure: the sign-in control is still live.
+    expect(navSignIn()).toBeInTheDocument();
   });
 
   it('a failed sign-out lands anonymous with a partial-sign-out notice — the session was removed', async () => {
     // supabase-js removes the local session (firing SIGNED_OUT) before the
     // API error surfaces, so the honest state is anonymous plus the notice
     // that the server side was not reached.
-    const { auth } = await renderApp();
     const user = userEvent.setup();
+    const { auth } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await user.click(navSignIn());
+    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
     await screen.findByText('Signed in as Ava Cellist');
 
     auth.failNextSignOut();
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/signed out on this device/i);
-    expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Mark your rehearsal/ })).toBeInTheDocument();
+    expect(navSignIn()).toBeInTheDocument();
   });
 
-  it('a signed-in contributor can delete their account, confirming the one-way door first', async () => {
-    const { auth } = await renderApp();
+  it('a signed-in user can delete their account, confirming the one-way door first', async () => {
     const user = userEvent.setup();
+    const { auth } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await user.click(navSignIn());
+    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
     await screen.findByText('Signed in as Ava Cellist');
 
     // The destructive action hides behind an explicit confirmation that
     // says what the account deletion removes — it never fires by accident.
     await user.click(screen.getByRole('button', { name: 'Delete account' }));
-    expect(screen.getByText(/every label set you've contributed/i)).toBeInTheDocument();
+    expect(screen.getByText(/every project you've created/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete forever' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Delete forever' }));
 
     expect(auth.deleteAccount).toHaveBeenCalledOnce();
     // The deletion lands anonymous: the sign-in prompt is back.
-    expect(await screen.findByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Mark your rehearsal/ })).toBeInTheDocument();
+    expect(navSignIn()).toBeInTheDocument();
   });
 
-  it('cancelling the confirmation leaves the contributor signed in and does not delete', async () => {
-    const { auth } = await renderApp();
+  it('cancelling the confirmation leaves the user signed in and does not delete', async () => {
     const user = userEvent.setup();
+    const { auth } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await user.click(navSignIn());
+    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
     await screen.findByText('Signed in as Ava Cellist');
 
     await user.click(screen.getByRole('button', { name: 'Delete account' }));
@@ -831,12 +631,12 @@ describe('App contributor sign-in', () => {
     expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument();
   });
 
-  it('a failed account deletion keeps the contributor signed in with an honest notice', async () => {
-    const { auth } = await renderApp();
+  it('a failed account deletion keeps the user signed in with an honest notice', async () => {
     const user = userEvent.setup();
+    const { auth } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
+    await user.click(navSignIn());
+    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
     await screen.findByText('Signed in as Ava Cellist');
 
     auth.failNextAccountDelete();
@@ -844,241 +644,151 @@ describe('App contributor sign-in', () => {
     await user.click(screen.getByRole('button', { name: 'Delete forever' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/didn't work/i);
-    // Nothing was deleted: the contributor is still signed in and the
-    // confirmation stays, so they can see the reason and retry or cancel.
+    // Nothing was deleted: the user is still signed in and the confirmation
+    // stays, so they can see the reason and retry or cancel.
     expect(screen.getByText('Signed in as Ava Cellist')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete forever' })).toBeInTheDocument();
   });
 
-  it('an unconfigured deployment says sign-in is unavailable and keeps browsing', async () => {
-    const storage = await testStorage();
+  it('an unconfigured deployment shows the not-wired-up screen and no chrome', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', '');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
     render(
       <MemoryRouter>
-        <App
-          controllerFactory={() => mockController()}
-          storage={storage}
-          authFactory={() => createAuthController(null)}
-        />
+        <App controllerFactory={() => mockController()} />
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Sign-in isn't set up yet")).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    // No sign-in affordance on an unconfigured deployment — nothing to press.
+    expect(await screen.findByText(/isn't wired up yet/i)).toBeInTheDocument();
+    // No navbar, no pages, no sign-in affordance — nothing to press.
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
   });
 });
 
-describe('App Commons submission', () => {
-  /** A YouTube project on the workspace, with the contributor signed in. */
-  async function seededYouTubeProject(
-    user: ReturnType<typeof userEvent.setup>,
-    commons: ReturnType<typeof mockCommonsWrite>,
-  ): Promise<string> {
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 604.2 })),
-    });
-    const { storage, auth } = await renderApp({
-      controller,
-      commons,
-    });
-    await pasteLink(user, YOUTUBE_CANONICAL);
-    await screen.findByRole('heading', { name: VIDEO_TITLE });
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
-    await waitForWorkspaceRow(VIDEO_TITLE);
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
-    await screen.findByText('Signed in as Ava Cellist');
-    const [summary] = await storage.projects.list();
-    return summary.id;
-  }
-
-  it('a signed-in contributor’s submission reaches the Commons and the answer becomes the badge', async () => {
+describe('App project visibility', () => {
+  it('makes a public project private', async () => {
     const user = userEvent.setup();
-    const commons = mockCommonsWrite();
-    const id = await seededYouTubeProject(user, commons);
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Brahms Op. 118 No. 2');
 
-    await user.click(screen.getByRole('button', { name: 'Submit to Commons' }));
+    await user.click(screen.getByRole('button', { name: 'Make private' }));
 
-    await waitFor(() =>
-      expect(commons.backend.insertLabelSet).toHaveBeenCalledWith({
-        id,
-        video_id: VIDEO_ID,
-        title: VIDEO_TITLE,
-        duration: 604.2,
-        markers: [],
-        movements: [],
-      }),
-    );
-    // The refresh after the insert answers with the moderation gate's default.
+    expect(await screen.findByText('Private')).toBeInTheDocument();
+    expect(screen.queryByText('Published')).not.toBeInTheDocument();
+    expect(api.get('project-1')!.visibility).toBe('private');
+  });
+
+  it('making a private project public re-enters review', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ visibility: 'private', publicationStatus: 'pending' }));
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    await user.click(screen.getByRole('button', { name: 'Make public' }));
+
     expect(await screen.findByText('Pending review')).toBeInTheDocument();
+    expect(api.get('project-1')!.visibility).toBe('public');
+    expect(api.get('project-1')!.publicationStatus).toBe('pending');
+  });
+});
+
+describe('App published-project peek', () => {
+  it('shows a debounced published-project peek under the link field', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    api.seed(serverProject({ id: 'project-2', name: 'Another take' }));
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+
+    await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
+
+    // The 400ms debounce settles, then the count lands under the input.
+    expect(await screen.findByText('2 published projects for this video')).toBeInTheDocument();
   });
 
-  it('a signed-out contributor’s click routes to sign-in and never reaches the Commons', async () => {
+  it('hides the peek when nothing published exists for the video', async () => {
     const user = userEvent.setup();
-    const commons = mockCommonsWrite();
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 604.2 })),
-    });
-    const { auth } = await renderApp({ controller, commons });
-    await pasteLink(user, YOUTUBE_CANONICAL);
-    await screen.findByRole('heading', { name: VIDEO_TITLE });
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
-    await waitForWorkspaceRow(VIDEO_TITLE);
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'project-2', videoId: 'another-video-id' }));
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
 
-    await user.click(screen.getByRole('button', { name: 'Sign in to submit' }));
+    await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
 
-    // The click starts the sign-in flow; the submission itself waits for it.
-    expect(auth.signInWithGoogle).toHaveBeenCalledOnce();
-    expect(commons.backend.insertLabelSet).not.toHaveBeenCalled();
-  });
-
-  it('surfaces a rate-limited submission as the moderation gate’s own rejection', async () => {
-    const user = userEvent.setup();
-    const commons = mockCommonsWrite();
-    await seededYouTubeProject(user, commons);
-    // The transport maps the PostgREST error's message by prefix (RATE_LIMITED).
-    commons.backend.failNextInsert(
-      'RATE_LIMITED: This account has submitted 3 label sets in the last 7 days — the limit. Try again later.',
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Submit to Commons' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/3 label sets in the last 7 days/);
-    // The rejection is not a badge state — no row was created.
-    expect(screen.queryByText('Pending review')).not.toBeInTheDocument();
+    // The peek stays away — the count is a convenience, never a promise.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(screen.queryByText(/published projects for this video/)).not.toBeInTheDocument();
   });
 });
 
 describe('App durable workspace state (T43)', () => {
-  /** A project on the workspace and the contributor signed in over it. */
-  async function seededSubmittedProject(
-    user: ReturnType<typeof userEvent.setup>,
-  ): Promise<{
-    storage: Storage;
-    commons: ReturnType<typeof mockCommonsWrite>;
-    auth: ReturnType<typeof mockAuth>['backend'];
-  }> {
-    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const storage = await testStorage();
-    await storage.projects.save(
-      projectRecord({ id, name: 'Brahms on YouTube', videoId: VIDEO_ID, duration: 604.2 }),
-    );
-    const commons = mockCommonsWrite([
-      labelSetRow({
-        id,
-        title: 'Brahms on YouTube',
-        duration: 604.2,
-        publication_status: 'pending',
-      }),
-    ]);
-    const controller = mockController({
-      load: vi.fn(async () => ({ duration: 604.2 })),
-    });
-    const { auth } = await renderApp({ controller, storage, commons });
-
-    await user.click(screen.getByRole('button', { name: 'Sign in with Google' }));
-    act(() => auth.setContributor({ id: 'c1', name: 'Ava Cellist', email: 'ava@example.com' }));
-    // The badge loads once from the seeded submissions.
-    await screen.findByText('Pending review');
-    return { storage, commons, auth };
-  }
-
-  it('keeps the contributor’s Commons badges across a player visit, without a re-fetch', async () => {
-    const user = userEvent.setup();
-    const { commons } = await seededSubmittedProject(user);
-    expect(commons.backend.listMyLabelSets).toHaveBeenCalledTimes(1);
-
-    // Into the player and back — the workspace surface unmounts and remounts.
-    await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
-    await screen.findByRole('heading', { name: 'Brahms on YouTube' });
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
-    await waitForWorkspaceRow('Brahms on YouTube');
-
-    // The badge and the update affordance are still there — the rows are the
-    // shell's durable state, not the surface's, so nothing re-fetched on return.
-    expect(screen.getByText('Pending review')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Update submission' })).toBeInTheDocument();
-    expect(commons.backend.listMyLabelSets).toHaveBeenCalledTimes(1);
-  });
-
-  it('re-submitting after a player visit updates the existing moderation row', async () => {
-    const user = userEvent.setup();
-    const { commons } = await seededSubmittedProject(user);
-
-    // Round-trip through the player, then re-submit.
-    await user.click(screen.getByRole('button', { name: /Brahms on YouTube/ }));
-    await screen.findByRole('heading', { name: 'Brahms on YouTube' });
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
-    await waitForWorkspaceRow('Brahms on YouTube');
-
-    await user.click(screen.getByRole('button', { name: 'Update submission' }));
-
-    // The rows survived the round-trip, so the submit saw the existing row and
-    // updated it — re-submission is an UPDATE, never a second moderation row.
-    await waitFor(() => expect(commons.backend.updateLabelSet).toHaveBeenCalled());
-    expect(commons.backend.insertLabelSet).not.toHaveBeenCalled();
-    expect(commons.backend.rows).toHaveLength(1);
-    expect(await screen.findByText('Submission updated.')).toBeInTheDocument();
-  });
-
   it('keeps a create rejection’s guidance across a tab switch', async () => {
     const user = userEvent.setup();
-    await renderApp();
+    const { auth } = renderApp();
+    await signIn(user, auth);
 
-    await pasteLink(user, 'https://example.com/not-a-video');
+    await pasteLink(user, 'not a youtube link');
     expect(await screen.findByRole('alert')).toHaveTextContent(/YouTube video link/);
 
     await user.click(screen.getByRole('link', { name: 'Help' }));
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Projects' }));
 
-    // The rejection still explains the bad input that sits in the field.
-    expect(screen.getByRole('alert')).toHaveTextContent(/YouTube video link/);
+    // The guidance is still under the input it explains, and the input still
+    // carries the invalid state.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/YouTube video link/);
     expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
   });
 });
 
 describe('App pages and the persistent navbar (T44)', () => {
-  it('renders the Projects home at /, framed by the persistent navbar', async () => {
-    await renderApp();
-    // The create surface is the home page's headline affordance; the navbar —
-    // the app name, the page links, and the sign-in — frames it, with the
-    // Projects link marking the active page.
-    expect(screen.getByRole('region', { name: 'Create project' })).toBeInTheDocument();
+  it('renders the signed-in home at /, framed by the persistent navbar', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
   });
 
   it('renders the Help page at /help with the same persistent navbar', async () => {
-    // A refresh while on /help lands straight back on Help — the router
-    // restores the page from the URL, not from app state.
-    await renderApp({ initialEntry: '/help' });
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    await user.click(screen.getByRole('link', { name: 'Help' }));
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
   });
 
   it('lands an unknown path on the Projects home', async () => {
-    await renderApp({ initialEntry: '/no-such-page' });
+    const user = userEvent.setup();
+    const { auth } = renderApp({ initialEntry: '/no-such-page' });
+    await signIn(user, auth);
+
     expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('browser Back and Forward move between the workspace pages', async () => {
     const user = userEvent.setup();
-    const { go } = await renderApp();
-    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    const { auth, go } = renderApp();
+    await signIn(user, auth);
 
     await user.click(screen.getByRole('link', { name: 'Help' }));
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
 
-    // Back to the Projects home, then forward to Help again.
     await go(-1);
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+
     await go(1);
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
   });
@@ -1086,15 +796,15 @@ describe('App pages and the persistent navbar (T44)', () => {
 
 describe('App route-as-session project page (T45)', () => {
   it('renders a project page at /projects/:id — the player under the navbar, restored by a refresh', async () => {
-    const storage = await testStorage();
-    const record = projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 });
-    await storage.projects.save(record);
+    const api = fakeProjectsApi();
+    const project = serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 });
+    api.seed(project);
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
     // A refresh at the project's URL: the router restores the page from the
     // path, and the page builds its own session — no app-level open state.
-    const { container } = await renderApp({ controller, storage, initialEntry: '/projects/p1' });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1' });
 
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     // The player is shell chrome under the persistent navbar — the app name,
@@ -1104,20 +814,19 @@ describe('App route-as-session project page (T45)', () => {
     expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
     expect(container.querySelector('.player-ruler')).toBeInTheDocument();
     await waitForPlayerSettled();
-    // The session read the stored record — a visit never writes anything else.
-    expect(await storage.projects.get(record.id)).toEqual(
-      expect.objectContaining({ markers: record.markers }),
-    );
+    // A visit writes nothing — the server row is exactly what was read.
+    expect(api.get('p1')).toEqual(expect.objectContaining({ markers: project.markers }));
   });
 
   it('opening a project from the list navigates to its page', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { currentPath } = await renderApp({ controller, storage });
+    const { auth, currentPath } = renderApp({ api, controller });
+    await signIn(user, auth);
 
     await user.click(await screen.findByRole('button', { name: /Brahms/ }));
 
@@ -1125,44 +834,46 @@ describe('App route-as-session project page (T45)', () => {
     // The open is a navigation — the project's page is the address bar's.
     // (The probe's location closure updates on an effect, hence the wait.)
     await waitFor(() => expect(currentPath()).toBe('/projects/p1'));
+    await waitForPlayerSettled();
   });
 
-  it('browser Back returns to the Projects list, flushing the pending write', async () => {
+  it('browser Back returns to the Projects list, and the visit wrote nothing', async () => {
+    // Into the player: the load's measured duration differs from the stored
+    // one, but under ADR-0006 duration is in-memory only — the autosave skips
+    // the PATCH, so the server row is untouched however long the visit lasts.
     const user = userEvent.setup();
-    const storage = await testStorage();
-    const record = projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 });
-    await storage.projects.save(record);
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 500 })),
     });
-    const { go } = await renderApp({ controller, storage });
+    const { auth, go } = renderApp({ api, controller });
+    await signIn(user, auth);
 
-    // Into the player: the load's measured duration differs from the stored
-    // one, so the player schedules its one write — the duration stamp.
     await user.click(await screen.findByRole('button', { name: /Brahms/ }));
     await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
     await waitForPlayerSettled();
 
-    // Back is the exit: the page tears down, flushing its one pending write
-    // before the workspace re-reads the list.
+    // Back is the exit: the page tears down, flushing its pending autosave,
+    // then the workspace re-reads the list.
     await go(-1);
     await waitForWorkspaceRow('Brahms Op. 118 No. 2');
-    await vi.waitFor(async () => {
-      expect((await storage.projects.get(record.id))!.duration).toBe(500);
-    });
-    const [summary] = await storage.projects.list();
-    expect(summary.duration).toBe(500);
+
+    // No write reached the server — duration, markers, and name all unchanged.
+    expect(api.get('p1')).toEqual(expect.objectContaining({ duration: 372 }));
+    expect(api.saveProject).not.toHaveBeenCalled();
   });
 
   it('navigating from one project page to another closes the first and opens the second', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
-    await storage.projects.save(projectRecord({ id: 'p2', name: 'Bach Cello Suite', duration: 372 }));
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    api.seed(serverProject({ id: 'p2', name: 'Bach Cello Suite', duration: 372 }));
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { navigateTo } = await renderApp({ controller, storage });
+    const { auth, navigateTo } = renderApp({ api, controller });
+    await signIn(user, auth);
 
     await user.click(await screen.findByRole('button', { name: /Brahms/ }));
     await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
@@ -1182,7 +893,8 @@ describe('App route-as-session project page (T45)', () => {
     // the not-found page rather than a blank or broken surface — and the page
     // itself offers the way back, not just the navbar (T47).
     const user = userEvent.setup();
-    await renderApp({ initialEntry: '/projects/no-such-project' });
+    const { auth } = renderApp({ initialEntry: '/projects/no-such-project' });
+    await signIn(user, auth);
 
     expect(
       await screen.findByRole('heading', { name: 'This project could not be found' }),
@@ -1193,27 +905,38 @@ describe('App route-as-session project page (T45)', () => {
   });
 
   it('a failed record read lands home with a notice, not the not-found page', async () => {
-    // A read that fails is not "not found" — the store was unreachable, not
+    // A read that fails is not "not found" — the server was unreachable, not
     // empty. The page falls back to the Projects home, the workspace's notice
-    // says what went wrong, and the not-found page is not shown (T47 keeps
-    // the T45 behavior for a transient storage error).
-    const storage = await testStorage();
-    const brokenStorage: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        get: async () => {
-          throw new Error('IndexedDB unavailable');
-        },
-      },
-    };
-    await renderApp({
-      controller: mockController(),
-      storage: brokenStorage,
-      initialEntry: '/projects/p1',
-    });
+    // says what went wrong, and the not-found page is not shown.
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    const { auth, navigateTo } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByRole('heading', { name: 'No projects yet' });
+
+    api.failNext('getProject');
+    await navigateTo('/projects/p1');
 
     expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't open that project. Try again.");
+    expect(
+      screen.queryByRole('heading', { name: 'This project could not be found' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('an anonymous read failure lands on the landing with the notice shown', async () => {
+    // A signed-out visitor has no workspace to hold the notice — the bounce
+    // home is the anonymous landing, and the failure must not be lost there.
+    const api = fakeProjectsApi();
+    const { navigateTo } = renderApp({ api });
+    await screen.findByRole('heading', { name: /mark your rehearsal/i });
+
+    api.failNext('getProject');
+    await navigateTo('/projects/p1');
+
+    expect(
+      await screen.findByRole('heading', { name: /mark your rehearsal/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent("Couldn't open that project. Try again.");
     expect(
       screen.queryByRole('heading', { name: 'This project could not be found' }),
@@ -1227,34 +950,29 @@ describe('App route-as-session project page (T45)', () => {
     // not-found page. The real project's read is held open so the flash
     // window — the committed render before the effect resets the flag — is
     // wide enough to observe.
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
     let releaseRead!: () => void;
     const pendingGet = new Promise<void>((resolve) => {
       releaseRead = resolve;
     });
     let reads = 0;
-    const slowStorage: Storage = {
-      ...storage,
-      projects: {
-        ...storage.projects,
-        get: async (id) => {
-          reads += 1;
-          // Only the revisit of the real project is held open — the first
-          // read (the missing id) and any other reads run straight through.
-          if (id === 'p1' && reads > 1) await pendingGet;
-          return storage.projects.get(id);
-        },
-      },
-    };
+    vi.mocked(api.getProject).mockImplementation(async (id) => {
+      reads += 1;
+      // Only the revisit of the real project is held open — the first read
+      // (the missing id) and any other reads run straight through.
+      if (id === 'p1' && reads > 1) await pendingGet;
+      return api.get(id) ?? null;
+    });
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { navigateTo } = await renderApp({
+    const { auth, navigateTo } = renderApp({
+      api,
       controller,
-      storage: slowStorage,
       initialEntry: '/projects/no-such-project',
     });
+    await signIn(userEvent.setup(), auth);
 
     expect(
       await screen.findByRole('heading', { name: 'This project could not be found' }),
@@ -1270,8 +988,12 @@ describe('App route-as-session project page (T45)', () => {
 
     await act(async () => {
       releaseRead();
+      // A full turn drains the held read's whole continuation — the mock
+      // implementation's await, then the page's own setState — inside act.
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    await waitForPlayerSettled();
   });
 
   it('the not-found escape replaces the dead URL, so browser Back does not re-enter it', async () => {
@@ -1279,9 +1001,10 @@ describe('App route-as-session project page (T45)', () => {
     // (the old navigate-home-invariant): Back from the Projects list goes
     // past the dead URL rather than back into the not-found page.
     const user = userEvent.setup();
-    const storage = await testStorage();
-    await storage.projects.save(projectRecord({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
-    const { navigateTo, go } = await renderApp({ controller: mockController(), storage });
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    const { auth, navigateTo, go } = renderApp({ api });
+    await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
     await navigateTo('/projects/no-such-project');
@@ -1301,13 +1024,13 @@ describe('App route-as-session project page (T45)', () => {
   });
 
   it('a create that lands behind a navigation saves the project and does not yank the user', async () => {
-    const { storage, controller, release } = await createBehindNavigation();
+    const { api, controller, release } = await createBehindNavigation();
     await release();
 
     // The project is saved and waiting in the list; the user stays on Help.
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: VIDEO_TITLE })).not.toBeInTheDocument();
-    const projects = await storage.projects.list();
+    const projects = await api.listMyProjects();
     expect(projects.map((p) => p.name)).toEqual([VIDEO_TITLE]);
     // No session ever opened — the controller is never created.
     expect(controller.load).not.toHaveBeenCalled();
@@ -1320,7 +1043,8 @@ describe('App create-from-link navigates to the project page (T46)', () => {
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
     });
-    const { storage, currentPath } = await renderApp({ controller });
+    const { api, auth, currentPath } = renderApp({ controller });
+    await signIn(user, auth);
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
@@ -1328,17 +1052,17 @@ describe('App create-from-link navigates to the project page (T46)', () => {
     expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
     // The URL is the new project's own address — the created row's id, not a
     // hardcoded path — so the page is refreshable and shareable.
-    const [created] = await storage.projects.list();
+    const [created] = await api.listMyProjects();
     await waitFor(() => expect(currentPath()).toBe(`/projects/${created.id}`));
     // The persistent navbar still frames the player page.
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    // The load settles before the test finishes, so the player's one write (the
-    // measured-duration stamp) is not left pending across the storage teardown.
+    // The load settles before the test finishes, so the page's autosave is not
+    // left pending across the teardown.
     await waitForPlayerSettled();
   });
 
   it('a create that lands behind a navigation is waiting in the list when the user returns', async () => {
-    const { storage, release } = await createBehindNavigation();
+    const { api, release } = await createBehindNavigation();
     await release();
 
     // Not yanked: the user is still where they chose to go.
@@ -1349,6 +1073,6 @@ describe('App create-from-link navigates to the project page (T46)', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('link', { name: 'Projects' }));
     await waitForWorkspaceRow(VIDEO_TITLE);
-    expect(await storage.projects.list()).toHaveLength(1);
+    expect(await api.listMyProjects()).toHaveLength(1);
   });
 });

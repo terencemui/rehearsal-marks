@@ -26,3 +26,11 @@
   flex-basis: 100%;
   margin: 0;
 }
+
+/* The count peek: a quiet line under the field, before any create is attempted. */
+.create-project-peek {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}

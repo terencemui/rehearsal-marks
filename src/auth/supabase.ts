@@ -12,8 +12,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { contributorFromUser } from './controller';
-import type { AuthUser, Contributor, SupabaseAuth } from './controller';
+import { userFromUser } from './controller';
+import type { AuthUser, SupabaseAuth, User } from './controller';
 
 /** The env wiring contract — see `supabase/README.md`. */
 export interface AuthEnv {
@@ -27,8 +27,8 @@ export interface AuthEnv {
  * Reads the deployment's auth env. Returns null for every configuration the
  * client could not be built from — a missing var, a blank one, or a URL that
  * is not a parseable http(s) address (supabase-js throws on those eagerly).
- * The unconfigured case the controller reports as `unavailable`: the app
- * never constructs a client it cannot, and never crashes on a config typo.
+ * The unconfigured case the app gates on before rendering anything (T51): a
+ * null env means the "not wired up" screen, and this factory is never reached.
  */
 export function readAuthEnv(
   env: Record<string, string | undefined> = import.meta.env as Record<string, string | undefined>,
@@ -67,15 +67,15 @@ export function clearOAuthErrorReturn(): void {
 }
 
 /**
- * Maps a session to a contributor, tolerating auth-js's proxy for a stored
- * user that cannot be read (stale or corrupt storage). A session whose user
- * cannot be identified is no session: it degrades to anonymous instead of
- * throwing through the subscriber loop.
+ * Maps a session to a user, tolerating auth-js's proxy for a stored user that
+ * cannot be read (stale or corrupt storage). A session whose user cannot be
+ * identified is no session: it degrades to anonymous instead of throwing
+ * through the subscriber loop.
  */
-function sessionContributor(session: { user: AuthUser } | null): Contributor | null {
+function sessionUser(session: { user: AuthUser } | null): User | null {
   if (session === null) return null;
   try {
-    return contributorFromUser(session.user);
+    return userFromUser(session.user);
   } catch {
     return null;
   }
@@ -92,13 +92,13 @@ export function createSupabaseAuth(env: AuthEnv): SupabaseAuth {
         clearOAuthErrorReturn();
         throw error;
       }
-      return sessionContributor(data.session);
+      return sessionUser(data.session);
     },
     onAuthStateChange(listener) {
       // The session arg is null on sign-out and every unsigned-in event; the
       // controller only ever needs the session, not which event fired.
       const { data } = client.auth.onAuthStateChange((_event, session) => {
-        listener(sessionContributor(session));
+        listener(sessionUser(session));
       });
       return { unsubscribe: () => data.subscription.unsubscribe() };
     },

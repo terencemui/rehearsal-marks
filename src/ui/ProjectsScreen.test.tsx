@@ -1,8 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { labelSetRow } from '../test/commons-fixture';
-import type { ProjectSummary } from '../storage';
+import type { ProjectSummary } from '../projects/types';
 import { ProjectsScreen } from './ProjectsScreen';
 import type { ProjectsScreenProps } from './ProjectsScreen';
 
@@ -10,8 +9,11 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
     id: 'project-1',
     name: 'Brahms Op. 118 No. 2',
+    recordingTitle: 'Brahms: Klavierstücke, Op. 118',
     duration: 123.456,
     markerCount: 2,
+    visibility: 'public',
+    publicationStatus: 'published',
     updatedAt: 1_700_000_000_000,
     ...overrides,
   };
@@ -25,10 +27,7 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
     onOpen: vi.fn(),
     onRename: vi.fn(),
     onDelete: vi.fn(),
-    authKind: 'signed-in',
-    commonsRows: null,
-    onSubmitToCommons: vi.fn(),
-    onSignIn: vi.fn(),
+    onToggleVisibility: vi.fn(),
     ...overrides,
   };
   const view = render(<ProjectsScreen {...props} />);
@@ -175,61 +174,45 @@ describe('ProjectsScreen delete', () => {
   });
 });
 
-describe('ProjectsScreen Commons submission', () => {
-  const youtube = () => summary();
-
-  it('offers the submit action to a signed-in contributor — every project is a YouTube project', async () => {
-    const user = userEvent.setup();
-    const { props } = renderScreen({ projects: [youtube()] });
-
-    await user.click(screen.getByRole('button', { name: 'Submit to Commons' }));
-    expect(props.onSubmitToCommons).toHaveBeenCalledWith('project-1');
-  });
-
-  it('re-labels the action "Update submission" once the project has a Commons row', () => {
-    renderScreen({
-      projects: [youtube()],
-      commonsRows: { 'project-1': labelSetRow({ id: 'project-1', publication_status: 'pending' }) },
-    });
-    expect(screen.getByRole('button', { name: 'Update submission' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Submit to Commons' })).not.toBeInTheDocument();
+describe('ProjectsScreen review and visibility', () => {
+  it('shows the review badge for a public project', () => {
+    renderScreen({ projects: [summary({ publicationStatus: 'pending' })] });
+    expect(screen.getByText('Pending review')).toBeInTheDocument();
   });
 
   it.each([
-    ['pending', 'Pending review'],
     ['published', 'Published'],
     ['rejected', 'Rejected'],
-  ] as const)('shows the %s status badge the contributor can read', (status, text) => {
-    renderScreen({
-      projects: [youtube()],
-      commonsRows: { 'project-1': labelSetRow({ id: 'project-1', publication_status: status }) },
-    });
+  ] as const)('shows the %s badge for a public project', (status, text) => {
+    renderScreen({ projects: [summary({ publicationStatus: status })] });
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
-  it('routes a signed-out contributor\'s click to sign-in, not to submit', async () => {
+  it('shows a Private tag instead of a review badge for a private project', () => {
+    renderScreen({ projects: [summary({ visibility: 'private', publicationStatus: 'pending' })] });
+    expect(screen.getByText('Private')).toBeInTheDocument();
+    expect(screen.queryByText('Pending review')).not.toBeInTheDocument();
+  });
+
+  it('offers to make a public project private', async () => {
     const user = userEvent.setup();
-    const { props } = renderScreen({ projects: [youtube()], authKind: 'anonymous' });
-
-    await user.click(screen.getByRole('button', { name: 'Sign in to submit' }));
-    expect(props.onSignIn).toHaveBeenCalled();
-    expect(props.onSubmitToCommons).not.toHaveBeenCalled();
+    const { props } = renderScreen();
+    await user.click(screen.getByRole('button', { name: 'Make private' }));
+    expect(props.onToggleVisibility).toHaveBeenCalledWith('project-1');
   });
 
-  it('disables the action on an unconfigured deployment, with the reason on the button', () => {
-    renderScreen({ projects: [youtube()], authKind: 'unavailable' });
-
-    // The label falls through to the sign-in wording — only 'signed-in' shows
-    // "Submit to Commons" — but the button is inert and explains why.
-    const button = screen.getByRole('button', { name: 'Sign in to submit' });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', expect.stringMatching(/isn't set up/));
+  it('offers to make a private project public, noting review re-entry', async () => {
+    const user = userEvent.setup();
+    const { props } = renderScreen({ projects: [summary({ visibility: 'private' })] });
+    const toggle = screen.getByRole('button', { name: 'Make public' });
+    expect(toggle).toHaveAttribute('title', expect.stringMatching(/review again/));
+    await user.click(toggle);
+    expect(props.onToggleVisibility).toHaveBeenCalledWith('project-1');
   });
 
-  it('disables the row\'s submit button while one submission runs — other row actions stay live', () => {
-    renderScreen({ projects: [youtube()], submittingId: 'project-1' });
-    expect(screen.getByRole('button', { name: /Submitting/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Rename' })).not.toBeDisabled();
+  it('disables the toggle while a workspace pipeline runs', () => {
+    renderScreen({ busy: true });
+    expect(screen.getByRole('button', { name: 'Make private' })).toBeDisabled();
   });
 });
 
@@ -239,7 +222,6 @@ describe('ProjectsScreen empty state', () => {
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByText(/paste a YouTube link/i)).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Total used/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /browse/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /submit/i })).not.toBeInTheDocument();
   });
 });

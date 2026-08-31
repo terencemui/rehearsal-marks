@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BANNED_PREFIX } from '../auth/write';
+import { BANNED_PREFIX } from './errors';
 
 /** The repo-root-relative projects migration, checked like a consumer would check it. */
 const migrationUrl = resolve(
