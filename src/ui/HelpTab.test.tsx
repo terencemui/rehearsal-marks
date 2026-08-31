@@ -5,8 +5,8 @@ import { HelpTab } from './HelpTab';
 
 /**
  * The Help tab is a static reference: these tests pin the discoverable homes
- * the ticket promises — keyboard reference, marker limits, storage, eviction,
- * and the contribution workflow — as facts, not as layout.
+ * the ticket promises — keyboard reference, marker limits, server-backed
+ * projects, the review flow, and the account rules — as facts, not as layout.
  */
 describe('HelpTab', () => {
   it('documents the single-posture keyboard reference', () => {
@@ -38,38 +38,42 @@ describe('HelpTab', () => {
     expect(markers).not.toHaveTextContent('5:10.5');
   });
 
-  it('explains storage honestly, including the stays-in-your-browser guarantee', () => {
+  it('describes server-backed projects honestly', () => {
     render(<HelpTab />);
 
-    const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
-    expect(storage).toHaveTextContent('stay in your browser');
-    expect(storage).toHaveTextContent('automatically');
-    expect(storage).toHaveTextContent('Commons');
+    const projects = screen.getByRole('heading', { name: 'Projects' }).closest('section')!;
+    expect(projects).toHaveTextContent(/live on the server/i);
+    expect(projects).toHaveTextContent(/not in this browser/i);
+    expect(projects).toHaveTextContent('automatically');
+    // Autosave replaced the save button; nothing project-shaped is evictable
+    // browser storage anymore.
+    expect(projects).toHaveTextContent(/no save button/i);
+  });
+
+  it('says reading and playing never need an account; creating and editing do', () => {
+    render(<HelpTab />);
+
+    const projects = screen.getByRole('heading', { name: 'Projects' }).closest('section')!;
+    expect(projects).toHaveTextContent(/reading and playing never requires an account/i);
+    expect(projects).toHaveTextContent(/creating and editing do/i);
+    expect(projects).not.toHaveTextContent(/in your browser/i);
   });
 
   it('keeps the privacy promise honest about YouTube streaming', () => {
     render(<HelpTab />);
 
-    const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
-    // Playback streams from Google; the marks stay in the browser.
-    expect(storage).toHaveTextContent(/streams from Google/i);
-    expect(storage).toHaveTextContent(/Google never sees them/i);
+    const projects = screen.getByRole('heading', { name: 'Projects' }).closest('section')!;
+    // Playback streams from Google; the marks stay on the server, not in
+    // Google's hands.
+    expect(projects).toHaveTextContent(/streams from Google/i);
+    expect(projects).toHaveTextContent(/Google never sees them/i);
   });
 
-  it('warns about eviction and how to mitigate it', () => {
+  it('walks through the public-project review flow', () => {
     render(<HelpTab />);
 
-    const eviction = screen.getByRole('heading', { name: 'Storage eviction' }).closest('section')!;
-    expect(eviction).toHaveTextContent('7');
-    expect(eviction).toHaveTextContent('home screen');
-    expect(eviction).toHaveTextContent('durable');
-  });
-
-  it('walks through the in-app contribution flow without any git or GitHub', () => {
-    render(<HelpTab />);
-
-    const workflow = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
-    const steps = withinOrderedList(workflow, 0);
+    const review = screen.getByRole('heading', { name: /public projects/i }).closest('section')!;
+    const steps = withinOrderedList(review, 0);
     expect(steps.length).toBeGreaterThanOrEqual(4);
     const text = steps.map((step) => step.textContent).join('\n');
     expect(text).toMatch(/sign in/i);
@@ -80,28 +84,14 @@ describe('HelpTab', () => {
     expect(text).not.toMatch(/github/i);
   });
 
-  it('distinguishes local projects from contributed label sets', () => {
+  it('says plainly that a public project is public and attributable', () => {
     render(<HelpTab />);
 
-    const storage = screen.getByRole('heading', { name: 'Storage' }).closest('section')!;
-    // Local projects never leave the browser — the honest line is not
-    // "nothing leaves the app" but "your projects stay; contributions are
-    // public by definition".
-    expect(storage).toHaveTextContent(/never leave your browser/i);
-    expect(storage).toHaveTextContent(/stay in your browser/i);
-    // The hosted side is named plainly: public, and attributed to its
-    // contributor.
-    const contribute = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
-    expect(contribute).toHaveTextContent(/public/i);
-    expect(contribute).toHaveTextContent(/attributed/i);
-  });
-
-  it('says plainly that a published label set is public and attributable', () => {
-    render(<HelpTab />);
-
-    const contribute = screen.getByRole('heading', { name: /contribute/i }).closest('section')!;
-    expect(contribute).toHaveTextContent(/public by definition/i);
-    expect(contribute).toHaveTextContent(/attributed to you/i);
+    const review = screen.getByRole('heading', { name: /public projects/i }).closest('section')!;
+    expect(review).toHaveTextContent(/public by definition/i);
+    expect(review).toHaveTextContent(/attributed to you/i);
+    // Public is the default posture, not a separate contribution step.
+    expect(review).toHaveTextContent(/public by default/i);
   });
 
   it('makes the privacy policy reachable, with the honest line intact', async () => {
@@ -111,11 +101,12 @@ describe('HelpTab', () => {
     await user.click(screen.getByRole('button', { name: 'Privacy policy' }));
 
     const privacy = screen.getByRole('heading', { name: 'Privacy policy' }).closest('section')!;
-    expect(privacy).toHaveTextContent(/stay in your browser/i);
+    expect(privacy).toHaveTextContent(/live on the server/i);
     expect(privacy).toHaveTextContent(/streams from Google/i);
     expect(privacy).toHaveTextContent(/public/i);
-    expect(privacy).toHaveTextContent(/attributed/i);
+    expect(privacy).toHaveTextContent(/attributed to you/i);
     expect(privacy).toHaveTextContent(/Delete account/i);
+    expect(privacy).toHaveTextContent(/every project you've created/i);
 
     // Back to Help restores the reference content.
     await user.click(screen.getByRole('button', { name: /back to help/i }));

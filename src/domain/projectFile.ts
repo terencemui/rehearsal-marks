@@ -28,7 +28,7 @@ export interface ProjectInfo {
 }
 
 /**
- * Recording identity — the facts that make a label set applicable to exactly
+ * Recording identity — the facts that make a project applicable to exactly
  * one recording. `sha256` is the hard check; `duration` is a soft check.
  */
 export interface AudioMeta {
@@ -202,7 +202,7 @@ function invalidMovements(reason: string): DomainError {
 }
 
 // The section readers share these assertion helpers; each throws a neutral
-// DomainError that the owning boundary (this file, or the Commons row parser)
+// DomainError that the owning boundary (this file, or the server row parser)
 // rebrands with its own context.
 function assertObject(value: unknown, path: string): JsonObject {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -269,8 +269,8 @@ function readSource(value: unknown): ProjectSource {
 
 /**
  * Parses a markers document — the shared validation for every boundary where
- * markers arrive as JSON: a project file's `"markers"` and a Commons
- * label-set row's markers document. Validates shape, enforces unique marker
+ * markers arrive as JSON: a project file's `"markers"` and a server project
+ * row's markers document. Validates shape, enforces unique marker
  * ids, and routes every marker through the domain's own setAliases (it trims
  * and enforces every alias rule against the final derived label set), so a
  * hand-edited document cannot smuggle in state the app itself could not
@@ -317,7 +317,7 @@ export function parseMarkers(value: unknown): Marker[] {
 /**
  * Parses a movements document — the shared validation for every boundary
  * where movements arrive as JSON: a project file's `"movements"` and a
- * Commons label-set row's movements document. Validates shape, enforces
+ * server project row's movements document. Validates shape, enforces
  * unique ids and strictly increasing starts (ADR-0005), so a hand-edited
  * document cannot smuggle in state the surface cannot draw. Errors are
  * neutral DomainErrors; the owning boundary rebrands them.

@@ -1,0 +1,21 @@
+/* The unconfigured-deployment screen: the whole app, one quiet page. */
+
+.not-wired {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+}
+
+.not-wired-inner {
+  padding-block: 48px;
+  max-width: 40em;
+  margin-inline: auto;
+}
+
+.not-wired-inner h1 {
+  margin-bottom: 8px;
+}
+
+.not-wired-inner p {
+  color: #444;
+}

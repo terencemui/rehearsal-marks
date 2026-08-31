@@ -1,12 +1,21 @@
 /**
- * The projects module — the server-side project data surface (T50). One
- * read seam (`ProjectsApi`), the grouping the gallery renders, and the
- * PostgREST adapter that fetches published public projects anonymously.
+ * The projects module — the server-side project data surface (ADR-0006). One
+ * seam (`ProjectsApi`) over the `projects` table: the signed-in workspace's
+ * list, reads, and writes, the anonymous gallery reads (T50), the grouping the
+ * gallery renders, and the two PostgREST adapters that fetch it.
  */
-export { groupGalleryProjects } from './api';
+export { createDefaultProjectsApi, groupGalleryProjects } from './api';
 export type { GalleryGroup, ProjectsApi, PublicProject, PublicProjectSummary } from './api';
+export type {
+  ProjectSummary,
+  ProjectUpdate,
+  ProjectValues,
+  ServerProject,
+  ProjectVisibility,
+  PublicationStatus,
+} from './types';
+export { parseProjectRow, summarizeProject } from './types';
 export {
-  createDefaultProjectsApi,
   getPublicProject,
   listPublishedForVideo,
   listPublishedProjects,

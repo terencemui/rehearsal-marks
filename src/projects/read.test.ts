@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createDefaultProjectsApi } from './api';
 import {
-  createDefaultProjectsApi,
   getPublicProject,
   listPublishedForVideo,
   listPublishedProjects,

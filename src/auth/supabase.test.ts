@@ -5,9 +5,9 @@ import { clearOAuthErrorReturn, isOAuthErrorReturn, readAuthEnv } from './supaba
  * The adapter's pure helpers — the pieces of the real supabase-js wiring that
  * are testable without a live project. The eager-throw URL cases are exactly
  * what readAuthEnv must catch (supabase-js throws on those, and a config typo
- * must mean `unavailable`, never a blank app), and the OAuth error-return
- * helpers are the deny-consent recovery: the fragment must not outlive the
- * failed return, or session recovery is skipped on every later load.
+ * must mean the "not wired up" screen, never a blank app), and the OAuth
+ * error-return helpers are the deny-consent recovery: the fragment must not
+ * outlive the failed return, or session recovery is skipped on every later load.
  */
 
 const GOOD_ENV = {

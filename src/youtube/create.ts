@@ -1,32 +1,30 @@
 /**
- * The YouTube path: turning a pasted link into a persisted project — validate,
- * name, save. Nothing needs bytes: no decode, no peaks, no hash, and no audio
- * to store. The link rules themselves live in the domain module; this owns only
- * the record they produce.
+ * The YouTube path: turning a pasted link into a server project — validate,
+ * name, create. Nothing needs bytes: no decode, no peaks, no hash, and no
+ * audio to store. The link rules themselves live in the domain module; this
+ * owns only the values they produce.
+ *
+ * A created project is *bare* (T51): it carries the video title as both its
+ * name and its canonical recording title, an empty timeline, and a zero
+ * duration — the embed corrects the in-memory duration once it loads, but the
+ * server never persists it. No community labels are copied in; the owner's
+ * marks are their own, and ownership, status (pending), and stamps all come
+ * from the server.
  */
 
-import { DomainError, errorMessage, newId, parseYouTubeLink } from '../domain';
-import { defaultPlayerMode } from '../storage';
-import type { ProjectRecord } from '../storage';
-import type { CommunityLabelSet } from './community';
+import { DomainError, errorMessage, parseYouTubeLink } from '../domain';
+import type { ProjectValues, ServerProject } from '../projects/types';
 
 /** Everything the pipeline needs from outside itself, injectable in tests. */
 export interface YouTubeDependencies {
   /** The video's title, or null when it cannot be read. Never rejects the project. */
   fetchTitle: (canonicalUrl: string) => Promise<string | null>;
-  /**
-   * The video's community label set, or null when none exists or loads —
-   * never rejects the project; an unlabeled video is a Label-mode start.
-   * The transport (a Supabase query, per ADR-0001) is the app's default
-   * resolver; tests inject one that always answers null.
-   */
-  loadCommunityLabels: (videoId: string) => Promise<CommunityLabelSet | null>;
-  save: (record: ProjectRecord) => Promise<void>;
-  now?: () => number;
+  /** Creates the project on the server and returns the stored row. */
+  create: (values: ProjectValues) => Promise<ServerProject>;
 }
 
 export type YouTubeOutcome =
-  | { ok: true; project: ProjectRecord }
+  | { ok: true; project: ServerProject }
   | { ok: false; guidance: string };
 
 /**
@@ -39,18 +37,18 @@ function fallbackName(videoId: string): string {
 }
 
 /**
- * Turns a pasted link into a persisted project: resolves it to one video,
- * names the project after the video's title, copies in the community label
- * set when one exists, and saves. A playlist or a malformed link returns
- * guidance and writes nothing. A title or label lookup that fails is not a
- * rejection — the video may still play, and one that cannot is the player's
- * story to tell — so the name falls back to the video ID and the marks fall
- * back to empty. Storage failures propagate to the caller, exactly as the
- * upload path's do.
+ * Turns a pasted link into a server project: resolves it to one video, names
+ * the project after the video's title, and creates it with an empty timeline
+ * and a zero duration (a bare project — the server owns everything else). A
+ * playlist or a malformed link returns guidance and writes nothing. A title
+ * lookup that fails is not a rejection — the video may still play, and one
+ * that cannot is the player's story to tell — so the name falls back to the
+ * video ID. Server failures propagate to the caller, exactly as the upload
+ * path's did.
  */
 export async function createProjectFromYouTubeLink(
   input: string,
-  { fetchTitle, loadCommunityLabels, save, now = Date.now }: YouTubeDependencies,
+  { fetchTitle, create }: YouTubeDependencies,
 ): Promise<YouTubeOutcome> {
   let link;
   try {
@@ -62,52 +60,22 @@ export async function createProjectFromYouTubeLink(
     throw error;
   }
 
-  // Title and labels are independent lookups about the same video, fetched
-  // concurrently: creation waits for the slower one, never their sum.
-  const [title, community] = await Promise.all([
-    readTitle(fetchTitle, link.canonicalUrl),
-    readCommunityLabels(loadCommunityLabels, link.videoId),
-  ]);
+  const title = await readTitle(fetchTitle, link.canonicalUrl);
   const name = title ?? fallbackName(link.videoId);
-  const markers = community?.markers ?? [];
-  const movements = community?.movements ?? [];
 
-  const createdAt = now();
-  const project: ProjectRecord = {
-    id: newId(),
+  const project = await create({
     name,
-    createdAt,
-    updatedAt: createdAt,
-    // The video ID is the recording's identity; the canonical URL the player
-    // plays from is derived from it. The embed reports the real duration once
-    // it is ready and the player persists it through the metadata-duration
-    // path; the community set's duration seeds the record, so a project with
-    // marks has an honest timeline even before the embed reports its own.
+    // The canonical recording title, fixed at creation; the user's own name
+    // starts equal to it and is the only editable half.
+    recordingTitle: title ?? fallbackName(link.videoId),
     videoId: link.videoId,
-    duration: community?.duration ?? 0,
-    // The community set's marks (and their movements) are copied in as the
-    // project's own editable copy — editing them never touches the shared set.
-    markers,
-    movements,
-    // The project's own rule decides the posture: marks in hand means
-    // immediately practiceable (Playback); a bare link arrives with an empty
-    // timeline and lands in Label with the marking tools in reach.
-    playerMode: defaultPlayerMode(markers.length),
-  };
-  await save(project);
+    // oEmbed reports no duration (T51 decision); the embed corrects the
+    // in-memory duration once it loads, and the server never persists it.
+    duration: 0,
+    markers: [],
+    movements: [],
+  });
   return { ok: true, project };
-}
-
-/** The video's community label set, or null — a failed lookup never rejects the project. */
-async function readCommunityLabels(
-  loadCommunityLabels: YouTubeDependencies['loadCommunityLabels'],
-  videoId: string,
-): Promise<CommunityLabelSet | null> {
-  try {
-    return await loadCommunityLabels(videoId);
-  } catch {
-    return null;
-  }
 }
 
 /** The trimmed title, or null for anything unusable — blank, missing, or failed. */

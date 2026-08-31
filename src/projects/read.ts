@@ -1,9 +1,10 @@
 /**
- * The `ProjectsApi`'s PostgREST adapter — the one real transport for the
- * anonymous reads the gallery and the read-only view run on (T50). Anonymous
- * readers query the `projects` table directly with the anon key; Row Level
- * Security, never the client, is the authorization boundary (ADR-0006), so a
- * row this can return is a published public project, banned owners excluded.
+ * The `ProjectsApi`'s anonymous-read transport — half of the composed default
+ * (T50, T51): the gallery and the read-only view run here, while the signed-in
+ * surface lives in `supabase.ts`. Anonymous readers query the `projects` table
+ * directly with the anon key; Row Level Security, never the client, is the
+ * authorization boundary (ADR-0006), so a row this can return is a published
+ * public project, banned owners excluded.
  *
  * The read rides a raw text fetch with the anon-key header pair, exactly like
  * the Commons read (`src/commons/load.ts`) — the anonymous surface needs no
@@ -12,7 +13,7 @@
  */
 
 import { parseMarkers, parseMovements } from '../domain';
-import type { PublicProject, PublicProjectSummary, ProjectsApi } from './api';
+import type { PublicProject, PublicProjectSummary } from './api';
 
 /** The anon-key client identity a read carries; RLS is the boundary, not the key. */
 export interface ProjectsConfig {
@@ -133,27 +134,17 @@ export async function getPublicProject(
 /** The schema's key shape — the id a `projects` row can carry. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The default wiring: env config plus a fetch with the read timeout. */
-export function createDefaultProjectsApi(
-  env: Record<string, string | undefined> = import.meta.env,
-): ProjectsApi | null {
-  const config = readProjectsConfig(env);
-  if (config === null) return null;
-  return {
-    listPublishedProjects: () => listPublishedProjects({ config, fetchText: fetchProjectsText }),
-    listPublishedForVideo: (videoId) =>
-      listPublishedForVideo(videoId, { config, fetchText: fetchProjectsText }),
-    getPublicProject: (id) => getPublicProject(id, { config, fetchText: fetchProjectsText }),
-  };
-}
-
 /** The header pair an anonymous read carries: the anon key names the role RLS applies. */
 function anonHeaders(anonKey: string): Record<string, string> {
   return { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
 }
 
-/** The real read fetch: a text fetch with the timeout, network failures loud. */
-async function fetchProjectsText(
+/**
+ * The real read fetch: a text fetch with the timeout, network failures loud.
+ * Exported so `api.ts`'s composed default can wire the anonymous reads the
+ * way this module's own tests do.
+ */
+export async function fetchProjectsText(
   url: string,
   headers?: Record<string, string>,
 ): Promise<string> {

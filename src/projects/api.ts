@@ -1,13 +1,29 @@
-import type { Marker, Movement } from '../domain';
-
 /**
- * The read side of the project data surface (T50) — the anonymous half of the
- * `ProjectsApi` the parent ticket (#105) describes: published public projects
- * over the server-side `projects` table, no account needed. The gallery lists
- * them grouped by recording; the read-only view opens one. Everything here is
- * the contract the UI renders — the transport that fetches it lives in
- * `read.ts`, faked in tests at this interface.
+ * The app's server-project surface (ADR-0006) — the seam component tests fake
+ * the way `mockAuth` fakes `SupabaseAuth`. Two adapters implement it:
+ * `supabase.ts` is the signed-in surface (the session-restored write ops and
+ * the owner's reads) and `read.ts` is the anonymous read surface (the gallery
+ * and the read-only view, over the anon key); `createDefaultProjectsApi`
+ * composes both. Everything above the interface drives the shape.
+ *
+ * Anonymous reads and signed-in writes share one surface: the server decides,
+ * via RLS, what a given session may read and write. The write operations
+ * restore the session first and fail with the app's own `not-signed-in` error
+ * when there is none.
  */
+
+import { readAuthEnv } from '../auth';
+import { createSupabaseProjectsApi } from './supabase';
+import {
+  fetchProjectsText,
+  getPublicProject as fetchPublicProject,
+  listPublishedForVideo as fetchPublishedForVideo,
+  listPublishedProjects as fetchPublishedProjects,
+  readProjectsConfig,
+} from './read';
+import type { Marker, Movement } from '../domain';
+import type { ProjectSummary, ProjectUpdate, ProjectValues, ServerProject } from './types';
+import type { ProjectVisibility } from './types';
 
 /** A published public project as the read surface returns it — the gallery's entry. */
 export interface PublicProjectSummary {
@@ -38,14 +54,47 @@ export interface PublicProject extends PublicProjectSummary {
 }
 
 /**
- * The project data API's read seam: the anonymous reads the app and its tests
- * share. One PostgREST adapter implements it over the `projects` table; every
- * test above this seam fakes the interface.
+ * The project data surface — the seam the app and its tests share: the signed
+ * in workspace's list, reads, and writes, plus the anonymous reads the gallery
+ * and the read-only view run on. One PostgREST-backed implementation composes
+ * the two transports; every test above this seam fakes the interface.
  */
 export interface ProjectsApi {
+  /**
+   * The signed-in user's own projects, newest first — the workspace list.
+   * Requires a session: ownership is the list's scope.
+   */
+  listMyProjects(): Promise<ProjectSummary[]>;
+  /**
+   * One project by id, or null when none is visible to the current session.
+   * An anonymous session reads published public projects only; a signed-in
+   * owner additionally reads their own in every status and visibility (the
+   * RLS scope). Returns null for a missing row — the page's "not found".
+   */
+  getProject(id: string): Promise<ServerProject | null>;
+  /**
+   * Creates a project; the server owns ownership, status (pending), and the
+   * stamps. Returns the created row so the pipeline can open it.
+   */
+  createProject(values: ProjectValues): Promise<ServerProject>;
+  /**
+   * Edits the client-writable fields only — the update grant (name, markers,
+   * movements); visibility has its own operation. Identity, ownership, and
+   * review status are never settable here.
+   */
+  saveProject(id: string, update: ProjectUpdate): Promise<void>;
+  /** The visibility toggle; making a private project public re-enters review. */
+  setVisibility(id: string, visibility: ProjectVisibility): Promise<void>;
+  /** Deletes the signed-in user's own project. */
+  deleteProject(id: string): Promise<void>;
   /** Every published public project, newest first — the gallery's source. */
   listPublishedProjects(): Promise<PublicProjectSummary[]>;
-  /** Published public projects for one recording, newest first — the per-recording list. */
+  /**
+   * The published public projects for a video — the create screen's count
+   * peek. Explicitly filtered to published public regardless of the caller's
+   * session, so a signed-in owner's own pending/private projects are not
+   * counted.
+   */
   listPublishedForVideo(videoId: string): Promise<PublicProjectSummary[]>;
   /** One published public project, or null when it doesn't exist or isn't visible. */
   getPublicProject(id: string): Promise<PublicProject | null>;
@@ -87,4 +136,28 @@ export function groupGalleryProjects(projects: readonly PublicProjectSummary[]):
     }
   }
   return groups;
+}
+
+/**
+ * The default API for the real app, built from the deployment env, or null
+ * when the app is not wired to a Supabase project — the signal the app's env
+ * gate renders its "not wired up" screen on. Auth, the write surface, and the
+ * anonymous read surface share the same env, so a null here is an entirely
+ * unconfigured app, not a partial one.
+ */
+export function createDefaultProjectsApi(
+  env: Record<string, string | undefined> = import.meta.env,
+): ProjectsApi | null {
+  const authEnv = readAuthEnv(env);
+  if (authEnv === null) return null;
+  const config = readProjectsConfig(env);
+  if (config === null) return null;
+  const api = createSupabaseProjectsApi(authEnv);
+  const readDeps = { config, fetchText: fetchProjectsText };
+  return {
+    ...api,
+    listPublishedProjects: () => fetchPublishedProjects(readDeps),
+    listPublishedForVideo: (videoId) => fetchPublishedForVideo(videoId, readDeps),
+    getPublicProject: (id) => fetchPublicProject(id, readDeps),
+  };
 }

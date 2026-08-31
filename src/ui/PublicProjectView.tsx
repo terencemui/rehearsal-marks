@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import type { AudioController } from '../audio';
-import { defaultPlayerMode } from '../storage';
-import type { Autosave, ProjectRecord } from '../storage';
+import type { Autosave } from '../projects/autosave';
 import type { PublicProject, ProjectsApi } from '../projects';
+import type { ServerProject } from '../projects/types';
 import { NotFoundPage } from './NotFoundPage';
 import { Player } from './Player';
 import './public-project.css';
@@ -129,16 +129,16 @@ export function PublicProjectView({ api, controllerFactory }: PublicProjectViewP
 }
 
 /**
- * A public project mapped into the player's record shape. The read-only
- * session's posture follows the same rule an editing project's first open
- * does: a project with marks opens in Playback, and the player is
- * playback-only regardless — the mode matters only where the editing tools
- * live, which a read-only visit never reaches.
+ * A public project mapped into the player's record shape — the server row the
+ * read returned, trimmed of the update story a viewer never touches. The
+ * player's posture is playback-only in a read-only session, decided by the
+ * `readOnly` prop, never derived from what the row carries.
  */
-function projectRecordFrom(project: PublicProject): ProjectRecord {
+function projectRecordFrom(project: PublicProject): ServerProject {
   return {
     id: project.id,
     name: project.name,
+    recordingTitle: project.recordingTitle,
     // A published row has no update story a viewer needs; its creation stamp
     // is the honest `updatedAt` for a session that will never write.
     createdAt: project.createdAt,
@@ -147,7 +147,11 @@ function projectRecordFrom(project: PublicProject): ProjectRecord {
     duration: project.duration,
     markers: project.markers,
     movements: project.movements,
-    playerMode: defaultPlayerMode(project.markerCount),
+    // The anonymous read only ever returns a published public row, so the
+    // status fields the server shape carries are fixed — the session will
+    // never write them.
+    visibility: 'public',
+    publicationStatus: 'published',
   };
 }
 
@@ -160,7 +164,7 @@ function projectRecordFrom(project: PublicProject): ProjectRecord {
  * as `get` reports it: nothing about a stranger's project may be changed, so
  * the session never diverges from what it holds.
  */
-function readOnlyAutosave(record: ProjectRecord): Autosave {
+function readOnlyAutosave(record: ServerProject): Autosave {
   return {
     get: () => record,
     mutate: () => record,

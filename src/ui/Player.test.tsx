@@ -1,18 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { LoadResult } from '../audio';
+import { describe, expect, it, vi } from 'vitest';
+import type { LoadOptions, LoadResult } from '../audio';
 import { YouTubePlaybackError } from '../audio/errors';
 import { canonicalYouTubeUrl } from '../domain';
-import { createAutosave, type ProjectRecord } from '../storage';
+import { createAutosave, createProjectSave } from '../projects/autosave';
+import type { Autosave } from '../projects/autosave';
+import type { ServerProject } from '../projects/types';
+import { fakeProjectsApi } from '../test/projects-fixture';
 import { mockController } from '../test/controller-fixture';
-import { youtubeLoad } from '../test/load-fixture';
 import { marker } from '../test/marker-fixture';
-import { projectRecord } from '../test/project-fixture';
-import { closeTestStorages, testStorage } from '../test/storage-fixture';
 import { fireResizeObservers, getObservedTargets } from '../test/resize-observer';
 import { waitForPlayerSettled } from '../test/settle-player';
+import { serverProject } from '../test/server-project-fixture';
 import { Player } from './Player';
 // jsdom computes no layout, so the layout facts are CSS text — the narrow
 // viewport and console-row tests pin them by reading the stylesheet from disk
@@ -21,26 +22,34 @@ import { Player } from './Player';
 const playerCss = readFileSync('src/ui/player.css', 'utf8');
 const appCss = readFileSync('src/ui/app.css', 'utf8');
 
-afterEach(closeTestStorages);
+/**
+ * The autosave every player test runs on. Save is a spy: persistence is the
+ * ProjectPage's wire (createProjectSave), tested at the autosave seam and in
+ * the duration tests below — the player itself just mutates and flushes.
+ */
+function testAutosave(record: ServerProject): { autosave: Autosave; save: ReturnType<typeof vi.fn> } {
+  const save = vi.fn(async () => {});
+  const autosave = createAutosave(record, { save });
+  return { autosave, save };
+}
 
 /**
  * Renders a loaded player whose load result matches the record's duration —
  * the same render the marking tests use, surfaced with the autosave handle
  * for the tests that only need the controller and the view.
  */
-async function renderLoadedPlayer(record = projectRecord()) {
+async function renderLoadedPlayer(record = serverProject()) {
   const { autosave, ...rest } = await renderSettledPlayer(record);
   return { ...rest, autosave };
 }
 
 describe('Player', () => {
   it('loads the canonical URL through the controller and shows the project name', async () => {
-    const storage = await testStorage();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 123.456 })),
     });
-    const record = projectRecord();
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject();
+    const { autosave } = testAutosave(record);
 
     render(<Player autosave={autosave} controller={controller} />);
 
@@ -51,13 +60,13 @@ describe('Player', () => {
     expect(options.url).toBe(canonicalYouTubeUrl(record.videoId));
     expect(options.container).toBeInstanceOf(HTMLDivElement);
     expect(document.body.contains(options.container)).toBe(true);
-    storage.close();
+    // Settle the async load inside act before the test ends.
+    await waitForPlayerSettled();
   });
 
   it('carries no navigation of its own — the shell’s navbar is the only chrome (T45)', async () => {
-    const storage = await testStorage();
-    const record = projectRecord();
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject();
+    const { autosave } = testAutosave(record);
 
     render(<Player autosave={autosave} controller={mockController()} />);
 
@@ -71,36 +80,35 @@ describe('Player', () => {
     expect(screen.getByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     // Settle the async load inside act before the test ends.
     await waitForPlayerSettled();
-    storage.close();
   });
 
-  it('persists the media duration learned from the load', async () => {
-    const storage = await testStorage();
+  it('keeps the media duration learned from the load in memory, never persisting it', async () => {
+    // The duration stamp is the player's only in-session mutation, and it is
+    // in-memory only (T51): the server never persists it, so the flush's save
+    // wire — a change nothing the server can write — is skipped, and a
+    // published public project is never PATCHed back to review over it.
+    const api = fakeProjectsApi();
+    const record = serverProject({ duration: 0 });
+    const autosave = createAutosave(record, { save: createProjectSave(api, record) });
     const controller = mockController({ load: vi.fn(async () => ({ duration: 42 })) });
-    const record = projectRecord({ duration: 0 });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
     const { unmount } = render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
+    expect(autosave.get().duration).toBe(42);
     unmount();
 
-    await waitFor(async () => {
-      const stored = await storage.projects.get(record.id);
-      expect(stored!.duration).toBe(42);
-    });
+    await waitFor(() => expect(api.saveProject).not.toHaveBeenCalled());
     expect(controller.destroy).toHaveBeenCalled();
-    storage.close();
   });
 
   it('shows the failure card when loading rejects', async () => {
-    const storage = await testStorage();
     const controller = mockController({
       load: vi.fn(async () => {
         throw new Error('media element failed');
       }),
     });
-    const record = projectRecord();
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject();
+    const { autosave } = testAutosave(record);
 
     render(<Player autosave={autosave} controller={controller} />);
 
@@ -110,29 +118,29 @@ describe('Player', () => {
     // beside the card.
     expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Playing from YouTube/)).not.toBeInTheDocument();
-    storage.close();
   });
 
-  it('does not write the record over sub-millisecond duration noise', async () => {
-    const storage = await testStorage();
-    const record = projectRecord();
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+  it('does not mutate over sub-millisecond duration noise — nothing to save', async () => {
+    const record = serverProject();
+    const { autosave, save } = testAutosave(record);
     const controller = mockController({ load: vi.fn(async () => ({ duration: 123.4560004 })) });
 
-    render(<Player autosave={autosave} controller={controller} />);
+    const { unmount } = render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
     await new Promise((resolve) => setTimeout(resolve, 600));
 
-    expect(await storage.projects.get(record.id)).toBeUndefined();
-    storage.close();
+    // The noise is below the stamp's epsilon, so no mutation ever fires — and
+    // a flush has nothing to write.
+    expect(autosave.get().duration).toBe(123.456);
+    unmount();
+    await waitFor(() => expect(save).not.toHaveBeenCalled());
   });
 });
 
 describe('Player — read-only (T50)', () => {
   it('plays a public project without writing anything — no duration stamp, no unmount flush', async () => {
-    const storage = await testStorage();
-    const record = projectRecord({ duration: 0 });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject({ duration: 0 });
+    const { autosave, save } = testAutosave(record);
     const controller = mockController({ load: vi.fn(async () => ({ duration: 42 })) });
 
     const { unmount } = render(<Player autosave={autosave} controller={controller} readOnly />);
@@ -141,15 +149,14 @@ describe('Player — read-only (T50)', () => {
     // The read-only player renders and settles, but the duration the load
     // measured is never stamped into the record — nothing about a stranger's
     // project may be written by a viewer.
-    expect(await storage.projects.get(record.id)).toBeUndefined();
+    expect(autosave.get().duration).toBe(0);
 
     // Unmount flushes the session's write in the editing player; a read-only
-    // session has no write, so the record still never reaches the store.
+    // session has no write, so the save callback never fires.
     unmount();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(await storage.projects.get(record.id)).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(save).not.toHaveBeenCalled();
     expect(controller.destroy).toHaveBeenCalled();
-    storage.close();
   });
 });
 
@@ -175,7 +182,6 @@ describe('Player — playback-only (T39)', () => {
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText(/Playing from YouTube/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/no community labels/i)).not.toBeInTheDocument();
   });
 
   it('grows the timeline fill with playback time', async () => {
@@ -193,12 +199,11 @@ describe('Player — playback-only (T39)', () => {
 
   it('toggles with Space, except while a button has focus', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 0, error: new YouTubePlaybackError(150) })),
     });
-    const record = projectRecord();
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject();
+    const { autosave } = testAutosave(record);
     const { unmount } = render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
 
@@ -216,7 +221,6 @@ describe('Player — playback-only (T39)', () => {
     expect(controller.togglePlay).toHaveBeenCalledTimes(1);
 
     unmount();
-    storage.close();
   });
 });
 
@@ -236,7 +240,7 @@ describe('Player — the practice console (T36)', () => {
 
   it('shows the passed marker with letter and first alias, and the next marker', async () => {
     const { controller } = await renderLoadedPlayer(
-      projectRecord({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
+      serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
     );
     act(() => controller.emitPlayback({ currentTime: 15 }));
 
@@ -333,7 +337,7 @@ describe('Player — the practice console (T36)', () => {
     // left/right arrangement rests on — the nearest observable proxy for
     // "passed marker left, next marker right". The CSS realizes the layout.
     const { controller } = await renderLoadedPlayer(
-      projectRecord({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
+      serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
     );
     act(() => controller.emitPlayback({ currentTime: 15 }));
 
@@ -425,7 +429,7 @@ describe('Player navigation — arrow jumps', () => {
   });
 
   it('does nothing when there are no markers, leaving the keys to the browser', async () => {
-    const { controller } = await renderLoadedPlayer(projectRecord({ markers: [] }));
+    const { controller } = await renderLoadedPlayer(serverProject({ markers: [] }));
     act(() => controller.emitPlayback({ currentTime: 5 }));
 
     expect(fireEvent.keyDown(document.body, { key: 'ArrowDown' })).toBe(true);
@@ -518,9 +522,8 @@ describe('Player navigation — focus and gating', () => {
     const user = userEvent.setup();
     const controller = mockController();
     controller.load = vi.fn(() => new Promise<LoadResult>(() => {})); // never resolves
-    const storage = await testStorage();
-    const record = projectRecord();
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject();
+    const { autosave } = testAutosave(record);
     render(<Player autosave={autosave} controller={controller} />);
 
     // Space is gated with the rest — a press during load is not swallowed
@@ -577,16 +580,15 @@ const RECORD_SECONDS = 123.456;
  * playback duration matches the record. The bar is not geometry-mocked:
  * jsdom reports no layout, so a click-ratio test stubs the track for itself.
  */
-async function renderSettledPlayer(record = projectRecord()) {
+async function renderSettledPlayer(record = serverProject()) {
   const controller = mockController();
-  const storage = await testStorage();
   controller.load = vi.fn(async () => ({ duration: RECORD_SECONDS }));
   // Settle the mount duration before the bar draws its fill.
   controller.emitPlayback({ duration: RECORD_SECONDS });
-  const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+  const { autosave } = testAutosave(record);
   const view = render(<Player autosave={autosave} controller={controller} />);
   await waitForPlayerSettled();
-  return { ...view, controller, storage, record, autosave };
+  return { ...view, controller, record, autosave };
 }
 
 /** The marker row buttons, in DOM order (which is time order). */
@@ -640,6 +642,12 @@ function boxRect(overrides: Partial<DOMRect> = {}): DOMRect {
     toJSON: () => ({}),
     ...overrides,
   } as DOMRect;
+}
+
+/** Narrows a captured `load` call's options to the YouTube arm. */
+function youtubeLoad(options: LoadOptions): Extract<LoadOptions, { source: 'youtube' }> {
+  if (options.source !== 'youtube') throw new Error('Expected a YouTube load.');
+  return options;
 }
 
 describe('Player — read-only over markers (T39)', () => {
@@ -749,7 +757,7 @@ describe('Player — the timeline bar and markers (T38)', () => {
 
   it('lists the markers — label — alias on the left, timestamp on the right — and highlights the active row', async () => {
     const { container, controller } = await renderLoadedPlayer(
-      projectRecord({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
+      serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
     );
 
     const rows = markerRows(container);
@@ -779,13 +787,13 @@ describe('Player — the timeline bar and markers (T38)', () => {
   });
 
   it('renders no markers panel when the recording has no marks', async () => {
-    const { container } = await renderLoadedPlayer(projectRecord({ markers: [] }));
+    const { container } = await renderLoadedPlayer(serverProject({ markers: [] }));
     expect(container.querySelector('.player-markers')).toBeNull();
   });
 
   it('groups markers under sticky movement headers and seeks when a header is clicked', async () => {
     const { container, controller } = await renderLoadedPlayer(
-      projectRecord({
+      serverProject({
         markers: [marker('a', 10), marker('b', 500), marker('c', 900), marker('d', 1700)],
         movements: [
           { id: 'm1', name: 'I. Allegro', start: 0 },
@@ -820,16 +828,16 @@ describe('Player — the timeline bar and markers (T38)', () => {
   });
 
   it('renders a flat list for a record saved before movements existed — the field is absent, not empty', async () => {
-    // A project stored before ADR-0005 read its movements back as undefined —
-    // the storage version never bumped for the field, so old records keep their
-    // markers and lose nothing else. The panel must treat that as the empty,
-    // ungrouped list the contract describes instead of crashing the render.
-    const record = projectRecord({
+    // A project read before ADR-0005 carried no movements — the parser's older
+    // rows keep their markers and lose nothing else. The panel must treat the
+    // absent field as the empty, ungrouped list the contract describes instead
+    // of crashing the render.
+    const record = serverProject({
       markers: [marker('a', 10), marker('b', 831), marker('c', 1620)],
-    }) as ProjectRecord & { movements?: unknown };
+    }) as ServerProject & { movements?: unknown };
     delete (record as { movements?: unknown }).movements;
 
-    const { container } = await renderLoadedPlayer(record as ProjectRecord);
+    const { container } = await renderLoadedPlayer(record as ServerProject);
 
     // No movement headers — the flat, pre-movement panel.
     expect(container.querySelectorAll('.player-movement-header')).toHaveLength(0);
@@ -852,13 +860,12 @@ describe('Player — the timeline bar and markers (T38)', () => {
   });
 
   it('renders the markers even when playback has failed', async () => {
-    const storage = await testStorage();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 0, error: new YouTubePlaybackError(150) })),
     });
     controller.emitPlayback({ duration: RECORD_SECONDS });
-    const record = projectRecord({ duration: RECORD_SECONDS });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject({ duration: RECORD_SECONDS });
+    const { autosave } = testAutosave(record);
 
     const { container } = render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
@@ -867,7 +874,6 @@ describe('Player — the timeline bar and markers (T38)', () => {
     // its fill, and the markers panel still lists the marks.
     expect(container.querySelectorAll('.player-marker-row')).toHaveLength(2);
     expect(markerRows(container)[0].textContent).toContain('00:10');
-    storage.close();
   });
 
   it('caps the list at the video’s bottom, scrolling instead of outrunning it', async () => {
@@ -990,35 +996,32 @@ describe('Player — the timeline bar and markers (T38)', () => {
 });
 
 describe('Player — YouTube projects', () => {
-  const CANONICAL = canonicalYouTubeUrl(projectRecord().videoId);
+  const CANONICAL = canonicalYouTubeUrl(serverProject().videoId);
 
   async function renderYouTubePlayer(duration = 200) {
-    const storage = await testStorage();
     const controller = mockController({ load: vi.fn(async () => ({ duration })) });
     controller.emitPlayback({ duration });
-    const record = projectRecord({ name: 'Brahms — Intermezzo', duration });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject({ name: 'Brahms — Intermezzo', duration });
+    const { autosave } = testAutosave(record);
     const view = render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
-    return { ...view, controller, storage, autosave };
+    return { ...view, controller, autosave };
   }
 
   it('plays the canonical URL through the YouTube arm of the seam', async () => {
-    const { controller, storage } = await renderYouTubePlayer();
+    const { controller } = await renderYouTubePlayer();
 
     const options = youtubeLoad(vi.mocked(controller.load).mock.calls[0][0]);
     expect(options.url).toBe(CANONICAL);
     expect(options.container).toHaveClass('player-ruler');
-    storage.close();
   });
 
   it('shows the browsable-but-muted error card when the video cannot play', async () => {
-    const storage = await testStorage();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 0, error: new YouTubePlaybackError(150) })),
     });
-    const record = projectRecord({ duration: 0 });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject({ duration: 0 });
+    const { autosave } = testAutosave(record);
 
     render(<Player autosave={autosave} controller={controller} />);
 
@@ -1026,19 +1029,17 @@ describe('Player — YouTube projects', () => {
     expect(card).toHaveTextContent(/couldn’t be played/i);
     const link = within(card).getByRole('link', { name: CANONICAL });
     expect(link).toHaveAttribute('href', CANONICAL);
-    storage.close();
   });
 
   it('retries the load from the error card and clears it on success', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
     const load = vi
       .fn<() => Promise<LoadResult>>()
       .mockResolvedValueOnce({ duration: 0, error: new YouTubePlaybackError(150) })
       .mockResolvedValueOnce({ duration: 604.2 });
     const controller = mockController({ load });
-    const record = projectRecord({ duration: 604.2 });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject({ duration: 604.2 });
+    const { autosave } = testAutosave(record);
 
     render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
@@ -1052,17 +1053,15 @@ describe('Player — YouTube projects', () => {
     // The load settled again on the success path — the root's marker, no
     // longer a lone `<main>` (the player is shell chrome now, T45).
     await waitForPlayerSettled();
-    storage.close();
   });
 
   it('cannot add marks while the video cannot play — M is a letter jump, nothing more', async () => {
     const user = userEvent.setup();
-    const storage = await testStorage();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 604.2, error: new YouTubePlaybackError(150) })),
     });
-    const record = projectRecord({ duration: 604.2 });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
+    const record = serverProject({ duration: 604.2 });
+    const { autosave } = testAutosave(record);
 
     render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
@@ -1072,22 +1071,19 @@ describe('Player — YouTube projects', () => {
     // No marker named M in the fixture set, so M jumps to nothing — and
     // nothing is added: the record's two marks are untouched.
     expect(autosave.get().markers).toHaveLength(2);
-    storage.close();
   });
 
   it('gives the timeline the full content width instead of zooming the embed off-screen', async () => {
-    const { container, storage } = await renderYouTubePlayer(200);
+    const { container } = await renderYouTubePlayer(200);
 
     const split = container.querySelector('.player-practice-split') as HTMLElement;
     const bar = container.querySelector('.player-timeline-bar') as HTMLElement;
     expect(split.nextElementSibling).toBe(bar);
     expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
-
-    storage.close();
   });
 
   it('leaves ctrl+scroll to the browser — there is no zoom to gesture at', async () => {
-    const { container, storage } = await renderYouTubePlayer(200);
+    const { container } = await renderYouTubePlayer(200);
     const bar = container.querySelector('.player-timeline-bar') as HTMLElement;
 
     const wheel = new WheelEvent('wheel', {
@@ -1102,38 +1098,40 @@ describe('Player — YouTube projects', () => {
 
     expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
     expect(wheel.defaultPrevented).toBe(false);
-    storage.close();
   });
 
-  it('persists the duration the embed reports, so the list and ruler stay honest', async () => {
-    const storage = await testStorage();
+  it('keeps the embed-reported duration in memory, so the ruler stays honest', async () => {
+    // The embed's duration is in-memory only (T51): it corrects the ruler's
+    // timeline but never reaches the server — the save wire skips it, and a
+    // published public project is never demoted over it.
+    const api = fakeProjectsApi();
+    const record = serverProject({ duration: 0 });
+    const autosave = createAutosave(record, { save: createProjectSave(api, record) });
     const controller = mockController({ load: vi.fn(async () => ({ duration: 372.5 })) });
-    const record = projectRecord({ duration: 0 });
-    const autosave = createAutosave(record, { save: (next) => storage.projects.save(next) });
 
-    render(<Player autosave={autosave} controller={controller} />);
+    const { unmount } = render(<Player autosave={autosave} controller={controller} />);
     await waitForPlayerSettled();
 
-    await waitFor(() => expect(autosave.get().duration).toBe(372.5));
-    storage.close();
+    expect(autosave.get().duration).toBe(372.5);
+    unmount();
+    await waitFor(() => expect(api.saveProject).not.toHaveBeenCalled());
   });
 
   describe('the practice split view (T27)', () => {
     const readout = () => screen.getByRole('region', { name: 'Practice readout' });
 
     it('splits the view: the readout sits beside the recording', async () => {
-      const { storage } = await renderYouTubePlayer();
+      await renderYouTubePlayer();
 
       const split = document.querySelector('.player-practice-split') as HTMLElement;
       expect(split.querySelector('.player-video-column .player-ruler')).not.toBeNull();
       // The clock is a sibling below the split, never inside it.
       expect(split.querySelector('.player-timeline-bar')).toBeNull();
       expect(within(split).getByRole('region', { name: 'Practice readout' })).toBeInTheDocument();
-      storage.close();
     });
 
     it('reads Start, then the passed and next markers, following seeks', async () => {
-      const { controller, storage } = await renderYouTubePlayer();
+      const { controller } = await renderYouTubePlayer();
 
       act(() => controller.emitPlayback({ duration: 200 }));
 
@@ -1152,11 +1150,10 @@ describe('Player — YouTube projects', () => {
       act(() => controller.seek(25));
       expect(within(readout()).getByText('B')).toBeInTheDocument();
       expect(within(readout()).getByText('End')).toBeInTheDocument();
-      storage.close();
     });
 
     it('confines the marks to the markers panel — the bar carries none', async () => {
-      const { storage } = await renderYouTubePlayer();
+      await renderYouTubePlayer();
 
       const videoColumn = document.querySelector('.player-video-column') as HTMLElement;
       const bar = document.querySelector('.player-timeline-bar') as HTMLElement;
@@ -1164,7 +1161,6 @@ describe('Player — YouTube projects', () => {
       expect(videoColumn.querySelector('.player-marker-row')).toBeNull();
       expect(bar.querySelector('.player-marker-row')).toBeNull();
       expect(sideColumn.querySelectorAll('.player-marker-row')).toHaveLength(2);
-      storage.close();
     });
   });
 });

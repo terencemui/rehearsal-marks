@@ -333,9 +333,9 @@ describe('AudioController YouTube playback', () => {
 
   it('renders the ruler from the stored duration when the embed errors — marks stay visible', async () => {
     const container = document.createElement('div');
-    // The record's duration: seeded by the community label set or persisted
-    // from an earlier load. The dead embed reports nothing, so this is the
-    // only honest timeline left.
+    // The record's duration: from the server row or persisted from an
+    // earlier load. The dead embed reports nothing, so this is the only
+    // honest timeline left.
     const { controller, pending, player } = await loadYouTube(container, CANONICAL_URL, 604.2);
 
     player.dispatch('onError', 101);

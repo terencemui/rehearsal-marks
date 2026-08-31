@@ -1,27 +1,26 @@
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { PublicProject } from '../projects';
+import type { ServerProject } from '../projects/types';
 import { mockController } from '../test/controller-fixture';
 import { marker } from '../test/marker-fixture';
-import { mockProjectsApi } from '../test/projects-api-fixture';
+import { fakeProjectsApi } from '../test/projects-fixture';
+import { serverProject } from '../test/server-project-fixture';
 import { waitForPlayerSettled } from '../test/settle-player';
 import { PublicProjectView } from './PublicProjectView';
 
 /** A public project the gallery read returns, with one movement and marks in it. */
-function publicProject(overrides: Partial<PublicProject> = {}): PublicProject {
-  return {
+function publicProject(overrides: Partial<ServerProject> = {}): ServerProject {
+  return serverProject({
     id: '7f8f4a10-2c3e-4b1a-9d5b-6a0e8f9c1d2e',
     name: 'Honeck Tchaikovsky 5',
     recordingTitle: 'Tschaikowsky: 5. Sinfonie — hr-Sinfonieorchester, Manfred Honeck',
     videoId: 'a_B02BZp-5Y',
     duration: 3036,
-    markerCount: 2,
-    createdAt: Date.parse('2026-08-28T12:00:00.000Z'),
     markers: [marker('m1', 10, ['I. Andante']), marker('m2', 20, ['II. Andante'])],
     movements: [{ id: 'mv1', name: 'I. Andante', start: 5 }],
     ...overrides,
-  };
+  });
 }
 
 /** The rows in the marker list — the read-only surface's navigable marks. */
@@ -30,10 +29,10 @@ function markerRows(container: HTMLElement): HTMLElement[] {
 }
 
 /** Renders the read-only view on one project, with a mocked controller. */
-function renderView(project: PublicProject | null, { fail = false }: { fail?: boolean } = {}) {
-  const api = mockProjectsApi();
-  if (project !== null) api.details.set(project.id, project);
-  if (fail) api.failNextRead('network down');
+function renderView(project: ServerProject | null, { fail = false }: { fail?: boolean } = {}) {
+  const api = fakeProjectsApi();
+  if (project !== null) api.seed(project);
+  if (fail) api.failNext('getPublicProject');
   const controller = mockController({ load: vi.fn(async () => ({ duration: 3036 })) });
   const view = render(
     <MemoryRouter initialEntries={[`/gallery/${project?.id ?? 'missing'}`]}>

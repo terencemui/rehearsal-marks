@@ -18,7 +18,8 @@ import {
   previousMarker,
 } from '../domain';
 import type { LabeledMarker, Movement } from '../domain';
-import type { Autosave, ProjectRecord } from '../storage';
+import type { Autosave } from '../projects/autosave';
+import type { ServerProject } from '../projects/types';
 import { MarkersPanel } from './MarkersPanel';
 import { PracticeReadout } from './PracticeReadout';
 import './player.css';
@@ -152,7 +153,7 @@ export function Player({
   // The record as React state. The player's only mutation is stamping the
   // measured duration after load; `current` mirrors the autosave so flags,
   // labels, and the strip render from the same record that persists.
-  const [current, setCurrent] = useState<ProjectRecord>(record);
+  const [current, setCurrent] = useState<ServerProject>(record);
   // The playback store lives behind the seam; React subscribes to it directly.
   const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
 
@@ -167,7 +168,7 @@ export function Player({
 
   /** Applies the player's one mutation: the autosave gets it, React mirrors it. */
   const update = useCallback(
-    (fn: (current: ProjectRecord) => ProjectRecord): void => {
+    (fn: (current: ServerProject) => ServerProject): void => {
       setCurrent(autosave.mutate(fn));
     },
     [autosave],
@@ -294,14 +295,16 @@ export function Player({
         if (cancelled) return;
         setSettled(true);
         setLoadFailed(result.error !== undefined);
-        // No decode supplies a duration; the record's 0 is a placeholder.
+        // No decode supplies a duration; a bare project's 0 is a placeholder.
         // The media element's metadata is the recording's true duration —
-        // persisting it keeps the project list (T09) and exports honest, so
-        // the one write outside the create path earns its place. The epsilon
-        // keeps media-element measurement noise from dirtying the record — a
-        // no-op rewrite would re-stamp updatedAt and reorder the list for a
-        // change no one made. A read-only session never writes, not even
-        // this: a stranger's published project is not ours to restamp.
+        // kept in memory so the ruler and list render honestly. The server
+        // never persists it (T51): the save callback skips a write whose
+        // persisted fields are unchanged, so this stamp neither demotes a
+        // published project through review nor reorders the list. The
+        // epsilon keeps media-element measurement noise from dirtying the
+        // record for a change no one made. A read-only session (T50) never
+        // writes, not even this: a stranger's published project is not ours
+        // to restamp.
         if (
           !readOnly &&
           result.duration > 0 &&

@@ -8,12 +8,13 @@
  *
  * The controller's contract with the app: every failure degrades to
  * anonymous browsing with an honest notice — a failed sign-in or sign-out
- * never rejects out of the controller, and an unconfigured deployment is
- * `unavailable`, not broken.
+ * never rejects out of the controller. An unconfigured deployment never
+ * reaches this controller at all: the app gates on the env and renders its
+ * "not wired up" screen (T51), so a backend always exists here.
  */
 
-/** A signed-in person — the `contributor_id` the Commons derives from the session. */
-export interface Contributor {
+/** A signed-in person — the `auth.users` row the session belongs to. */
+export interface User {
   /** The auth account id (Supabase `auth.users.id`), never sent by the client. */
   id: string;
   /** The display name the provider sent, or the email when there is none. */
@@ -28,9 +29,7 @@ export interface Contributor {
  */
 export type AuthState =
   | { kind: 'anonymous'; notice?: string }
-  | { kind: 'signed-in'; contributor: Contributor; notice?: string }
-  /** No backend (unconfigured deployment): sign-in is inert, browsing is untouched. */
-  | { kind: 'unavailable'; reason: string };
+  | { kind: 'signed-in'; user: User; notice?: string };
 
 export interface AuthController {
   /** The current snapshot — read at mount, so the first paint is already honest. */
@@ -46,9 +45,9 @@ export interface AuthController {
   /** Ends the session; a failure lands in state as a notice, never a rejection. */
   signOut(): Promise<void>;
   /**
-   * Permanently deletes the signed-in contributor's account and the label
-   * sets it owns (T26). A success lands the app anonymous; a failure keeps
-   * the signed-in state with the reason, never a rejection.
+   * Permanently deletes the signed-in user's account and the projects it owns
+   * (T26). A success lands the app anonymous; a failure keeps the signed-in
+   * state with the reason, never a rejection.
    */
   deleteAccount(): Promise<void>;
   /** Unsubscribes from the backend; the controller publishes nothing after. */
@@ -57,20 +56,20 @@ export interface AuthController {
 
 /**
  * The backend surface the controller drives: supabase-js's auth API, narrowed
- * to what the app uses and shaped to carry `Contributor` instead of the
- * library's own user object. `supabase.ts` is the only implementation.
+ * to what the app uses and shaped to carry `User` instead of the library's
+ * own user object. `supabase.ts` is the only implementation.
  */
 export interface SupabaseAuth {
   /** The current session, or null when signed out. */
-  getSession(): Promise<Contributor | null>;
+  getSession(): Promise<User | null>;
   /** Registers a session listener (supabase-js fires the restored session first). */
-  onAuthStateChange(listener: (contributor: Contributor | null) => void): {
+  onAuthStateChange(listener: (user: User | null) => void): {
     unsubscribe(): void;
   };
   /** Starts the Google OAuth flow (the full-page redirect). */
   signInWithGoogle(): Promise<void>;
   signOut(): Promise<void>;
-  /** Deletes the signed-in account and, by cascade, its label sets. */
+  /** Deletes the signed-in account and, by cascade, its projects. */
   deleteAccount(): Promise<void>;
 }
 
@@ -79,7 +78,7 @@ export interface SupabaseAuth {
  * so the adapter stays a straight pass-through and the rule ("name or email")
  * is testable without supabase-js.
  */
-export function contributorFromUser(user: AuthUser): Contributor {
+export function userFromUser(user: AuthUser): User {
   const email = user.email ?? '';
   const metadataName = user.user_metadata?.full_name;
   const name = typeof metadataName === 'string' && metadataName.trim() !== '' ? metadataName : email;
@@ -93,24 +92,7 @@ export interface AuthUser {
   user_metadata?: Record<string, unknown>;
 }
 
-/** The honest face of an unconfigured deployment: sign-in is off, nothing else is. */
-export const AUTH_UNAVAILABLE_REASON =
-  "Sign-in isn't configured for this deployment yet — browsing and local projects work as usual.";
-
-export function createAuthController(backend: SupabaseAuth | null): AuthController {
-  if (backend === null) {
-    // No backend means no sign-in surface at all: the state is fixed, and
-    // every operation is a no-op. The app renders the reason and moves on.
-    return {
-      getState: () => ({ kind: 'unavailable', reason: AUTH_UNAVAILABLE_REASON }),
-      subscribe: () => () => {},
-      signInWithGoogle: async () => {},
-      signOut: async () => {},
-      deleteAccount: async () => {},
-      destroy: () => {},
-    };
-  }
-
+export function createAuthController(backend: SupabaseAuth): AuthController {
   let state: AuthState = { kind: 'anonymous' };
   const listeners = new Set<(state: AuthState) => void>();
   // A session event is always fresher than the restore's snapshot: it can
@@ -125,12 +107,12 @@ export function createAuthController(backend: SupabaseAuth | null): AuthControll
     for (const listener of listeners) listener(state);
   }
 
-  function applySession(contributor: Contributor | null): void {
+  function applySession(user: User | null): void {
     sessionEventSeen = true;
-    if (contributor === null) {
+    if (user === null) {
       emit({ kind: 'anonymous' });
     } else {
-      emit({ kind: 'signed-in', contributor });
+      emit({ kind: 'signed-in', user });
     }
   }
 
@@ -138,9 +120,9 @@ export function createAuthController(backend: SupabaseAuth | null): AuthControll
   // restore's async window is still heard.
   const subscription = backend.onAuthStateChange(applySession);
 
-  void backend.getSession().then((contributor) => {
+  void backend.getSession().then((user) => {
     if (sessionEventSeen) return;
-    applySession(contributor);
+    applySession(user);
   }, () => {
     // A restore that fails is a startup that starts anonymous: the
     // degradation contract, silently — no notice to greet a returning
@@ -196,10 +178,10 @@ export function createAuthController(backend: SupabaseAuth | null): AuthControll
         // backend confirms it, exactly as sign-out lands on its own success.
         emit({ kind: 'anonymous' });
       } catch {
-        // A failed delete changes nothing: the contributor stays signed in,
-        // with the reason next to the control that caused it. (A racing
-        // success — the state already anonymous — changes nothing either;
-        // the failure is not a reason to re-claim a deleted account.)
+        // A failed delete changes nothing: the user stays signed in, with the
+        // reason next to the control that caused it. (A racing success — the
+        // state already anonymous — changes nothing either; the failure is
+        // not a reason to re-claim a deleted account.)
         emit(
           state.kind === 'signed-in'
             ? { ...state, notice: ACCOUNT_DELETE_FAILED }
@@ -215,16 +197,15 @@ export function createAuthController(backend: SupabaseAuth | null): AuthControll
 
 /**
  * Whether two states describe the same situation — the dedupe key. The
- * notice rides on anonymous and signed-in only; unavailable's reason is a
- * constant, so it needs no comparison.
+ * notice rides on anonymous and signed-in only.
  */
 function sameState(a: AuthState, b: AuthState): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === 'anonymous' && b.kind === 'anonymous') return a.notice === b.notice;
   if (a.kind === 'signed-in' && b.kind === 'signed-in') {
-    // The identity is the state; anything else about the contributor (a
-    // refreshed display name) is not worth a repaint.
-    return a.contributor.id === b.contributor.id && a.notice === b.notice;
+    // The identity is the state; anything else about the user (a refreshed
+    // display name) is not worth a repaint.
+    return a.user.id === b.user.id && a.notice === b.notice;
   }
   return true;
 }
