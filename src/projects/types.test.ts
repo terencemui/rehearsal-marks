@@ -3,6 +3,7 @@ import { marker } from '../test/marker-fixture';
 import { ProjectsError } from './errors';
 import {
   parseProjectRow,
+  returnsToReview,
   summarizeProject,
   type ProjectSummary,
   type ServerProject,
@@ -122,5 +123,30 @@ describe('summarizeProject', () => {
       updatedAt: Date.parse('2026-08-28T12:00:00Z'),
     };
     expect(summarizeProject(parseProjectRow(row()))).toEqual(summary);
+  });
+});
+
+describe('returnsToReview', () => {
+  /** A review state shorthand — public by default, so tests name only what varies. */
+  const review = (overrides: Partial<{ visibility: 'public' | 'private'; publicationStatus: 'pending' | 'published' | 'rejected' }> = {}) => ({
+    visibility: 'public' as const,
+    publicationStatus: 'published' as const,
+    ...overrides,
+  });
+
+  it('is true when a save returned a public, non-pending project to the queue', () => {
+    expect(returnsToReview(review(), review({ publicationStatus: 'pending' }))).toBe(true);
+  });
+
+  it('is false when the server kept the edited project published — a trusted edit', () => {
+    expect(returnsToReview(review(), review())).toBe(false);
+  });
+
+  it('is false for a project that was already pending — nothing was "returned"', () => {
+    expect(returnsToReview(review({ publicationStatus: 'pending' }), review({ publicationStatus: 'pending' }))).toBe(false);
+  });
+
+  it('is false for a private project — private work never enters review', () => {
+    expect(returnsToReview(review({ visibility: 'private' }), review({ visibility: 'private', publicationStatus: 'pending' }))).toBe(false);
   });
 });

@@ -80,9 +80,11 @@ export interface ProjectsApi {
   /**
    * Edits the client-writable fields only — the update grant (name, markers,
    * movements); visibility has its own operation. Identity, ownership, and
-   * review status are never settable here.
+   * review status are never settable here. Returns the row the server holds
+   * after the write: the T49 review trigger may have returned a published
+   * project to the queue, and the save indicator surfaces that (T52).
    */
-  saveProject(id: string, update: ProjectUpdate): Promise<void>;
+  saveProject(id: string, update: ProjectUpdate): Promise<ServerProject>;
   /** The visibility toggle; making a private project public re-enters review. */
   setVisibility(id: string, visibility: ProjectVisibility): Promise<void>;
   /** Deletes the signed-in user's own project. */

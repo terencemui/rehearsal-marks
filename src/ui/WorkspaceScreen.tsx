@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router';
 import { validateProjectName } from '../projects/summary';
 import type { SaveStatus } from '../projects/autosave';
+import { returnsToReview } from '../projects/types';
 import type { ProjectSummary } from '../projects/types';
 import type { ProjectsApi } from '../projects/api';
 import { createProjectFromYouTubeLink } from '../youtube';
@@ -149,8 +150,10 @@ export function WorkspaceScreen({
       if (!validation.ok) return;
       onStatus('saving');
       try {
-        await projectsApi.saveProject(id, { name: validation.name });
-        onStatus('saved');
+        // The returned row is the server's truth: renaming a published public
+        // project sends it back to review (T52), and the save line says so.
+        const saved = await projectsApi.saveProject(id, { name: validation.name });
+        onStatus(returnsToReview(current, saved) ? 'saved-review' : 'saved');
       } catch {
         onStatus('error');
       }
