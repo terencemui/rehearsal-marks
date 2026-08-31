@@ -1,0 +1,96 @@
+/* The public gallery (T50): the app's front door. Recording-title groups in
+   the workspace's list idiom — a heading per recording, entries as button
+   rows (the shell's accent + the list's card border), so the gallery reads
+   like the Projects list the app already had. */
+
+.gallery {
+  max-width: 720px;
+}
+
+.gallery h2 {
+  margin: 0 0 4px;
+  font: 700 20px/1.2 system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.gallery-intro {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #555;
+}
+
+.gallery-group {
+  margin: 0 0 20px;
+}
+
+.gallery-recording {
+  margin: 0 0 8px;
+  font: 600 16px/1.3 system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.gallery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gallery-entry {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: none;
+  padding: 8px 12px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gallery-entry:hover {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
+.gallery-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.gallery-count {
+  font-size: 13px;
+  color: #555;
+}
+
+.gallery-error {
+  margin: 0 0 8px;
+  color: #9f1239;
+}
+
+.gallery-empty {
+  margin: 0;
+  font-size: 14px;
+  color: #555;
+}
+
+.gallery-retry {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: none;
+  padding: 6px 12px;
+  font: 600 14px/20px system-ui, sans-serif;
+  color: #0f766e;
+  cursor: pointer;
+}
+
+.gallery-retry:hover {
+  background: #0f766e;
+  color: #fff;
+}

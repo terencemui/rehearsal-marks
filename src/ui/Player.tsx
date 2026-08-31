@@ -32,6 +32,14 @@ export interface PlayerProps {
   autosave: Autosave;
   /** The AudioController seam instance this session runs on. */
   controller: AudioController;
+  /**
+   * A read-only session (T50): the public project view opens a stranger's
+   * published project, which must never be written — not even the duration
+   * stamp, the one write an editing session makes. The player then skips
+   * every mutation and never flushes on unmount; playback, seeking, and the
+   * markers are all read-only either way.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -104,6 +112,7 @@ const STACKED_MARKERS_MIN = 120;
 export function Player({
   autosave,
   controller,
+  readOnly = false,
 }: PlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   /** The practice split — the measurement effect observes it for size changes. */
@@ -291,8 +300,13 @@ export function Player({
         // the one write outside the create path earns its place. The epsilon
         // keeps media-element measurement noise from dirtying the record — a
         // no-op rewrite would re-stamp updatedAt and reorder the list for a
-        // change no one made.
-        if (result.duration > 0 && Math.abs(result.duration - autosave.get().duration) > 0.001) {
+        // change no one made. A read-only session never writes, not even
+        // this: a stranger's published project is not ours to restamp.
+        if (
+          !readOnly &&
+          result.duration > 0 &&
+          Math.abs(result.duration - autosave.get().duration) > 0.001
+        ) {
           update((current) => ({ ...current, duration: result.duration }));
         }
       })
@@ -307,7 +321,7 @@ export function Player({
     };
     // The URL is fixed for the life of a session; `loadAttempt` is the failure
     // card's retry, the one deliberate re-run of the whole load.
-  }, [autosave, controller, loadAttempt, update, youtubeUrl]);
+  }, [autosave, controller, loadAttempt, readOnly, update, youtubeUrl]);
 
   /** The failure card's retry: back to loading, then a fresh load attempt. */
   function retryLoad(): void {
@@ -396,13 +410,14 @@ export function Player({
     // Player without the routed page, so no page teardown runs here. In the
     // app the project page (T45) owns the exit: React cleans up children
     // first, so this net's flush settles the pending write before the page's
-    // own flush (which is then a no-op) and the page reports the result.
+    // own flush (which is then a no-op) and the page reports the result. A
+    // read-only session (T50) never flushes — there is nothing it wrote.
     return () => {
-      void autosave.flush().catch(() => {});
+      if (!readOnly) void autosave.flush().catch(() => {});
       autosave.dispose();
       controller.destroy();
     };
-  }, [autosave, controller]);
+  }, [autosave, controller, readOnly]);
 
   // The playhead as a percentage of the recording, pinned to the end so a
   // trailing position can never overflow the fill.

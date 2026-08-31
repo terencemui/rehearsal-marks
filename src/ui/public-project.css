@@ -1,0 +1,46 @@
+/* The read-only public project view (T50): a back-to-gallery link above the
+   playback-only player, and the view's own error surface — distinct from the
+   not-found page, because an unreachable backend is not a missing project. */
+
+.public-project {
+  max-width: 720px;
+}
+
+.public-project-back {
+  display: inline-block;
+  margin: 0 0 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: none;
+  padding: 6px 12px;
+  font: 600 14px/20px system-ui, sans-serif;
+  color: #0f766e;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.public-project-back:hover {
+  background: #0f766e;
+  color: #fff;
+}
+
+.public-project-error {
+  max-width: 480px;
+  margin: 0 auto;
+  border: 1px dashed #ddd;
+  border-radius: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.public-project-error h2 {
+  margin: 0 0 8px;
+  font: 700 20px/1.2 system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.public-project-error-copy {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #555;
+}

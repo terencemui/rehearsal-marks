@@ -12,6 +12,7 @@ import { mockCommonsWrite } from './test/commons-write-fixture';
 import { mockController } from './test/controller-fixture';
 import { youtubeLoad } from './test/load-fixture';
 import { projectRecord } from './test/project-fixture';
+import { mockProjectsApi } from './test/projects-api-fixture';
 import { closeTestStorages, testStorage } from './test/storage-fixture';
 import { waitForPlayerSettled } from './test/settle-player';
 import type { CommunityLabelSet } from './youtube/community';
@@ -30,20 +31,30 @@ interface RenderAppOptions {
   loadCommunityLabels?: (videoId: string) => Promise<CommunityLabelSet | null>;
   /** The Commons write seam, like App's commonsWriteFactory. */
   commons?: ReturnType<typeof mockCommonsWrite>;
+  /** The anonymous projects read seam, like App's projectsApiFactory (T50). */
+  projects?: ReturnType<typeof mockProjectsApi>;
+  /** Overrides the projectsApiFactory — e.g. `() => null` for the not-wired-up case. */
+  projectsApiFactory?: () => ReturnType<typeof mockProjectsApi> | null;
   /** The starting URL the memory router serves — the refresh/landing case. */
   initialEntry?: string;
 }
 
-/** Renders the app on a fresh fake-indexeddb database with a mocked seam,
+/**
+ * Renders the app on a fresh fake-indexeddb database with a mocked seam,
  * served by a memory router — the one App-level seam, so the tests control
- * the starting URL and can drive Back and Forward (T44). */
+ * the starting URL and can drive Back and Forward (T44). The default landing
+ * is the workspace at `/projects` (T50 moved the front door to the gallery at
+ * `/`); tests that exercise the gallery pass `/` or the empty gallery.
+ */
 async function renderApp({
   controller = mockController(),
   storage,
   fetchTitle = async () => VIDEO_TITLE,
   loadCommunityLabels = async () => null,
   commons = mockCommonsWrite(),
-  initialEntry = '/',
+  projects = mockProjectsApi(),
+  projectsApiFactory = () => projects,
+  initialEntry = '/projects',
 }: RenderAppOptions = {}) {
   const opened = storage ?? (await testStorage());
   const auth = mockAuth();
@@ -95,6 +106,7 @@ async function renderApp({
         loadCommunityLabels={loadCommunityLabels}
         authFactory={() => auth.controller}
         commonsWriteFactory={() => commons.controller}
+        projectsApiFactory={projectsApiFactory}
       />
     </MemoryRouter>,
   );
@@ -104,6 +116,7 @@ async function renderApp({
     controller,
     auth: auth.backend,
     commons: commons.backend,
+    projects,
     go,
     navigateTo,
     currentPath: () => pathRef.current,
@@ -271,7 +284,7 @@ describe('App create from a YouTube link', () => {
     });
     const opened = await testStorage();
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/projects']}>
         <App
           controllerFactory={() => controller}
           storage={opened}
@@ -312,7 +325,7 @@ describe('App create from a YouTube link', () => {
     });
     const opened = await testStorage();
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/projects']}>
         <App
           controllerFactory={() => controller}
           storage={opened}
@@ -1039,15 +1052,27 @@ describe('App durable workspace state (T43)', () => {
 });
 
 describe('App pages and the persistent navbar (T44)', () => {
-  it('renders the Projects home at /, framed by the persistent navbar', async () => {
+  it('renders the workspace at /projects, framed by the persistent navbar', async () => {
     await renderApp();
-    // The create surface is the home page's headline affordance; the navbar —
+    // The create surface is the workspace's headline affordance; the navbar —
     // the app name, the page links, and the sign-in — frames it, with the
-    // Projects link marking the active page.
+    // Projects link marking the active page. (T50 moved the workspace here;
+    // the gallery owns the front door at /.)
     expect(screen.getByRole('region', { name: 'Create project' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Gallery' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+  });
+
+  it('renders the public gallery at the front door /, framed by the persistent navbar', async () => {
+    // The gallery is the front door (T50); the workspace moved to /projects.
+    await renderApp({ initialEntry: '/' });
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
   });
 
@@ -1062,10 +1087,10 @@ describe('App pages and the persistent navbar (T44)', () => {
     expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
   });
 
-  it('lands an unknown path on the Projects home', async () => {
+  it('lands an unknown path on the front door, the gallery', async () => {
     await renderApp({ initialEntry: '/no-such-page' });
-    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('browser Back and Forward move between the workspace pages', async () => {
@@ -1081,6 +1106,73 @@ describe('App pages and the persistent navbar (T44)', () => {
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     await go(1);
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+  });
+});
+
+describe('App public gallery (T50)', () => {
+  /** A published public project the gallery lists and the read-only view opens. */
+  const HONECK = {
+    id: '7f8f4a10-2c3e-4b1a-9d5b-6a0e8f9c1d2e',
+    name: 'Honeck Tchaikovsky 5',
+    recordingTitle: 'Tschaikowsky: 5. Sinfonie — hr-Sinfonieorchester, Manfred Honeck',
+    videoId: 'a_B02BZp-5Y',
+    duration: 3036,
+    markerCount: 2,
+    createdAt: Date.parse('2026-08-28T12:00:00.000Z'),
+  };
+
+  it('lists published public projects at the front door, grouped by recording', async () => {
+    await renderApp({
+      initialEntry: '/',
+      projects: mockProjectsApi([HONECK]),
+    });
+
+    expect(await screen.findByRole('heading', { name: /Manfred Honeck/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
+    expect(screen.getByText('2 markers')).toBeInTheDocument();
+  });
+
+  it('opens a gallery entry as the read-only view at /gallery/:id', async () => {
+    const user = userEvent.setup();
+    const projects = mockProjectsApi([HONECK]);
+    projects.details.set(HONECK.id, {
+      ...HONECK,
+      markers: [
+        { id: 'm1', time: 34, aliases: ['I. Andante'], createdAt: 1787184000000 },
+        { id: 'm2', time: 913, aliases: ['II. Andante'], createdAt: 1787184000000 },
+      ],
+      movements: [],
+    });
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 3036 })) });
+    const { currentPath } = await renderApp({ initialEntry: '/', projects, controller });
+
+    await user.click(await screen.findByRole('button', { name: /Honeck Tchaikovsky 5/ }));
+
+    expect(currentPath()).toBe(`/gallery/${HONECK.id}`);
+    expect(await screen.findByRole('heading', { name: HONECK.name })).toBeInTheDocument();
+    await waitForPlayerSettled();
+    // A stranger's published project opens read-only: no editing affordance.
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+  });
+
+  it('the navbar Gallery link moves between the workspace and the gallery', async () => {
+    const user = userEvent.setup();
+    const { currentPath } = await renderApp();
+    // Default landing is the workspace at /projects; the navbar links lead.
+    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+
+    expect(currentPath()).toBe('/');
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+  });
+
+  it('renders the "not wired up" screen at the gallery when no backend is configured', async () => {
+    await renderApp({ initialEntry: '/', projectsApiFactory: () => null });
+
+    expect(
+      await screen.findByRole('heading', { name: /public gallery isn’t connected yet/i }),
+    ).toBeInTheDocument();
   });
 });
 

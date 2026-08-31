@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { createAudioController } from './audio';
 import type { AudioController } from './audio';
@@ -10,13 +10,18 @@ import type { LabelSetRow } from './commons/labelSet';
 import { readCommonsConfig } from './commons/load';
 import { createDefaultCommonsWrite } from './commons/write';
 import type { CommonsWriteController } from './commons/write';
+import { createDefaultProjectsApi } from './projects';
+import type { ProjectsApi } from './projects';
 import { createStorage } from './storage';
 import type { ProjectSummary, SaveStatus, Storage } from './storage';
 import { fetchYouTubeTitle, loadCommunityLabelSet } from './youtube';
 import type { CommunityLabelSet } from './youtube/community';
+import { GalleryScreen } from './ui/GalleryScreen';
 import { HelpTab } from './ui/HelpTab';
 import { Navbar } from './ui/Navbar';
+import { NotWiredUp } from './ui/NotWiredUp';
 import { ProjectPage } from './ui/ProjectPage';
+import { PublicProjectView } from './ui/PublicProjectView';
 import { WorkspaceScreen } from './ui/WorkspaceScreen';
 import './ui/app.css';
 
@@ -46,6 +51,12 @@ export interface AppProps {
    * containment the auth and audio tests get from their fakes.
    */
   commonsWriteFactory?: () => CommonsWriteController;
+  /**
+   * Test seam: the anonymous projects read surface (T50), so component tests
+   * never touch PostgREST. Null means the deployment isn't wired to a
+   * Supabase project — the gallery routes render the "not wired up" screen.
+   */
+  projectsApiFactory?: () => ProjectsApi | null;
 }
 
 /**
@@ -92,9 +103,12 @@ function commonsFailure(): CommonsError {
  * that must survive the page surfaces' unmounts), and coordinates the two
  * separable modules — the workspace surface (create, list, rename, delete,
  * submission) and the routed project page. The app is served by a history-mode
- * router (T44): `/` is the Projects home, `/help` the discoverable reference,
- * `/projects/:id` the project page, and any unknown path falls back to `/`. A
- * persistent navbar — the app name, the Projects and Help links with active
+ * router (T44): `/` is the front door — the public gallery (T50), or the
+ * "not wired up" screen without a configured backend — `/projects` the
+ * owner's workspace, `/help` the discoverable reference, `/projects/:id` the
+ * project page, `/gallery/:id` the read-only view over a published public
+ * project, and any unknown path falls back to `/`. A persistent navbar — the
+ * app name, the Gallery, Projects, and Help links with active
  * states, and the contributor sign-in — renders on every page, inside the
  * shared page rail. Opening a project is navigation now (T45): the page is its
  * own session, restored by a refresh of its URL, and browser Back — or a navbar
@@ -120,6 +134,11 @@ function App({
   // submissions ride the same env and the same unconfigured degradation as
   // sign-in — a deployment without a Supabase project offers no Commons.
   commonsWriteFactory = createDefaultCommonsWrite,
+  // The anonymous projects read surface, per ADR-0006: the gallery and the
+  // read-only view ride the anon key with no session. Unconfigured (no
+  // Supabase env) it is null — the honest "not wired up" case the shell
+  // renders as its own screen, never a broken gallery.
+  projectsApiFactory = createDefaultProjectsApi,
 }: AppProps = {}) {
   const [storage, setStorage] = useState<Storage | null>(injectedStorage ?? null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -178,6 +197,16 @@ function App({
    * to destroy; it is dropped on unmount the same way.
    */
   const commonsWriteRef = useRef<CommonsWriteController | null>(null);
+
+  /**
+   * The anonymous projects read surface for the app's lifetime. Stateless —
+   * no subscriptions to recycle, no session events to drop — so the mount-only
+   * rule that guards the auth and Commons controllers doesn't apply: one
+   * memoized read surface, stable across the shell's re-renders. A gallery
+   * keyed on a freshly-made api object would refetch on every parent render.
+   */
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- created once, like the controllers
+  const projectsApi = useMemo(() => projectsApiFactory(), []);
 
   /** Re-reads the workspace list; a failed read surfaces as a notice, never a rejection. */
   async function refreshProjects(source: Storage): Promise<void> {
@@ -316,8 +345,22 @@ function App({
       />
       <div className="page-rail app-page">
         <Routes>
+          {/* The front door (T50): the public gallery, or the honest "not
+              wired up" screen when the deployment carries no Supabase config. */}
           <Route
             path="/"
+            element={
+              projectsApi !== null ? (
+                <GalleryScreen api={projectsApi} />
+              ) : (
+                <NotWiredUp />
+              )
+            }
+          />
+          {/* The owner's workspace lives at /projects (T50) — still the
+              legacy IndexedDB projects until the write side moves server-side. */}
+          <Route
+            path="/projects"
             element={
               storage !== null ? (
                 <WorkspaceScreen
@@ -361,7 +404,22 @@ function App({
               ) : null
             }
           />
-          {/* A URL nobody recognises lands on the Projects home (T44). */}
+          {/* The read-only view over a published public project (T50), or the
+              "not wired up" screen without a backend to read from. */}
+          <Route
+            path="/gallery/:id"
+            element={
+              projectsApi !== null ? (
+                <PublicProjectView
+                  api={projectsApi}
+                  controllerFactory={controllerFactory}
+                />
+              ) : (
+                <NotWiredUp />
+              )
+            }
+          />
+          {/* A URL nobody recognises lands on the front door, the gallery (T44). */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
