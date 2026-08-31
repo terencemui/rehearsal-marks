@@ -123,15 +123,16 @@ export function ProjectPage({ storage, controllerFactory, onExitStatus, onNotice
   // A record that no longer exists is its own surface now (T47): the
   // not-found page, with the way back in the page itself. The check compares
   // the flagged id to the routed id, so a stale flag from a previous id can
-  // never paint this page on a live project's URL. The silent bounce to `/`
-  // is left for the impossible no-id case and for a read failure — a
-  // transient storage error is not "not found", so the notice says what went
-  // wrong and home is the honest landing.
+  // never paint this page on a live project's URL. The silent bounce to the
+  // Projects home (T50: the front door at `/` is the gallery now) is left for
+  // the impossible no-id case and for a read failure — a transient storage
+  // error is not "not found", so the notice says what went wrong and the
+  // Projects home is the honest landing.
   if (missingId === id) {
     return <NotFoundPage />;
   }
   if (id === undefined || readFailed) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/projects" replace />;
   }
   if (session === null) {
     // The record read is in flight — the page paints nothing until it lands.
