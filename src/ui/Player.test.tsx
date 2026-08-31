@@ -137,6 +137,29 @@ describe('Player', () => {
   });
 });
 
+describe('Player — read-only (T50)', () => {
+  it('plays a public project without writing anything — no duration stamp, no unmount flush', async () => {
+    const record = serverProject({ duration: 0 });
+    const { autosave, save } = testAutosave(record);
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 42 })) });
+
+    const { unmount } = render(<Player autosave={autosave} controller={controller} readOnly />);
+    await waitForPlayerSettled();
+
+    // The read-only player renders and settles, but the duration the load
+    // measured is never stamped into the record — nothing about a stranger's
+    // project may be written by a viewer.
+    expect(autosave.get().duration).toBe(0);
+
+    // Unmount flushes the session's write in the editing player; a read-only
+    // session has no write, so the save callback never fires.
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(save).not.toHaveBeenCalled();
+    expect(controller.destroy).toHaveBeenCalled();
+  });
+});
+
 describe('Player — playback-only (T39)', () => {
   it('renders no posture toggle, transport, Add marker, inspector, or undo', async () => {
     const { container } = await renderLoadedPlayer();

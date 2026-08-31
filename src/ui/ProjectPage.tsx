@@ -46,9 +46,10 @@ export interface ProjectPageProps {
  * A project id that names no row shows the not-found page (T47) instead of a
  * blank or broken surface, with the way back to the Projects list in the page
  * itself; a read that fails (a transient server error, not a missing row)
- * keeps landing on the Projects home with the failure on the workspace's
+ * keeps landing on the workspace home with the failure on the workspace's
  * notice line, since "not found" would misdescribe a store that was merely
- * unreachable.
+ * unreachable. The workspace lives at `/projects` (T50) — the front door at
+ * `/` is the public gallery, which a failed edit's page must not land on.
  */
 export function ProjectPage({ projectsApi, controllerFactory, onExitStatus, onNotice }: ProjectPageProps) {
   const { id } = useParams();
@@ -137,7 +138,7 @@ export function ProjectPage({ projectsApi, controllerFactory, onExitStatus, onNo
     return <NotFoundPage />;
   }
   if (id === undefined || readFailed) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/projects" replace />;
   }
   if (session === null) {
     // The record read is in flight — the page paints nothing until it lands.

@@ -1,16 +1,19 @@
 import { vi } from 'vitest';
 import { ProjectsError } from '../projects/errors';
-import type { ProjectsApi } from '../projects/api';
+import type { ProjectsApi, PublicProject, PublicProjectSummary } from '../projects/api';
 import { summarizeProject } from '../projects/types';
 import type { ProjectSummary, ProjectUpdate, ProjectValues, ServerProject } from '../projects/types';
 import type { ProjectVisibility } from '../projects/types';
 
 /**
  * Test double for the ProjectsApi seam — the in-memory counterpart of the
- * supabase-js adapter, faked the way `mockAuth` fakes `SupabaseAuth`. Every
- * operation is a `vi.fn` so tests can assert calls or override behavior;
+ * composed PostgREST adapters, faked the way `mockAuth` fakes `SupabaseAuth`.
+ * Every operation is a `vi.fn` so tests can assert calls or override behavior;
  * `failNext` makes the named operation reject once with the transport's
  * fetch-failed error, exercising the UI's failure paths without a network.
+ * The same seeded store backs both halves: `seed` inserts a full server
+ * project, and the anonymous reads (the gallery, the peek, the read-only
+ * view) filter it the way RLS would — published public rows only.
  */
 export interface FakeProjectsApi extends ProjectsApi {
   /** Inserts a project into the fake store, as a seed or a server create. */
@@ -37,6 +40,34 @@ export function fakeProjectsApi(): FakeProjectsApi {
 
   function newestFirst(list: ServerProject[]): ProjectSummary[] {
     return [...list].sort((a, b) => b.updatedAt - a.updatedAt).map(summarizeProject);
+  }
+
+  /** The published public rows, newest first — the anonymous reads' RLS-filtered view. */
+  function publishedRows(): ServerProject[] {
+    return [...projects.values()]
+      .filter((p) => p.visibility === 'public' && p.publicationStatus === 'published')
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** A server row as the gallery read returns it — the entry the read-only view opens. */
+  function gallerySummary(project: ServerProject): PublicProjectSummary {
+    return {
+      id: project.id,
+      name: project.name,
+      recordingTitle: project.recordingTitle,
+      videoId: project.videoId,
+      duration: project.duration,
+      markerCount: project.markers.length,
+      createdAt: project.createdAt,
+    };
+  }
+
+  function publicProject(project: ServerProject): PublicProject {
+    return {
+      ...gallerySummary(project),
+      markers: project.markers,
+      movements: project.movements,
+    };
   }
 
   const api: ProjectsApi = {
@@ -104,14 +135,26 @@ export function fakeProjectsApi(): FakeProjectsApi {
       projects.delete(id);
     }),
 
-    listPublishedForVideo: vi.fn(async (videoId: string): Promise<ProjectSummary[]> => {
+    listPublishedProjects: vi.fn(async (): Promise<PublicProjectSummary[]> => {
+      throwIfFailing('listPublishedProjects');
+      return publishedRows().map(gallerySummary);
+    }),
+
+    listPublishedForVideo: vi.fn(async (videoId: string): Promise<PublicProjectSummary[]> => {
       throwIfFailing('listPublishedForVideo');
-      return newestFirst(
-        [...projects.values()].filter(
-          (p) =>
-            p.videoId === videoId && p.visibility === 'public' && p.publicationStatus === 'published',
-        ),
-      );
+      return publishedRows()
+        .filter((p) => p.videoId === videoId)
+        .map(gallerySummary);
+    }),
+
+    getPublicProject: vi.fn(async (id: string): Promise<PublicProject | null> => {
+      throwIfFailing('getPublicProject');
+      const project = projects.get(id);
+      if (project === undefined) return null;
+      if (project.visibility !== 'public' || project.publicationStatus !== 'published') {
+        return null;
+      }
+      return publicProject(project);
     }),
   };
 

@@ -1,13 +1,15 @@
 /**
- * The server-project backend — the only module besides `auth/supabase.ts`
- * that references the supabase-js library, by the same containment rule. The
- * `ProjectsApi` surface in `api.ts` is the seam; this file is its real
- * implementation and nothing else.
+ * The server-project backend's signed-in half — the only module besides
+ * `auth/supabase.ts` that references the supabase-js library, by the same
+ * containment rule. The `ProjectsApi` surface in `api.ts` is the seam; this
+ * file is its implementation of the session-bearing operations, and `read.ts`
+ * is the anonymous half the composed default wires beside it.
  *
  * The write path rides the session: each call restores it from the shared
  * storage first, so a signed-out client fails with a clean `not-signed-in`
- * error instead of a token-less request RLS would refuse. Anonymous reads
- * carry no session at all — RLS, never the client, decides what they may see.
+ * error instead of a token-less request RLS would refuse. `getProject` is the
+ * one read here — it carries no session, and RLS, never the client, decides
+ * what the caller may see. The gallery's anonymous reads live in `read.ts`.
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -18,8 +20,11 @@ import { parseProjectRow, summarizeProject } from './types';
 import type { ProjectValues, ServerProject } from './types';
 import type { AuthEnv } from '../auth';
 
-/** The `ProjectsApi` over a real supabase-js client. */
-export function createSupabaseProjectsApi(env: AuthEnv): ProjectsApi {
+/** The signed-in half of the `ProjectsApi` — the composed default in `api.ts`
+ * adds the anonymous reads from `read.ts` to build the full interface. */
+export function createSupabaseProjectsApi(
+  env: AuthEnv,
+): Omit<ProjectsApi, 'listPublishedProjects' | 'listPublishedForVideo' | 'getPublicProject'> {
   const client = createClient(env.url, env.anonKey);
 
   return {
@@ -73,18 +78,6 @@ export function createSupabaseProjectsApi(env: AuthEnv): ProjectsApi {
       await requireSession(client);
       const { error } = await client.from('projects').delete().eq('id', id);
       if (error) throw postgrestErrorToProjectsError(error);
-    },
-
-    async listPublishedForVideo(videoId) {
-      const { data, error } = await client
-        .from('projects')
-        .select('*')
-        .eq('video_id', videoId)
-        .eq('visibility', 'public')
-        .eq('publication_status', 'published')
-        .order('updated_at', { ascending: false });
-      if (error) throw postgrestErrorToProjectsError(error);
-      return data.map((row: unknown) => summarizeProject(parseProjectRow(row)));
     },
   };
 }

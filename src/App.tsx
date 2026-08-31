@@ -9,11 +9,13 @@ import type { ProjectsApi } from './projects/api';
 import type { SaveStatus } from './projects/autosave';
 import type { ProjectSummary } from './projects/types';
 import { fetchYouTubeTitle } from './youtube';
+import { GalleryScreen } from './ui/GalleryScreen';
 import { HelpTab } from './ui/HelpTab';
 import { LandingScreen } from './ui/LandingScreen';
 import { Navbar } from './ui/Navbar';
 import { NotWiredUpScreen } from './ui/NotWiredUpScreen';
 import { ProjectPage } from './ui/ProjectPage';
+import { PublicProjectView } from './ui/PublicProjectView';
 import { WorkspaceScreen } from './ui/WorkspaceScreen';
 import './ui/app.css';
 
@@ -67,22 +69,25 @@ export interface WiredAppProps {
 }
 
 /**
- * The app shell (T43, T44, T45): owns the server-project surface, the auth
- * controller, and the workspace's durable state (the list, the save line, the
- * notices, the create surface's rejection and busy state — everything that
- * must survive the page surfaces' unmounts), and coordinates the three
- * separable modules — the workspace surface (create, list, rename, delete,
- * visibility), the help reference, and the routed project page. The app is
- * served by a history-mode router (T44): `/` is the Projects home (the
- * anonymous landing when signed out, the workspace when signed in), `/help`
- * the discoverable reference, `/projects/:id` the project page, and any
- * unknown path falls back to `/`. A persistent navbar — the app name, the
- * Projects and Help links with active states, and the user sign-in — renders
- * on every page, inside the shared page rail. Opening a project is navigation
- * now (T45): the page is its own session, restored by a refresh of its URL,
- * and browser Back — or a navbar link — is the exit, flushing the session's
- * pending autosave before the list is re-read, so the workspace never shows
- * stale data.
+ * The app shell (T43, T44, T45, T50, T51): owns the server-project surface,
+ * the auth controller, and the workspace's durable state (the list, the save
+ * line, the notices, the create surface's rejection and busy state —
+ * everything that must survive the page surfaces' unmounts), and coordinates
+ * the four separable modules — the workspace surface (create, list, rename,
+ * delete, visibility), the public gallery, the help reference, and the routed
+ * project page. The app is served by a history-mode router (T44): `/` is the
+ * front door — the public gallery (T50), or the "not wired up" screen without
+ * a configured backend — `/projects` the owner's workspace (the anonymous
+ * landing when signed out, T51), `/help` the discoverable reference,
+ * `/projects/:id` the editable project page, `/gallery/:id` the read-only
+ * view over a published public project, and any unknown path falls back to
+ * `/`. A persistent navbar — the app name, the Gallery, Projects, and Help
+ * links with active states, and the user sign-in — renders on every page,
+ * inside the shared page rail. Opening a project is navigation now (T45): the
+ * page is its own session, restored by a refresh of its URL, and browser
+ * Back — or a navbar link — is the exit, flushing the session's pending
+ * autosave before the list is re-read, so the workspace never shows stale
+ * data.
  */
 function WiredApp({
   controllerFactory = createAudioController,
@@ -226,7 +231,7 @@ function WiredApp({
    * result, and the shell restores the workspace's save line and re-reads the
    * list — an edit landed during the visit is persisted before the list reads
    * it, so the workspace never shows stale data. (Signed out, there is no list
-   * to re-read — the landing owns the home page then.)
+   * to re-read — the landing owns the workspace home then.)
    */
   function handleExitStatus(exitStatus: SaveStatus): void {
     setStatus(exitStatus);
@@ -243,13 +248,23 @@ function WiredApp({
       />
       <div className="page-rail app-page">
         <Routes>
+          {/* The front door (T50): the public gallery. The api is created on
+              mount (T51's "first factory wins" rule); the null guard below is
+              the same "not ready" gate the storage-first shell had. */}
           <Route
             path="/"
             element={
-              // The signed-in home is the workspace; signed out, the landing.
-              // The workspace needs the server surface, which the mount effect
-              // creates before any signed-in paint — the null guard below is
-              // the same "not ready" gate the storage-first shell had.
+              projectsApiRef.current === null ? null : (
+                <GalleryScreen api={projectsApiRef.current} />
+              )
+            }
+          />
+          {/* The owner's workspace lives at /projects (T50) — server-backed
+              now (T51): the signed-in home's create/list/rename/delete/
+              visibility, or the anonymous landing pointing at sign-in. */}
+          <Route
+            path="/projects"
+            element={
               authState.kind === 'signed-in' ? (
                 projectsApiRef.current === null ? null : (
                   <WorkspaceScreen
@@ -288,7 +303,19 @@ function WiredApp({
               )
             }
           />
-          {/* A URL nobody recognises lands on the Projects home (T44). */}
+          {/* The read-only view over a published public project (T50). */}
+          <Route
+            path="/gallery/:id"
+            element={
+              projectsApiRef.current === null ? null : (
+                <PublicProjectView
+                  api={projectsApiRef.current}
+                  controllerFactory={controllerFactory}
+                />
+              )
+            }
+          />
+          {/* A URL nobody recognises lands on the front door, the gallery (T44). */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

@@ -9,6 +9,7 @@ import type { MockAuthBackend } from './test/auth-fixture';
 import { mockController } from './test/controller-fixture';
 import { fakeProjectsApi } from './test/projects-fixture';
 import type { FakeProjectsApi } from './test/projects-fixture';
+import { marker } from './test/marker-fixture';
 import { serverProject } from './test/server-project-fixture';
 import { waitForPlayerSettled } from './test/settle-player';
 import App from './App';
@@ -41,7 +42,9 @@ function renderApp({
   api = fakeProjectsApi(),
   fetchTitle = async () => VIDEO_TITLE,
   auth = mockAuth(),
-  initialEntry = '/',
+  // The workspace home is the signed-in entry (T51); the gallery at the front
+  // door `/` is the anonymous entry, tested with its own initialEntry.
+  initialEntry = '/projects',
 }: RenderAppOptions = {}) {
   vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key');
@@ -449,11 +452,19 @@ describe('App Projects workspace', () => {
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Gallery' })).not.toHaveAttribute('aria-current');
 
     await user.click(screen.getByRole('link', { name: 'Projects' }));
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Gallery' })).not.toHaveAttribute('aria-current');
+
+    // The front-door link jumps to the public gallery.
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
   });
 
   it('drops an in-flight page read when the user navigates away', async () => {
@@ -511,11 +522,12 @@ describe('App Projects workspace', () => {
 });
 
 describe('App user sign-in', () => {
-  it('lands an anonymous visitor on the minimal home — no create surface', async () => {
+  it('lands an anonymous visitor on the minimal landing — no create surface', async () => {
     renderApp();
 
-    // The anonymous home is the landing (T51): what the app is, and that
-    // creating and saving needs sign-in. No create surface, no workspace.
+    // The anonymous home is the landing (T51), at the workspace URL /projects:
+    // what the app is, and that creating and saving needs sign-in. No create
+    // surface, no workspace.
     expect(screen.getByRole('heading', { name: /Mark your rehearsal/ })).toBeInTheDocument();
     expect(screen.getByText(/creating and saving projects requires signing in/i)).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Create project' })).not.toBeInTheDocument();
@@ -749,12 +761,13 @@ describe('App durable workspace state (T43)', () => {
 });
 
 describe('App pages and the persistent navbar (T44)', () => {
-  it('renders the signed-in home at /, framed by the persistent navbar', async () => {
+  it('renders the signed-in workspace at /projects, framed by the persistent navbar', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
     await signIn(user, auth);
 
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
@@ -770,12 +783,12 @@ describe('App pages and the persistent navbar (T44)', () => {
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
   });
 
-  it('lands an unknown path on the Projects home', async () => {
+  it('lands an unknown path on the front door, the gallery', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp({ initialEntry: '/no-such-page' });
     await signIn(user, auth);
 
-    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
   });
 
   it('browser Back and Forward move between the workspace pages', async () => {
@@ -791,6 +804,55 @@ describe('App pages and the persistent navbar (T44)', () => {
 
     await go(1);
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+  });
+});
+
+describe('App public gallery (T50)', () => {
+  /** A published public project the gallery lists, in the shape the read returns. */
+  function galleryProject() {
+    return serverProject({
+      name: 'Honeck Tchaikovsky 5',
+      recordingTitle: 'Tschaikowsky: 5. Sinfonie — hr-Sinfonieorchester, Manfred Honeck',
+      videoId: 'a_B02BZp-5Y',
+      duration: 3036,
+      markers: Array.from({ length: 21 }, (_, i) => marker(`g${i}`, 10 + i)),
+    });
+  }
+
+  it('renders the public gallery at the front door /, grouped by recording', async () => {
+    const api = fakeProjectsApi();
+    api.seed(galleryProject());
+    renderApp({ api, initialEntry: '/' });
+
+    expect(await screen.findByRole('heading', { name: /Manfred Honeck/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
+    expect(screen.getByText('21 markers')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens a gallery entry as the read-only view at /gallery/:id', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(galleryProject());
+    const { currentPath } = renderApp({ api, initialEntry: '/' });
+
+    await user.click(await screen.findByRole('button', { name: /Honeck Tchaikovsky 5/ }));
+    await waitFor(() => expect(currentPath()).toBe('/gallery/project-1'));
+
+    // The read-only surface never offers an edit affordance.
+    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+  });
+
+  it('the navbar Gallery link moves between the workspace and the gallery', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    // The signed-in home is the workspace; the Gallery link crosses to the front door.
+    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
   });
 });
 
