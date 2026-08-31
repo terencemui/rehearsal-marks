@@ -1,7 +1,7 @@
 /**
- * The projects module's own error vocabulary — the successor to the retired
- * CommonsError. The transport translates PostgREST rejections into these
- * codes; the app surfaces the message next to the action that caused it.
+ * The projects module's own error vocabulary. The transport translates
+ * PostgREST rejections into these codes; the app surfaces the message next to
+ * the action that caused it.
  */
 
 export type ProjectsErrorCode =

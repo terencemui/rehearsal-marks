@@ -22,6 +22,5 @@ export {
 export { formatTime, formatWholeSeconds, parseTime } from './time';
 export { canonicalYouTubeUrl, isVideoId, parseYouTubeLink } from './youtube';
 export type { YouTubeLink } from './youtube';
-export { SCHEMA_VERSION, parseMarkers, parseMovements, parseProjectFile, serializeProjectFile, youtubeAudioMeta } from './projectFile';
-export type { AudioMeta, ProjectFileData, ProjectInfo, ProjectSource } from './projectFile';
+export { parseMarkers, parseMovements } from './documents';
 export type { LabeledMarker, Marker } from './marker';

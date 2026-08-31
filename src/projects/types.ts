@@ -3,7 +3,7 @@
  * `projects` table, its snake_case columns mapped to the app's camelCase
  * vocabulary, with markers and movements parsed through the domain's own
  * rules. This is the shape every server read returns and every write path
- * carries — the successor to the IndexedDB `ProjectRecord`.
+ * carries.
  *
  * `recordingTitle` is the canonical recording title, fetched once from
  * YouTube at creation and never editable; `name` is the user's own label. The
@@ -114,8 +114,8 @@ export function returnsToReview(
 /**
  * Parses one `projects` row as PostgREST returns it, mapping snake_case to
  * the app's camelCase and routing the content documents through the domain's
- * own parsers — the same rule the project-file and label-set readers applied:
- * a row no reader can consume is the store's fault, thrown loudly, and the
+ * own parsers — the same rule every document boundary applies: a row no
+ * reader can consume is the database's fault, thrown loudly, and the
  * transport's boundary is what catches it.
  */
 export function parseProjectRow(value: unknown): ServerProject {
