@@ -134,9 +134,33 @@ describe('the server-side projects migration', () => {
   });
 
   it('retires label_sets and the contributor-era helpers', () => {
-    expect(migration).toMatch(/drop table public\.label_sets;/);
+    expect(migration).toMatch(/drop table public\.label_sets cascade;/);
     expect(migration).toMatch(/drop function if exists public\.label_sets_gate_submissions\(\);/);
     expect(migration).toMatch(/drop function if exists public\.contributor_banned\(uuid\);/);
     expect(migration).toMatch(/drop function if exists public\.moderate_label_set\(uuid, text\);/);
+    expect(migration).toMatch(/drop function if exists public\.contributor_is_trusted\(uuid\);/);
+  });
+
+  it('drops in an order the dependencies allow', () => {
+    // Two constraints, both established by running the chain rather than by
+    // reading it: `moderate_label_set` returns the table's row type and must go
+    // first, and `contributor_banned` cannot be dropped while the table's read
+    // policies still call it, so it must come after. Only the first blocks the
+    // table drop itself — a `LANGUAGE sql` body pins nothing, so
+    // `contributor_is_trusted` has no required position and is deliberately not
+    // asserted here.
+    const at = (statement: string) => {
+      const index = migration.indexOf(statement);
+      // indexOf answers -1 for a statement that is not there, and -1 sorts
+      // before everything — so ordering alone would pass on a retirement whose
+      // statement had been deleted outright. The existence check is the point.
+      expect(index, `${statement} is missing from the migration`).toBeGreaterThan(-1);
+      return index;
+    };
+
+    const table = at('drop table public.label_sets cascade;');
+    expect(at('drop function if exists public.moderate_label_set(uuid, text);')).toBeLessThan(table);
+    expect(at('drop function if exists public.contributor_banned(uuid);')).toBeGreaterThan(table);
+    expect(at('drop function if exists public.label_sets_gate_submissions();')).toBeGreaterThan(table);
   });
 });

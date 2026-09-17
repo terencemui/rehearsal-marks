@@ -5,32 +5,87 @@ Security as the authorization boundary. This file covers the two maintainer
 surfaces: seeding the gallery with its first content, and the moderation
 workflow for public project submissions.
 
-## The seed
+## The seed (development)
 
-`supabase/seed.sql` inserts the first published public project: Tchaikovsky's
-Symphony No. 5, hr-Sinfonieorchester – Frankfurt Radio Symphony under Manfred
-Honeck at the Alte Oper Frankfurt, 23 March 2018
+`supabase/seed.sql` is the local development fixture. `supabase db reset` and
+`supabase start` run it automatically against the local database, so a fresh
+checkout has a populated gallery to work against.
+
+It is deliberately self-contained: it creates its own owner — a synthetic
+account at an `example.com` address, which RFC 2606 reserves so it can never
+belong to a real person — rather than naming an account that must already
+exist. That is what lets it run on any machine with no setup, and it keeps a
+real address out of a public repo. An identity-dependent seed cannot do either:
+`db reset` would abort on every contributor's machine, and the value would have
+to be committed somewhere.
+
+The content is the recording the gallery launched with: Tchaikovsky's Symphony
+No. 5, hr-Sinfonieorchester – Frankfurt Radio Symphony under Manfred Honeck at
+the Alte Oper Frankfurt, 23 March 2018
 (`https://www.youtube.com/watch?v=a_B02BZp-5Y`, 50:36). The four movement-start
 markers are taken from the video's own chapter list, so each timing is
-checkable against the performance itself — spot-check 2–3 by ear, the same step
-the review checklist asks of every pending project.
+checkable against the performance itself.
 
-## Running the seed
+**It never goes to the hosted project.** `supabase db push` does not run the
+seed unless `--include-seed` is passed, and there it must not be. Watch the
+other command too: **`supabase db reset --linked` applies this file by
+default** — `[db.seed] enabled` in `config.toml` makes seeding the default, and
+`--no-seed` is the only opt-out. That is the one to be careful with, because
+`db reset --linked` is the CLI's own remedy for remote schema drift, so it is
+exactly what a maintainer reaches for when the hosted schema looks wrong.
 
-The seed runs as the postgres role (via the dashboard SQL editor), which
-bypasses RLS — the only way a row becomes `published` without the moderation
-function, since the `publication_status` column is out of a client's reach by
-design.
+Either command would create the synthetic development account as a real
+`auth.users` row, and publish a project owned by it. Every policy keys on
+`owner_id = auth.uid()`, and that account can never sign in — so the row would
+be uneditable and undeletable from the app, reachable only by hand-written SQL.
+The gallery's production content is bootstrapped separately, below.
+
+## Seeding production
+
+Production's first published project belongs to the maintainer's own account —
+a different job from the development fixture above, which is why the two are
+not one file. It is a one-off, run by hand.
 
 1. **The owner account must exist first.** `owner_id` is not null and
-   foreign-keyed to `auth.users`; the seed names the owner explicitly. Sign
-   in with the app once (the app's Google sign-in) or create the user in the
-   dashboard's Auth → Users panel.
-2. **Set the email** at the top of `supabase/seed.sql` to the account that
-   will own the row, then run the file in the SQL editor. A missing account
-   aborts loudly, not silently.
-3. **Re-running is harmless** — the project carries a fixed id, so a second
-   run is a no-op.
+   foreign-keyed to `auth.users`. Sign in with the app once (Google sign-in),
+   then read the account's **id** from the dashboard's Auth → Users panel: the
+   uuid is what the row needs, not the email address.
+
+2. **Run the insert as the postgres role**, which bypasses RLS — the only way a
+   row becomes `published` without the moderation function, since
+   `publication_status` is out of a client's reach by design. Copy the project
+   `insert` out of `supabase/seed.sql`, leave its `insert into auth.users`
+   behind, and point `owner_id` at the uuid from step 1:
+
+   ```sql
+   insert into public.projects (
+     id, owner_id, name, recording_title, video_id, duration,
+     markers, movements, visibility, publication_status
+   )
+   values (
+     '7f8f4a10-2c3e-4b1a-9d5b-6a0e8f9c1d2e',
+     '<your-account-uuid>',  -- dashboard → Auth → Users
+     ...
+   )
+   on conflict (id) do nothing;
+   ```
+
+   Run it through the CLI rather than the dashboard SQL editor, which mangles
+   long pastes — this project's marker JSON is long enough to hit that:
+
+   ```bash
+   supabase db query --linked --file /tmp/first-project.sql
+   ```
+
+   Keep that file out of git. It names one specific account, so unlike the seed
+   it is environment-specific by nature; anyone rebuilding a different
+   environment supplies their own uuid.
+
+3. **Spot-check 2–3 markers by ear** before publishing — the same step the
+   review checklist asks of every pending project.
+
+4. **Re-running is harmless** — the project carries a fixed id, so a second run
+   is a no-op.
 
 ## The moderation workflow
 
@@ -58,7 +113,8 @@ and confirm the marks land on it. The review checklist, for each project:
 - **Marker sanity** — timings inside the performance's duration, labels in
   order, nothing duplicated (the app enforces these on placement; a quick scan
   catches the rest).
-- **Spot-check by ear** — listen to 2–3 marks, the same step the seed asks.
+- **Spot-check by ear** — listen to 2–3 marks, the same step seeding production
+  asks above.
 
 ### Acting on a row
 

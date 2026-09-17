@@ -76,18 +76,44 @@ create index projects_public_newest_idx
   on public.projects (created_at desc)
   where visibility = 'public' and publication_status = 'published';
 
--- 2. Retire label_sets (ADR-0006). Dropping the table removes its triggers
--- and indexes; the contributor-era functions are dropped here too, replaced
--- by their projects equivalents below. The shared set_updated_at function
--- survives — the projects table's updated_at stamp reuses it.
+-- 2. Retire label_sets (ADR-0006). Exactly one object pins the table, and the
+-- order below follows from it:
+--
+--   a. `moderate_label_set` must go first: it returns the table's composite
+--      row type, so PostgreSQL refuses to drop the table while the function
+--      that names that type still exists. This is the only hard constraint
+--      here — checked by running it, not by reading it, because a wrong order
+--      is invisible until it executes.
+--
+--      `contributor_is_trusted` is dropped alongside it for tidiness, not
+--      necessity. It names the table in a `LANGUAGE sql` body, and PostgreSQL
+--      records no dependency on what a string body references — so it would
+--      drop just as happily after the table. Its position here is arbitrary.
+--   b. The table. `contributor_banned` has to outlive this statement: the two
+--      read policies (rewritten by T25) call it, and a function cannot be
+--      dropped while a policy depends on it. But that constrains the
+--      *function's* drop, not the table's — the policies are the table's own
+--      and go with it, so nothing here blocks the table.
+--
+--      CASCADE is therefore belt-and-braces rather than load-bearing: with (a)
+--      done, a plain drop is accepted. It stays because this table has already
+--      caused one environment-drift surprise, and taking the policies and
+--      triggers along with it costs nothing.
+--   c. What the policies were holding in place — the ban helper and the two
+--      trigger functions — can now be dropped.
+--
+-- The shared set_updated_at function survives: it is language plpgsql, so
+-- nothing in it is bound to a table at creation, and the projects table's
+-- updated_at stamp reuses it.
 
-drop table public.label_sets;
+drop function if exists public.moderate_label_set(uuid, text);
+drop function if exists public.contributor_is_trusted(uuid);
 
+drop table public.label_sets cascade;
+
+drop function if exists public.contributor_banned(uuid);
 drop function if exists public.label_sets_gate_submissions();
 drop function if exists public.label_sets_review_edits();
-drop function if exists public.contributor_banned(uuid);
-drop function if exists public.contributor_is_trusted(uuid);
-drop function if exists public.moderate_label_set(uuid, text);
 
 -- 3. The bans table survives, renamed to match the glossary (Contributor is
 -- retired; the signed-in person is a User). One row per banned user, written
