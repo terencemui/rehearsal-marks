@@ -154,9 +154,9 @@ public visibility, not the private workspace.
 
 ### The trust threshold
 
-One number in `supabase/migrations/20260828120000_server_side_projects.sql`
-bounds the queue (commented "Tune them here"): **3 published public projects to
-be trusted** — the threshold inside `user_is_trusted`. A trusted user's new
+One number in `supabase/migrations/20260917000000_init.sql` bounds the queue:
+**3 published public projects to be trusted** — the threshold inside
+`user_is_trusted`. A trusted user's new
 public projects publish immediately, and their edits to published or rejected
 projects stay out of the queue too — the escape valve. There is no published-
 per-video guard and no submission rate limit anymore: many public projects per
