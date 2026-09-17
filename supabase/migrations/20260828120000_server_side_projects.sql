@@ -76,18 +76,33 @@ create index projects_public_newest_idx
   on public.projects (created_at desc)
   where visibility = 'public' and publication_status = 'published';
 
--- 2. Retire label_sets (ADR-0006). Dropping the table removes its triggers
--- and indexes; the contributor-era functions are dropped here too, replaced
--- by their projects equivalents below. The shared set_updated_at function
--- survives — the projects table's updated_at stamp reuses it.
+-- 2. Retire label_sets (ADR-0006). The era's objects reference each other in
+-- both directions, so the order here is load-bearing and takes three steps:
+--
+--   a. The functions that name the table itself go first — nothing can drop
+--      the table while `moderate_label_set` returns its row type, nor while
+--      `contributor_is_trusted` selects from it. Neither is referenced by a
+--      policy, so both can go now.
+--   b. The table, with CASCADE. Its own policies are the reason: the two read
+--      policies (rewritten by T25) call `contributor_banned`, which reads the
+--      separate bans table and therefore does not depend on label_sets — so a
+--      plain drop is refused, blocked by a function that outlives the table
+--      it is being dropped with. CASCADE takes the policies and triggers.
+--   c. What those policies and triggers were holding in place — the ban
+--      helper and the two trigger functions — can now be dropped.
+--
+-- The shared set_updated_at function survives: it is language plpgsql, so
+-- nothing in it is bound to a table at creation, and the projects table's
+-- updated_at stamp reuses it.
 
-drop table public.label_sets;
+drop function if exists public.moderate_label_set(uuid, text);
+drop function if exists public.contributor_is_trusted(uuid);
 
+drop table public.label_sets cascade;
+
+drop function if exists public.contributor_banned(uuid);
 drop function if exists public.label_sets_gate_submissions();
 drop function if exists public.label_sets_review_edits();
-drop function if exists public.contributor_banned(uuid);
-drop function if exists public.contributor_is_trusted(uuid);
-drop function if exists public.moderate_label_set(uuid, text);
 
 -- 3. The bans table survives, renamed to match the glossary (Contributor is
 -- retired; the signed-in person is a User). One row per banned user, written

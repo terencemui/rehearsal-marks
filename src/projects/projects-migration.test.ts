@@ -134,9 +134,27 @@ describe('the server-side projects migration', () => {
   });
 
   it('retires label_sets and the contributor-era helpers', () => {
-    expect(migration).toMatch(/drop table public\.label_sets;/);
+    expect(migration).toMatch(/drop table public\.label_sets cascade;/);
     expect(migration).toMatch(/drop function if exists public\.label_sets_gate_submissions\(\);/);
     expect(migration).toMatch(/drop function if exists public\.contributor_banned\(uuid\);/);
     expect(migration).toMatch(/drop function if exists public\.moderate_label_set\(uuid, text\);/);
+  });
+
+  it('drops in an order the dependencies allow', () => {
+    // The order is load-bearing, and the reason the migration first failed to
+    // apply anywhere: the table cannot go while `moderate_label_set` returns
+    // its row type, nor while its own policies call `contributor_banned` —
+    // which reads the separate bans table, so it outlives the table and a
+    // plain drop is refused. Hence: the table-naming functions, then the table
+    // with cascade, then what the policies and triggers were holding.
+    const table = migration.indexOf('drop table public.label_sets cascade;');
+    expect(migration.indexOf('drop function if exists public.moderate_label_set(uuid, text);'))
+      .toBeLessThan(table);
+    expect(migration.indexOf('drop function if exists public.contributor_is_trusted(uuid);'))
+      .toBeLessThan(table);
+    expect(migration.indexOf('drop function if exists public.contributor_banned(uuid);'))
+      .toBeGreaterThan(table);
+    expect(migration.indexOf('drop function if exists public.label_sets_gate_submissions();'))
+      .toBeGreaterThan(table);
   });
 });
