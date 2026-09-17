@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,10 @@ import { fakeProjectsApi } from '../test/projects-fixture';
 import { serverProject } from '../test/server-project-fixture';
 import { waitForPlayerSettled } from '../test/settle-player';
 import { PublicProjectView } from './PublicProjectView';
+
+// jsdom computes no layout, so the view's width is a CSS fact — read the
+// stylesheet from disk the way the player's own layout tests do.
+const publicCss = readFileSync('src/ui/public-project.css', 'utf8');
 
 /** A public project the gallery read returns, with one movement and marks in it. */
 function publicProject(overrides: Partial<ServerProject> = {}): ServerProject {
@@ -88,5 +93,15 @@ describe('PublicProjectView', () => {
       screen.queryByRole('heading', { name: 'This project could not be found' }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to Gallery' })).toBeInTheDocument();
+  });
+
+  it('lets the published recording fill the rail, rather than a 720px column', () => {
+    // The read-only view is the same player the owner sees, so the recording
+    // escapes the text rail's reading measure identically (app.css, which is
+    // why the shell — not this file — owns the wide rail). A 720px cap here
+    // would halve the video the owner gets for no reason.
+    expect(publicCss).not.toMatch(/\.public-project\s*\{[^}]*max-width:/);
+    // The error card is prose and keeps a measure of its own.
+    expect(publicCss).toMatch(/\.public-project-error\s*\{[^}]*max-width:\s*480px;/);
   });
 });

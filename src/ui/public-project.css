@@ -1,10 +1,11 @@
 /* The read-only public project view (T50): a back-to-gallery link above the
    playback-only player, and the view's own error surface — distinct from the
-   not-found page, because an unreachable backend is not a missing project. */
+   not-found page, because an unreachable backend is not a missing project.
 
-.public-project {
-  max-width: 720px;
-}
+   The view carries no width of its own: it is the same player the owner sees,
+   so the recording escapes the text rail's cap identically (app.css). Only the
+   error card below keeps a reading measure — it is prose, and the rail exists
+   for prose. */
 
 .public-project-back {
   display: inline-block;

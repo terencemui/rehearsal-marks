@@ -1,7 +1,16 @@
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { LabeledMarker } from '../domain';
 import type { Movement } from '../domain';
 import { movementForTime } from '../domain';
 import { formatWholeSeconds } from '../domain/time';
+import { revealDelay, revealScroll } from './revealScroll';
+
+/**
+ * How long the panel leaves the list alone after the reader has scrolled it by
+ * hand. Long enough to read a few rows, short enough that the list does not
+ * feel stuck once they stop.
+ */
+const MANUAL_SCROLL_GRACE_MS = 3000;
 
 export interface MarkersPanelProps {
   /** Markers with derived labels, in time order. */
@@ -60,6 +69,24 @@ function groupMarkers(
 }
 
 /**
+ * The height of the sticky movement header the revealed row will sit under:
+ * the row's nearest preceding movement `<li>`. Every header's containing block
+ * is the whole list, so that one is the header still pinned when the row
+ * reaches the band's top (any earlier header has been pushed out by it), and
+ * its measured height is the inset even when a long movement name wraps past
+ * the 35px the styles imply. 0 for a row in the leading, movement-less group —
+ * and for a flat list, which has no headers at all.
+ */
+function pinnedHeaderInset(row: HTMLElement): number {
+  for (let node = row.previousElementSibling; node !== null; node = node.previousElementSibling) {
+    if (node instanceof HTMLElement && node.classList.contains('player-marker-movement')) {
+      return node.getBoundingClientRect().height;
+    }
+  }
+  return 0;
+}
+
+/**
  * The markers panel (player side column): one row per marker — `label — alias`
  * (the bare label when there's no alias) and the timestamp right-aligned in a
  * shared column — a click-to-jump surface that replaces the timeline flags
@@ -69,6 +96,22 @@ function groupMarkers(
  * Rows are click-to-jump surfaces, not tab stops — keyboard users walk the
  * marks with ↑/↓ — and the panel is pure navigation: clicking seeks, never
  * selects.
+ *
+ * The panel follows the playhead: whenever the active row changes, the list
+ * scrolls so that row sits at the top of its band. That covers a deliberate
+ * jump — a row, a header, a bar click, an arrow key, the embedded player's own
+ * controls — and playback simply crossing a boundary, because all of them
+ * arrive the same way, as the playhead moving. The reader is the one brake: a
+ * hand scroll buys the list a few seconds of being left alone
+ * (`MANUAL_SCROLL_GRACE_MS`), restarted by any further scroll while a reveal
+ * is waiting — and a scroll with nothing waiting keeps the list outright,
+ * until the playhead moves again.
+ *
+ * A movement header's jump therefore reveals the marker the seek actually
+ * landed on, which is the last marker *before* the movement rather than the
+ * movement's own first row: that is the row holding the playhead, and the
+ * header the reader clicked sits directly under it, both visible together.
+ * Revealing the header itself would put the highlight off-band instead.
  *
  * With movements (ADR-0005) the rows group under sticky, scroll-driven
  * movement headers that pin to the list's top and swap as the next movement's
@@ -86,6 +129,100 @@ export function MarkersPanel({
   onSeekMovement,
   maxHeight,
 }: MarkersPanelProps) {
+  const listRef = useRef<HTMLOListElement>(null);
+  /** When the reader last scrolled the list themselves; null until they do. */
+  const manualScrollAtRef = useRef<number | null>(null);
+  /**
+   * The position this panel last wrote to the list. Every assignment echoes
+   * back as a `scroll` event, and an echo is not the reader — anything that
+   * does not match is a hand scroll, which starts the grace period.
+   */
+  const writtenTopRef = useRef<number | null>(null);
+  /** The reveal waiting out the grace period, while there is one. */
+  const pendingRevealRef = useRef<number | undefined>(undefined);
+
+  // The reveal, and the whole of the DOM half of it (the arithmetic and the
+  // grace period are revealScroll's).
+  //
+  // The row is found by querying the DOM the current commit already produced
+  // rather than through a ref onto the active `<li>`: the query cannot read a
+  // stale row, and it keeps working when the active id moves to a different
+  // row.
+  const reveal = useCallback((): void => {
+    const list = listRef.current;
+    if (list === null) return;
+    const row = list.querySelector<HTMLElement>('li.active');
+    if (row === null) return;
+    const listRect = list.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    list.scrollTop = revealScroll({
+      scrollTop: list.scrollTop,
+      clientHeight: list.clientHeight,
+      scrollHeight: list.scrollHeight,
+      listTop: listRect.top,
+      rowTop: rowRect.top,
+      headerInset: pinnedHeaderInset(row),
+    });
+    // Read the position back rather than trusting the one written: the
+    // browser clamps it against the list's own ends, and it is the landed
+    // value its echo will carry.
+    writtenTopRef.current = list.scrollTop;
+  }, []);
+
+  /**
+   * Reveals now, or at the end of whatever is left of the grace period. The
+   * delay is read here and the row is read at fire time, so a deferred reveal
+   * lands on the row holding the playhead *then* — which may be several
+   * boundaries on from the one that queued it.
+   */
+  const scheduleReveal = useCallback((): void => {
+    window.clearTimeout(pendingRevealRef.current);
+    // Cleared, not just cancelled: the ref is what "a reveal is waiting" means
+    // to the scroll handler, and a cancelled timer is not a waiting one.
+    pendingRevealRef.current = undefined;
+    const delay = revealDelay(manualScrollAtRef.current, Date.now(), MANUAL_SCROLL_GRACE_MS);
+    if (delay === 0) {
+      reveal();
+      return;
+    }
+    pendingRevealRef.current = window.setTimeout(() => {
+      pendingRevealRef.current = undefined;
+      reveal();
+    }, delay);
+  }, [reveal]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (list === null) return;
+    const onScroll = (): void => {
+      if (list.scrollTop === writtenTopRef.current) return;
+      // Consumed: a later return to that exact position is the reader's, not
+      // a straggling echo of this write.
+      writtenTopRef.current = null;
+      manualScrollAtRef.current = Date.now();
+      // Only a reveal that is already waiting is re-armed. A scroll on its own
+      // queues nothing: a reader who takes the list while the playhead sits
+      // still has asked for the list, and it stays theirs until the playhead
+      // moves again.
+      if (pendingRevealRef.current !== undefined) scheduleReveal();
+    };
+    list.addEventListener('scroll', onScroll);
+    return () => list.removeEventListener('scroll', onScroll);
+  }, [scheduleReveal]);
+
+  // A layout effect, not a passive one: the reveal has to land in the same
+  // frame the new active row renders, or the panel visibly jumps twice. Keyed
+  // on the active row, which is what makes the panel follow the playhead
+  // however the playhead moved — including a seek made in the embedded
+  // player's own controls, which nothing in this app sees as a jump.
+  useLayoutEffect(() => {
+    scheduleReveal();
+    return () => {
+      window.clearTimeout(pendingRevealRef.current);
+      pendingRevealRef.current = undefined;
+    };
+  }, [activeId, scheduleReveal]);
+
   if (markers.length === 0) return null;
   const hasMovements = movements.length > 0;
   const groups = groupMarkers(markers, movements);
@@ -94,6 +231,7 @@ export function MarkersPanel({
     <section className="player-markers" aria-label="Markers">
       <h2 className="player-markers-heading">Markers</h2>
       <ol
+        ref={listRef}
         className="player-marker-list"
         style={maxHeight !== undefined ? { maxHeight } : undefined}
       >

@@ -919,6 +919,33 @@ describe('App route-as-session project page (T45)', () => {
     expect(api.get('p1')).toEqual(expect.objectContaining({ markers: project.markers }));
   });
 
+  it('gives a player page the wide rail, and no other page', async () => {
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, navigateTo } = renderApp({ api, controller, initialEntry: '/projects/p1' });
+    await waitForPlayerSettled();
+
+    // The routed page's own rail — the navbar's div shares .page-rail, so the
+    // selector names both classes rather than matching it first.
+    expect(container.querySelector('.page-rail-wide.app-page')).toBeInTheDocument();
+
+    // The text pages keep the reading measure the rail was built for.
+    await navigateTo('/help');
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(container.querySelector('.page-rail-wide.app-page')).toBeNull();
+    expect(container.querySelector('.page-rail.app-page')).toBeInTheDocument();
+  });
+
+  it('widens the read-only public view too — it is the same player', async () => {
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
+    const { container } = renderApp({ api, initialEntry: '/gallery/p1' });
+
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    expect(container.querySelector('.page-rail-wide.app-page')).toBeInTheDocument();
+  });
+
   it('opening a project from the list navigates to its page', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();

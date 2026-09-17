@@ -225,12 +225,14 @@ library/
 - Playback speed adjustment, looping, pitch adjustment
 - WAV/FLAC upload (rejected with guidance; ffmpeg.wasm transcode is a possible later upgrade)
 - Drag-to-move markers on the waveform (numeric entry + nudge cover adjustment for MVP)
-- Auto-scroll-follow during playback, minimap, zoom buttons
+- Minimap, zoom buttons (auto-scroll-follow was on this list — see the amendment below)
 - WebCodecs chunked peak extraction (v2 hardening for 40+ min files)
 - In-app audio sharing or user-generated catalog contributions outside the GitHub PR flow
 - User-defined label naming schemes (e.g., 1/2/3) — post-MVP
 - Playwright full-browser E2E — manual smoke checklist until the app earns it
 - Analytics, moderation UI, CI beyond build/deploy
+
+> _Amended 2026-09-17 — auto-scroll-follow is in scope, and this spec's MVP is not the only place the player has moved on._ The markers panel keeps the row holding the playhead at the top of the list: on a jump, and as playback crosses a boundary, and on a seek made in the embedded player's own controls. A hand scroll on the list buys a few seconds of being left alone first, and a scroll with no reveal already waiting keeps the list until the playhead moves again. This was listed above as out of scope, and keying the reveal on explicit jumps alone is what left the panel still when a reader seeked in the YouTube player. Minimap and zoom buttons remain out. ADR-0004 carries the reasoning.
 
 ## Further Notes
 

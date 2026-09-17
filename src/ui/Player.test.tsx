@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LoadOptions, LoadResult } from '../audio';
 import { YouTubePlaybackError } from '../audio/errors';
 import { canonicalYouTubeUrl } from '../domain';
@@ -644,6 +644,70 @@ function boxRect(overrides: Partial<DOMRect> = {}): DOMRect {
   } as DOMRect;
 }
 
+/** The geometry a reveal test gives the markers list and the row it reveals. */
+interface RevealStub {
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
+  listTop: number;
+  listBottom: number;
+  rowTop: number;
+  rowBottom: number;
+}
+
+/**
+ * Gives the markers list and one row a known box, so a reveal test owns the
+ * geometry jsdom refuses to compute. `getBoundingClientRect` returns zeros,
+ * `clientHeight` and `scrollHeight` are prototype getters returning 0, and
+ * `scrollTop` is an own writable property. All four get stubbed on the
+ * instances under test — `scrollTop` as an accessor, so the position the
+ * component writes is the one the assertion reads back.
+ *
+ * The stubs survive the click's re-render because the `<ol>` and its `<li>`s
+ * are the same DOM nodes before and after (stable keys): only their class
+ * names change.
+ */
+function stubRevealGeometry(list: HTMLElement, row: HTMLElement, stub: RevealStub): void {
+  let scrollTop = stub.scrollTop;
+  Object.defineProperty(list, 'scrollTop', {
+    get: () => scrollTop,
+    set: (next: number) => {
+      scrollTop = next;
+    },
+    configurable: true,
+  });
+  Object.defineProperty(list, 'clientHeight', { value: stub.clientHeight, configurable: true });
+  Object.defineProperty(list, 'scrollHeight', { value: stub.scrollHeight, configurable: true });
+  // `configurable`, like the three above it: a test that needs two rows placed
+  // calls this once per row, and each call reads the same list.
+  Object.defineProperty(list, 'getBoundingClientRect', {
+    configurable: true,
+    value: () =>
+      boxRect({
+        top: stub.listTop,
+        bottom: stub.listBottom,
+        height: stub.listBottom - stub.listTop,
+      }),
+  });
+  Object.defineProperty(row, 'getBoundingClientRect', {
+    configurable: true,
+    value: () =>
+      boxRect({
+        top: stub.rowTop,
+        bottom: stub.rowBottom,
+        height: stub.rowBottom - stub.rowTop,
+      }),
+  });
+}
+
+/** The markers list, its rows' `<li>`s, and the movement header `<li>`. */
+function markerListParts(container: HTMLElement) {
+  const list = container.querySelector('.player-marker-list') as HTMLElement;
+  const rows = markerRows(container).map((button) => button.closest('li') as HTMLElement);
+  const movement = list.querySelector('.player-marker-movement') as HTMLElement;
+  return { list, rows, movement };
+}
+
 /** Narrows a captured `load` call's options to the YouTube arm. */
 function youtubeLoad(options: LoadOptions): Extract<LoadOptions, { source: 'youtube' }> {
   if (options.source !== 'youtube') throw new Error('Expected a YouTube load.');
@@ -849,7 +913,7 @@ describe('Player — the timeline bar and markers (T38)', () => {
     ]);
   });
 
-  it('retires the zoom machinery: no scroll shell, no content-width fit, no reveal-on-jump', async () => {
+  it('retires the zoom machinery: no scroll shell, no content-width fit', async () => {
     const { container } = await renderLoadedPlayer();
 
     expect(container.querySelector('.player-ruler-shell')).toBeNull();
@@ -987,11 +1051,335 @@ describe('Player — the timeline bar and markers (T38)', () => {
     // shell stylesheet, app.css), minmax(0, …) columns in the split, and
     // min-width: 0 on the two columns.
     expect(appCss).toMatch(/\.page-rail\s*\{[^}]*box-sizing:\s*border-box;/);
-    expect(playerCss).toMatch(
-      /grid-template-columns:\s*minmax\(0,\s*1\.25fr\)\s+minmax\(0,\s*0\.75fr\);/,
-    );
+    expect(playerCss).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+var\(--player-side-column\);/);
     expect(playerCss).toMatch(/\.player-video-column\s*\{\s*min-width:\s*0;/);
     expect(playerCss).toMatch(/\.player-side-column\s*\{\s*min-width:\s*0;/);
+  });
+
+  it('derives a player page rail from the window height, so the recording fits the fold', () => {
+    // The player's rail escapes the text pages' 1600px reading measure: it is
+    // as wide as the split's 16:9 video may be without outgrowing the window.
+    // The cap is only exact while the side column is the SAME expression in
+    // the cap and in the split's track — which is why it is one custom
+    // property read in both files rather than two literals — so pin the
+    // property, both of its consumers, and the height the cap spends.
+    expect(appCss).toMatch(/--player-side-column:\s*clamp\(280px,\s*26vw,\s*26rem\);/);
+    expect(playerCss).toMatch(/grid-template-columns:[^;]*var\(--player-side-column\);/);
+    expect(playerCss).toMatch(/gap:\s*var\(--player-gap\);/);
+    // Structural rather than one exact regex: the calc is a wrapped
+    // multi-line expression, and pinning its whitespace would break on any
+    // reformat without catching anything real.
+    const wideRail = appCss.match(/\.page-rail-wide\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(wideRail).toContain('100vh');
+    expect(wideRail).toContain('var(--player-chrome)');
+    expect(wideRail).toContain('var(--player-side-column)');
+    expect(wideRail).toContain('var(--player-gap)');
+    // The rail's height bound has no reader once the split stacks — the video
+    // is full width there — so the cap lifts at the split's own breakpoint.
+    expect(appCss).toMatch(
+      /@media \(max-width: 920px\) \{\s*\.page-rail-wide\s*\{\s*max-width:\s*none;/,
+    );
+  });
+});
+
+describe('Player — the markers panel follows the playhead', () => {
+  // Only the grace-period tests fake timers, and the player's own async load
+  // must settle on real ones first — so they install them after rendering and
+  // this puts the clock back for whatever runs next.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Three markers inside one movement, so the list has a sticky header above
+   * the rows and enough length for a jump to land off-band. The header's own
+   * box is a stub the tests set where the inset matters.
+   */
+  function revealRecord() {
+    return serverProject({
+      markers: [marker('m1', 10), marker('m2', 20), marker('m3', 30)],
+      movements: [{ id: 'mv1', name: 'I. Allegro', start: 5 }],
+    });
+  }
+
+  it('brings the row a jump landed on to the top of the list', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows } = markerListParts(container);
+    // The third row sits 400px below the list's top edge.
+    stubRevealGeometry(list, rows[2], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 500,
+      rowBottom: 530,
+    });
+
+    fireEvent.click(markerRows(container)[2]);
+
+    // To the top, not merely into view: landing a row at the band's bottom
+    // edge is the one place the reader can least see what comes next.
+    expect(list.scrollTop).toBe(400);
+  });
+
+  it('scrolls past a row’s own sticky header, not just to the list’s edge', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows, movement } = markerListParts(container);
+    // The row is inside the list's rect, but behind the 35px movement header
+    // pinned over its top — so the band it must be brought to the top of
+    // starts lower. Without the inset the answer would be 220, which leaves
+    // the row hidden behind that header; the 35px is what makes this
+    // assertion discriminate.
+    Object.defineProperty(movement, 'getBoundingClientRect', {
+      value: () => boxRect({ height: 35 }),
+    });
+    stubRevealGeometry(list, rows[0], {
+      scrollTop: 200,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 120,
+      rowBottom: 150,
+    });
+
+    fireEvent.click(markerRows(container)[0]);
+
+    expect(list.scrollTop).toBe(185);
+  });
+
+  it('brings a row that is already in view to the top too', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows } = markerListParts(container);
+    stubRevealGeometry(list, rows[0], {
+      scrollTop: 200,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 300,
+      rowBottom: 330,
+    });
+
+    fireEvent.click(markerRows(container)[0]);
+
+    // Not "already visible, leave it": a reveal to the top, so the row 100px
+    // into the band moves to its first line. The shortest-distance rule the
+    // old reveal used would have answered 200 here.
+    expect(list.scrollTop).toBe(400);
+  });
+
+  it('follows the playhead — a seek in the embedded player is not a jump this app sees', async () => {
+    const { container, controller } = await renderLoadedPlayer(revealRecord());
+    const { list, rows } = markerListParts(container);
+    stubRevealGeometry(list, rows[2], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 500,
+      rowBottom: 530,
+    });
+
+    // The playhead moves to the last marker with no click and no keypress —
+    // which is exactly what a seek made on the YouTube embed's own controls
+    // looks like from in here (its poll reports a new currentTime and nothing
+    // else). The row highlights, and the panel follows it.
+    act(() => controller.emitPlayback({ currentTime: 30 }));
+
+    expect(rows[2].className).toBe('active');
+    expect(list.scrollTop).toBe(400);
+  });
+
+  it('reveals on an arrow-key jump too', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows, movement } = markerListParts(container);
+    // The arrow keys are the one jump surface that is not a React event — the
+    // listener is on the window — so this covers the path end-to-end, from the
+    // key through the store to the row the jump reached.
+    Object.defineProperty(movement, 'getBoundingClientRect', {
+      value: () => boxRect({ height: 35 }),
+    });
+    stubRevealGeometry(list, rows[0], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 500,
+      rowBottom: 530,
+    });
+
+    // ↓ walks from the playhead at 0 to the first marker, at 10s.
+    act(() => {
+      fireEvent.keyDown(window, { key: 'ArrowDown' });
+    });
+
+    expect(rows[0].className).toBe('active');
+    // 500 − (100 + 35): the row, at the top of the band the header leaves.
+    expect(list.scrollTop).toBe(365);
+  });
+
+  it('holds off for the grace period when the reader has scrolled the list', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows } = markerListParts(container);
+    stubRevealGeometry(list, rows[2], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 500,
+      rowBottom: 530,
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    // The reader drags the list down by hand — jsdom fires no scroll event on
+    // its own, so this dispatches the one the browser would.
+    list.scrollTop = 120;
+    fireEvent.scroll(list);
+
+    fireEvent.click(markerRows(container)[2]);
+
+    // The click seeks and highlights, and the panel stays where the reader
+    // put it: the list is theirs for the next few seconds.
+    expect(rows[2].className).toBe('active');
+    expect(list.scrollTop).toBe(120);
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // Then the reveal lands — from the position the reader left it at, on the
+    // row the playhead is on by then: 120 + (500 − 100).
+    expect(list.scrollTop).toBe(520);
+  });
+
+  it('leaves the list to the reader once the playhead has stopped moving', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows } = markerListParts(container);
+    stubRevealGeometry(list, rows[2], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 500,
+      rowBottom: 530,
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    fireEvent.click(markerRows(container)[2]);
+    expect(list.scrollTop).toBe(400);
+
+    // The reader takes the list back — scrolls up to read what is ahead —
+    // with the playhead sitting still on the row it just revealed.
+    list.scrollTop = 120;
+    fireEvent.scroll(list);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    // A scroll queues no reveal of its own: the playhead has not moved, so
+    // there is nothing to follow, and the list is the reader's for as long as
+    // they want it. (The grace period decides when a *pending* reveal lands,
+    // not whether one is owed.)
+    expect(list.scrollTop).toBe(120);
+  });
+
+  it('restarts the grace period when the reader scrolls again while one is waiting', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows } = markerListParts(container);
+    stubRevealGeometry(list, rows[2], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 500,
+      rowBottom: 530,
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    list.scrollTop = 120;
+    fireEvent.scroll(list);
+    fireEvent.click(markerRows(container)[2]);
+    // The jump queued a reveal against the scroll at t=0, three seconds out.
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(list.scrollTop).toBe(120);
+
+    // The reader scrolls again, at t=2s. That restarts the period: the reveal
+    // must not land on the deadline the *first* scroll set.
+    list.scrollTop = 150;
+    fireEvent.scroll(list);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(list.scrollTop).toBe(150);
+
+    // t=5.5s, past the re-armed deadline: now it lands, from where the reader
+    // left it — 150 + (500 − 100).
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(list.scrollTop).toBe(550);
+  });
+
+  it('keeps the list’s scrolling instant, which is what makes its own echo detectable', () => {
+    // The panel tells its own writes from the reader's by comparing the
+    // position a scroll event reports against the one it last wrote, which
+    // only works while the assignment lands in a single step. A
+    // `scroll-behavior: smooth` on this list would animate it and deliver a
+    // stream of events at positions the panel never wrote — each one reading
+    // as a hand scroll and starting a grace period. jsdom animates nothing, so
+    // the fact is pinned as CSS text.
+    const listRule = playerCss.match(/\.player-marker-list\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(listRule).not.toBe('');
+    expect(listRule).not.toContain('scroll-behavior: smooth');
+  });
+
+  it('does not mistake its own scroll for the reader’s', async () => {
+    const { container } = await renderLoadedPlayer(revealRecord());
+    const { list, rows } = markerListParts(container);
+    // One rect per row, so a second jump moves the list and the assertion can
+    // see whether it moved at once. Each call also resets the list, so the
+    // last one owns the position the test starts from.
+    stubRevealGeometry(list, rows[0], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 100,
+      rowBottom: 130,
+    });
+    stubRevealGeometry(list, rows[1], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 300,
+      rowBottom: 330,
+    });
+    stubRevealGeometry(list, rows[2], {
+      scrollTop: 0,
+      clientHeight: 320,
+      scrollHeight: 1000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 500,
+      rowBottom: 530,
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    fireEvent.click(markerRows(container)[2]);
+    expect(list.scrollTop).toBe(400);
+
+    // The echo: the browser reports the panel's own write back as a scroll
+    // event. Counting that as the reader would put the next reveal on a
+    // three-second timer.
+    fireEvent.scroll(list);
+
+    fireEvent.click(markerRows(container)[1]);
+
+    // Immediately, with no timers advanced: 400 + (300 − 100).
+    expect(list.scrollTop).toBe(600);
   });
 });
 

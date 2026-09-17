@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router';
+import { matchPath, Navigate, Route, Routes, useLocation } from 'react-router';
 import { createAudioController } from './audio';
 import type { AudioController } from './audio';
 import { createDefaultAuthController, readAuthEnv } from './auth';
@@ -238,6 +238,23 @@ function WiredApp({
     if (authState.kind === 'signed-in') void refreshProjects();
   }
 
+  /**
+   * Whether the routed page is a player, on either surface — the owner's
+   * `/projects/:id` or the read-only `/gallery/:id`. A player page escapes the
+   * text rail's 1600px reading measure; its recording takes the window instead,
+   * bounded by the viewport's height (app.css).
+   *
+   * Derived from the route patterns this shell declares rather than from a
+   * pathname prefix, so a future `/projects/import` — text, however it starts —
+   * does not silently widen. `matchPath` with a string pattern matches the
+   * whole path, so `/projects` itself and `/projects/:id/anything` do not.
+   * A player route that ends up rendering not-found or an error keeps the wide
+   * rail; those surfaces are centred and carry their own caps.
+   */
+  const isPlayerPage =
+    matchPath('/projects/:id', location.pathname) !== null ||
+    matchPath('/gallery/:id', location.pathname) !== null;
+
   return (
     <main>
       <Navbar
@@ -246,7 +263,7 @@ function WiredApp({
         onSignOut={handleSignOut}
         onDeleteAccount={handleDeleteAccount}
       />
-      <div className="page-rail app-page">
+      <div className={`page-rail app-page${isPlayerPage ? ' page-rail-wide' : ''}`}>
         <Routes>
           {/* The front door (T50): the public gallery. The api is created on
               mount (T51's "first factory wins" rule); the null guard below is
