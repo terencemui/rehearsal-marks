@@ -1,28 +1,76 @@
--- T49 — Server-side projects: the projects table, RLS, and the ported gate
+-- Initial schema: the projects world (ADR-0006).
 --
--- The Commons and its label sets are retired (ADR-0006). One `projects` table
--- replaces `label_sets` as the app's entire server-side concept: each project
+-- This is a squashed baseline. It replaces the five-migration chain that built
+-- this schema incrementally — the hosted label sets, the moderation gate,
+-- account deletion, movements, and the server-side projects rewrite. Those
+-- files recorded the retirement of the Commons and its label sets; with the
+-- transition complete and no environment left to upgrade, only the resulting
+-- state is worth carrying. The pre-squash chain lives in git history.
+--
+-- A baseline is a different kind of file from a migration: it has to be
+-- complete on its own, where a migration only has to be a correct step. Three
+-- things below are easy to lose in a squash precisely because the migration
+-- that introduced the projects table never touched them:
+--
+--   * `set_updated_at` — the shared stamping trigger function. Loud if
+--     dropped: the projects trigger at the bottom names it.
+--   * `delete_my_account` — the self-service account-deletion RPC. Silent if
+--     dropped: nothing here references it, so the app's delete-account path
+--     would simply stop existing, with no error at migration time.
+--   * the `revoke all` on `banned_users` — silent, and a security hole.
+--     Supabase grants anon/authenticated full privileges (arwdDxtm) on every
+--     new table in `public` by default, so a `create table` with no revoke
+--     leaves the bans table client-readable *and* client-writable.
+
+-- 1. The shared stamping function. Language plpgsql, so nothing in it is bound
+-- to a table at creation and every table's updated_at trigger can reuse it.
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+-- 2. Self-service account deletion. supabase-js's deleteUser is admin-only, so
+-- the app deletes through this RPC instead: a security-definer function that
+-- runs as the table owner and removes the caller's own row from auth.users
+-- (ADR-0001's privacy obligations). The projects owner_id FK cascades, so the
+-- account's projects go with it.
+--
+-- Scope note: this removes the auth.users row; the account's sessions and
+-- refresh tokens reference it and stop working with it. An access token
+-- already issued keeps working until it expires (RLS honors it for at most
+-- the token lifetime), the usual bound of any account-deletion flow.
+
+create or replace function public.delete_my_account()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  -- auth.uid() reads the caller's JWT claims, so this can only ever delete
+  -- the caller's own account, whatever role the function runs as.
+  delete from auth.users where id = auth.uid();
+$$;
+
+-- Functions execute for `public` by default; only a signed-in user may run
+-- this one.
+revoke execute on function public.delete_my_account() from public;
+grant execute on function public.delete_my_account() to authenticated;
+
+-- 3. The projects table — the app's entire server-side concept. Each project
 -- belongs to a signed-in User, carries its own name plus the recording's
 -- canonical title, and is public by default with a visibility flag and a
--- publication status. Row Level Security is the authorization boundary —
--- anonymous readers see published public projects only (banned owners
--- excluded), an owner sees and writes their own projects in every status and
--- both visibilities, and ownership comes from the session, never the client.
---
--- The moderation gate is ported onto projects with two changes: a trusted
--- User's new public project publishes immediately, unconditionally (the
--- published-per-video unique index and the submission rate limit are gone —
--- many public projects per recording are now allowed), and the gate applies
--- to public writes only — private-project writes bypass it. The bans table
--- and its security-definer helpers survive, re-pointed at projects.
-
--- 1. The projects table. The recording-identity shape rules carry over from
--- label_sets (video ID, non-blank titles, finite duration) so a row no reader
--- can parse never gets in; `name` is the user's editable label while
--- `recording_title` is the canonical title fetched once from YouTube, never
--- edited in place. `publication_status` is meaningful for public projects
--- only; `visibility` is the flag that decides whether a project enters the
--- review surface at all.
+-- publication status. The recording-identity shape rules (video ID, non-blank
+-- titles, finite duration) keep a row no reader can parse out of the store;
+-- `name` is the user's editable label while `recording_title` is the canonical
+-- title fetched once from YouTube, never edited in place. `publication_status`
+-- is meaningful for public projects only; `visibility` is the flag that
+-- decides whether a project enters the review surface at all.
 
 create table public.projects (
   id uuid primary key default gen_random_uuid(),
@@ -76,55 +124,33 @@ create index projects_public_newest_idx
   on public.projects (created_at desc)
   where visibility = 'public' and publication_status = 'published';
 
--- 2. Retire label_sets (ADR-0006). Exactly one object pins the table, and the
--- order below follows from it:
---
---   a. `moderate_label_set` must go first: it returns the table's composite
---      row type, so PostgreSQL refuses to drop the table while the function
---      that names that type still exists. This is the only hard constraint
---      here — checked by running it, not by reading it, because a wrong order
---      is invisible until it executes.
---
---      `contributor_is_trusted` is dropped alongside it for tidiness, not
---      necessity. It names the table in a `LANGUAGE sql` body, and PostgreSQL
---      records no dependency on what a string body references — so it would
---      drop just as happily after the table. Its position here is arbitrary.
---   b. The table. `contributor_banned` has to outlive this statement: the two
---      read policies (rewritten by T25) call it, and a function cannot be
---      dropped while a policy depends on it. But that constrains the
---      *function's* drop, not the table's — the policies are the table's own
---      and go with it, so nothing here blocks the table.
---
---      CASCADE is therefore belt-and-braces rather than load-bearing: with (a)
---      done, a plain drop is accepted. It stays because this table has already
---      caused one environment-drift surprise, and taking the policies and
---      triggers along with it costs nothing.
---   c. What the policies were holding in place — the ban helper and the two
---      trigger functions — can now be dropped.
---
--- The shared set_updated_at function survives: it is language plpgsql, so
--- nothing in it is bound to a table at creation, and the projects table's
--- updated_at stamp reuses it.
+-- 4. Bans. One row per banned user, written only by the maintainer (postgres
+-- role or service_role key). No grants and no policies — client roles can
+-- never read or write it; the only read path is the security-definer helper
+-- below, which runs as its owner (postgres), so policies and triggers can
+-- test for a ban without widening any grant. The revoke is load-bearing:
+-- Supabase's default privileges would otherwise hand anon and authenticated
+-- full access to this table the moment it is created.
 
-drop function if exists public.moderate_label_set(uuid, text);
-drop function if exists public.contributor_is_trusted(uuid);
+create table public.banned_users (
+  id uuid primary key references auth.users (id) on delete cascade,
+  banned_at timestamptz not null default now()
+);
 
-drop table public.label_sets cascade;
+alter table public.banned_users enable row level security;
 
-drop function if exists public.contributor_banned(uuid);
-drop function if exists public.label_sets_gate_submissions();
-drop function if exists public.label_sets_review_edits();
+revoke all on public.banned_users from anon, authenticated;
 
--- 3. The bans table survives, renamed to match the glossary (Contributor is
--- retired; the signed-in person is a User). One row per banned user, written
--- only by the maintainer. No grants and no policies — client roles can never
--- read or write it; the only read path is the security-definer helpers below,
--- which run as their owner (postgres), so policies and triggers can test for
--- a ban without widening any grant. The rename happens after the old helper
--- functions are dropped above, so no function body dangles on the old name.
+-- service_role — the trusted server-side role — keeps access, so a maintainer
+-- script under the service key can read and write bans. Granted explicitly
+-- rather than inherited: the platform's default privileges differ between
+-- environments (a hosted project carries them, a locally built one does not),
+-- so inheriting them would make the schema depend on where it was built.
+grant select, insert, update, delete on public.banned_users to service_role;
 
-alter table public.contributors rename to banned_users;
-
+-- RLS policies evaluate as the querying role, which has no select grant on
+-- banned_users — the helper runs as its definer (postgres) so policies and
+-- triggers can test for a ban without widening any grant.
 create or replace function public.user_banned(p_owner_id uuid)
 returns boolean
 language sql
@@ -157,12 +183,12 @@ as $$
     and publication_status = 'published';
 $$;
 
--- 4. The submission gate, ported from label_sets with the queue's two limits
--- removed. One before-insert-or-update trigger guards public writes: a banned
--- owner is refused, and a trusted owner's new public project auto-publishes
--- unconditionally — no published-per-video guard, no rate limit. Private
--- writes bypass the gate entirely: a private project is visible to its owner
--- alone, so there is nothing to review and nothing to refuse.
+-- 5. The submission gate. One before-insert-or-update trigger guards public
+-- writes: a banned owner is refused, and a trusted owner's new public project
+-- auto-publishes unconditionally — no published-per-video guard and no
+-- submission rate limit, so many public projects per recording are allowed.
+-- Private writes bypass the gate entirely: a private project is visible to
+-- its owner alone, so there is nothing to review and nothing to refuse.
 
 create or replace function public.projects_gate_writes()
 returns trigger
@@ -202,12 +228,12 @@ create trigger projects_gate_writes
   before insert or update on public.projects
   for each row execute function public.projects_gate_writes();
 
--- 5. Re-review, ported. An owner's edit to a published public project returns
--- it to pending — unless they are trusted, in which case the edit stays
--- published: once a user's projects publish by default, so do their updates.
--- An edit to a rejected project is a resubmission: back to pending, or
--- straight to published for a trusted owner. A private project made public
--- enters the queue the same way. Private projects bypass all of this.
+-- 6. Re-review. An owner's edit to a published public project returns it to
+-- pending — unless they are trusted, in which case the edit stays published:
+-- once a user's projects publish by default, so do their updates. An edit to
+-- a rejected project is a resubmission: back to pending, or straight to
+-- published for a trusted owner. A private project made public enters the
+-- queue the same way. Private projects bypass all of this.
 
 create or replace function public.projects_review_edits()
 returns trigger
@@ -254,7 +280,7 @@ create trigger projects_review_edits
   before update on public.projects
   for each row execute function public.projects_review_edits();
 
--- 6. The maintainer's moderation surface: one SECURITY DEFINER function with
+-- 7. The maintainer's moderation surface: one SECURITY DEFINER function with
 -- validated transitions, callable from the dashboard SQL editor (the postgres
 -- role) or — in a trusted server-side script — by RPC under the service_role
 -- key. The transitions are strict so a typo cannot silently move a row the
@@ -320,7 +346,7 @@ $$;
 -- server-side script may `grant execute ... to service_role` explicitly.
 revoke execute on function public.moderate_project(uuid, text) from public;
 
--- 7. Row Level Security. Supabase grants table-wide access to
+-- 8. Row Level Security on projects. Supabase grants table-wide access to
 -- anon/authenticated by default; revoke it so the grants below are the whole
 -- story. service_role keeps its grant and bypasses RLS: the maintainer's
 -- moderation path and the seed.
@@ -344,6 +370,12 @@ grant update (name, markers, movements, visibility)
   on public.projects to authenticated;
 
 grant delete on public.projects to authenticated;
+
+-- service_role bypasses RLS but still needs table privileges — it is the
+-- maintainer's moderation path and the seed. The revoke above does not touch
+-- it (it names anon and authenticated only), so this grant is what actually
+-- establishes its access; explicit for the same reason as the bans table's.
+grant select, insert, update, delete on public.projects to service_role;
 
 -- Anonymous readers see published public projects and nothing else — the
 -- gallery's read surface, with banned owners' rows excluded.
@@ -387,8 +419,7 @@ create policy "Users delete their own projects"
   to authenticated
   using (owner_id = auth.uid());
 
--- 8. Any write stamps updated_at, whatever role issues it (reuses the T23
--- function, which is generic across tables).
+-- 9. Any write stamps updated_at, whatever role issues it.
 
 create trigger projects_set_updated_at
   before update on public.projects

@@ -3,23 +3,28 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BANNED_PREFIX } from './errors';
 
-/** The repo-root-relative projects migration, checked like a consumer would check it. */
+/** The repo-root-relative baseline migration, checked like a consumer would check it. */
 const migrationUrl = resolve(
   process.cwd(),
-  'supabase/migrations/20260828120000_server_side_projects.sql',
+  'supabase/migrations/20260917000000_init.sql',
 );
 
 /**
- * The server-side projects migration's cross-file contracts, pinned the way
- * the seed test pins the seed: what an actor can and cannot read or write is
- * the database's own rule, so this test holds the migration to the ticket's
- * promises — the projects table's columns, the RLS boundaries, and the ported
- * moderation gate with the queue's limits removed. The migration is SQL, so
- * these are text contracts — but each one is a promise the app's behaviour
- * depends on, and a drift here fails loudly in this suite instead of silently
- * in production.
+ * The baseline migration's contracts, pinned the way the seed test pins the
+ * seed: what an actor can and cannot read or write is the database's own rule,
+ * so this test holds the migration to the ticket's promises — the projects
+ * table's columns, the RLS boundaries, and the moderation gate. The migration
+ * is SQL, so these are text contracts — but each one is a promise the app's
+ * behaviour depends on, and a drift here fails loudly in this suite instead of
+ * silently in production.
+ *
+ * This file guards a squashed baseline, so it carries a second job: the
+ * objects a squash can lose silently. `set_updated_at` and `delete_my_account`
+ * were introduced by migrations the projects rewrite never touched, and the
+ * bans table's `revoke` is invisible in the projects table's own grants — all
+ * three are asserted below, because nothing else would have caught their loss.
  */
-describe('the server-side projects migration', () => {
+describe('the baseline migration', () => {
   const migration = readFileSync(migrationUrl, 'utf8');
 
   it('defines the projects table with every column the ticket names', () => {
@@ -46,6 +51,69 @@ describe('the server-side projects migration', () => {
     expect(migration).toMatch(/updated_at timestamptz not null default now\(\)/);
   });
 
+  it('keeps the bans table out of every client role\'s reach', () => {
+    expect(migration).toMatch(
+      /create table public\.banned_users \(\s+id uuid primary key references auth\.users \(id\) on delete cascade/,
+    );
+    // The load-bearing revoke. Supabase's default privileges grant anon and
+    // authenticated full access to every new table in `public`, so creating
+    // this table without the revoke would leave the bans table readable *and*
+    // writable by any client — a hole that no other assertion here would catch.
+    expect(migration).toMatch(
+      /revoke all on public\.banned_users from anon, authenticated;/,
+    );
+  });
+
+  it('carries the objects a baseline must not silently lose', () => {
+    // Both predate the projects rewrite and are named nowhere else in it, so a
+    // squash that concatenated the projects migration alone would drop them.
+    // set_updated_at is loud (the stamp trigger names it); delete_my_account is
+    // silent — the app's delete-account path would simply stop existing.
+    expect(migration).toMatch(
+      /create or replace function public\.set_updated_at\(\)[\s\S]*?language plpgsql/,
+    );
+    expect(migration).toMatch(
+      /create or replace function public\.delete_my_account\(\)[\s\S]*?security definer/,
+    );
+    // Its execute right is the whole reason the RPC is callable at all.
+    expect(migration).toMatch(
+      /revoke execute on function public\.delete_my_account\(\) from public;/,
+    );
+    expect(migration).toMatch(
+      /grant execute on function public\.delete_my_account\(\) to authenticated;/,
+    );
+  });
+
+  it('grants service_role its access explicitly, not by inheritance', () => {
+    // The client roles are bounded above; service_role is the trusted
+    // server-side role — the maintainer's moderation path and the seed. Its
+    // privileges have to be stated here rather than inherited from the
+    // platform's default privileges, which differ between a hosted project and
+    // a locally built one: a table created by `postgres` inherits defaults
+    // that give service_role no DML at all. Inheriting leaves the schema
+    // dependent on where it was built, and the gap is invisible until a
+    // service-key script fails in one environment and not the other.
+    expect(migration).toMatch(
+      /grant select, insert, update, delete on public\.projects to service_role;/,
+    );
+    expect(migration).toMatch(
+      /grant select, insert, update, delete on public\.banned_users to service_role;/,
+    );
+  });
+
+  it('is a baseline, not a transition — it never names the retired world', () => {
+    // A squashed baseline builds the schema from nothing, so any `drop` of a
+    // schema object or `rename to` in it is a transition statement that
+    // survived the squash — and would fail on a fresh database, where the
+    // objects it names were never created.
+    expect(migration).not.toMatch(/\bdrop\s+(table|function|policy|trigger|index)\b/i);
+    expect(migration).not.toMatch(/\brename\s+to\b/i);
+    // The Commons and its label sets are retired (ADR-0006); the baseline must
+    // not refer to them in any form.
+    expect(migration).not.toMatch(/label_sets/i);
+    expect(migration).not.toMatch(/contributor/i);
+  });
+
   it('shows anonymous readers published public projects only, banned owners excluded', () => {
     expect(migration).toMatch(
       /create policy "Published public projects are readable by anyone"[\s\S]*?visibility = 'public'\s+and publication_status = 'published'\s+and not public\.user_banned\(owner_id\)/,
@@ -53,8 +121,6 @@ describe('the server-side projects migration', () => {
     // The ban check runs as its definer — a client role with no grant on the
     // bans table can still evaluate it.
     expect(migration).toMatch(/create or replace function public\.user_banned[\s\S]*?security definer/);
-    // And the bans table itself survives the label-set retirement.
-    expect(migration).toMatch(/alter table public\.contributors rename to banned_users;/);
   });
 
   it('gives an owner their own projects in every status and visibility, with ownership never client-settable', () => {
@@ -131,36 +197,5 @@ describe('the server-side projects migration', () => {
       expect(migration).toContain(`when '${action}' then`);
     }
     expect(migration).toMatch(/revoke execute on function public\.moderate_project\(uuid, text\) from public;/);
-  });
-
-  it('retires label_sets and the contributor-era helpers', () => {
-    expect(migration).toMatch(/drop table public\.label_sets cascade;/);
-    expect(migration).toMatch(/drop function if exists public\.label_sets_gate_submissions\(\);/);
-    expect(migration).toMatch(/drop function if exists public\.contributor_banned\(uuid\);/);
-    expect(migration).toMatch(/drop function if exists public\.moderate_label_set\(uuid, text\);/);
-    expect(migration).toMatch(/drop function if exists public\.contributor_is_trusted\(uuid\);/);
-  });
-
-  it('drops in an order the dependencies allow', () => {
-    // Two constraints, both established by running the chain rather than by
-    // reading it: `moderate_label_set` returns the table's row type and must go
-    // first, and `contributor_banned` cannot be dropped while the table's read
-    // policies still call it, so it must come after. Only the first blocks the
-    // table drop itself — a `LANGUAGE sql` body pins nothing, so
-    // `contributor_is_trusted` has no required position and is deliberately not
-    // asserted here.
-    const at = (statement: string) => {
-      const index = migration.indexOf(statement);
-      // indexOf answers -1 for a statement that is not there, and -1 sorts
-      // before everything — so ordering alone would pass on a retirement whose
-      // statement had been deleted outright. The existence check is the point.
-      expect(index, `${statement} is missing from the migration`).toBeGreaterThan(-1);
-      return index;
-    };
-
-    const table = at('drop table public.label_sets cascade;');
-    expect(at('drop function if exists public.moderate_label_set(uuid, text);')).toBeLessThan(table);
-    expect(at('drop function if exists public.contributor_banned(uuid);')).toBeGreaterThan(table);
-    expect(at('drop function if exists public.label_sets_gate_submissions();')).toBeGreaterThan(table);
   });
 });

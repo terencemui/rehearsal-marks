@@ -4,9 +4,14 @@ The hosted Postgres database behind the app: the `projects` table — the app's
 single server-side concept (ADR-0006) — with Row Level Security as the
 authorization boundary.
 
-- `migrations/` — schema and RLS, one file per change, timestamp-prefixed in
-  filename order. Apply with the Supabase CLI (`supabase db push`) against a
-  linked project, or run each file in the dashboard's SQL editor.
+- `migrations/` — schema and RLS, timestamp-prefixed in filename order and
+  applied in that order. It is currently a single squashed baseline
+  (`20260917000000_init.sql`) that builds the whole schema from nothing; the
+  incremental chain it replaced — including the retirement of the Commons and
+  its label sets — lives in git history, not here. New changes go in as
+  further timestamp-prefixed files. Apply with the Supabase CLI
+  (`supabase db push`) against a linked project, or run a file in the
+  dashboard's SQL editor.
 - `seed.sql` — content, not schema: the local development fixture, run
   automatically by `supabase db reset` and `supabase start`. It creates its own
   synthetic owner, so a fresh checkout needs no setup and no real address is
@@ -40,8 +45,8 @@ The consumers of that wiring:
 - **Signed-in writes** — Google OAuth through supabase-js's auth client; the
   signed-in user is the `owner_id` behind every `projects` row.
 - **Account deletion** — a signed-in user deletes their account through the
-  `delete_my_account` RPC (migration
-  `20260820210000_delete_my_account.sql`): a security-definer function that
+  `delete_my_account` RPC (in `migrations/20260917000000_init.sql`): a
+  security-definer function that
   removes the caller's own `auth.users` row, with the `projects` FK cascade
   taking their projects with it. supabase-js's `deleteUser` is admin-only,
   so the RPC is the self-service path.
