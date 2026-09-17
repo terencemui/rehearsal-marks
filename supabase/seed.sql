@@ -26,9 +26,20 @@
 --
 -- Seeding *production* is a different job with a different owner — the
 -- maintainer's real account — so it is not this file's work. See
--- docs/maintainer-projects.md. In particular, never run
--- `supabase db push --include-seed` against the hosted project: that would
--- create the synthetic development account below as a real `auth.users` row.
+-- docs/maintainer-projects.md.
+--
+-- NEVER point this file at the hosted project. Two CLI commands will, if
+-- asked, and they are not equally obvious about it:
+--
+--   supabase db push --include-seed   # opt-in; must stay unused
+--   supabase db reset --linked        # seeds by DEFAULT — pass --no-seed
+--
+-- The second is the dangerous one, because it is the CLI's own remedy for
+-- remote schema drift and `[db.seed] enabled` in config.toml makes applying
+-- this file its default. Either would create the synthetic account below as a
+-- real `auth.users` row and publish a project owned by it — and since every
+-- policy keys on `owner_id = auth.uid()` and that account can never sign in,
+-- nobody could edit or delete the row from the app.
 --
 -- Both inserts carry fixed ids and are idempotent, so re-running is a no-op.
 

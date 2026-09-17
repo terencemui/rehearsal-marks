@@ -27,9 +27,18 @@ markers are taken from the video's own chapter list, so each timing is
 checkable against the performance itself.
 
 **It never goes to the hosted project.** `supabase db push` does not run the
-seed unless `--include-seed` is passed, and there it must not be: it would
-create the synthetic development account as a real `auth.users` row. The
-gallery's production content is bootstrapped separately, below.
+seed unless `--include-seed` is passed, and there it must not be. Watch the
+other command too: **`supabase db reset --linked` applies this file by
+default** — `[db.seed] enabled` in `config.toml` makes seeding the default, and
+`--no-seed` is the only opt-out. That is the one to be careful with, because
+`db reset --linked` is the CLI's own remedy for remote schema drift, so it is
+exactly what a maintainer reaches for when the hosted schema looks wrong.
+
+Either command would create the synthetic development account as a real
+`auth.users` row, and publish a project owned by it. Every policy keys on
+`owner_id = auth.uid()`, and that account can never sign in — so the row would
+be uneditable and undeletable from the app, reachable only by hand-written SQL.
+The gallery's production content is bootstrapped separately, below.
 
 ## Seeding production
 
@@ -104,7 +113,8 @@ and confirm the marks land on it. The review checklist, for each project:
 - **Marker sanity** — timings inside the performance's duration, labels in
   order, nothing duplicated (the app enforces these on placement; a quick scan
   catches the rest).
-- **Spot-check by ear** — listen to 2–3 marks, the same step the seed asks.
+- **Spot-check by ear** — listen to 2–3 marks, the same step seeding production
+  asks above.
 
 ### Acting on a row
 

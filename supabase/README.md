@@ -10,9 +10,10 @@ authorization boundary.
 - `seed.sql` — content, not schema: the local development fixture, run
   automatically by `supabase db reset` and `supabase start`. It creates its own
   synthetic owner, so a fresh checkout needs no setup and no real address is
-  committed. It is never applied to the hosted project; production's first
-  published project is bootstrapped separately — see
-  `docs/maintainer-projects.md`.
+  committed. It must never reach the hosted project: `db push` needs
+  `--include-seed` to apply it, but **`db reset --linked` seeds by default** —
+  pass `--no-seed`. Production's first published project is bootstrapped
+  separately — see `docs/maintainer-projects.md`.
 
 ## Wiring the app
 

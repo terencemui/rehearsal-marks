@@ -18,6 +18,8 @@ The Commons already proved the machinery a shared marking surface needs: Row Lev
 - **The gate applies to public writes only.** Private-project writes bypass it entirely — a private project is visible to its owner alone, so there is nothing to review and nothing to refuse.
 - **Bans survive, re-pointed at projects.** A banned owner's public writes are refused and their published public rows are hidden from readers; their private projects keep saving.
 - **The seed becomes a published public project** owned by the maintainer, carrying the real Honeck movements and the existing markers. `label_sets` is retired.
+
+  > _Amended 2026-09-17 — the seed split into two jobs._ The single file above became two, with different owners. `supabase/seed.sql` is now the **local development fixture**, owned by a synthetic `example.com` account it creates itself, so `db reset` runs on any machine with no setup and no real address is committed to a public repo. The maintainer-owned row is a separate one-off insert against a real account uuid, documented in `docs/maintainer-projects.md`. The decision above stands in substance — the gallery still launches on this recording — but it no longer describes what the seed file is: an identity-dependent seed could not be tracked in a public repo and aborted `db reset` on every machine but the maintainer's.
 - **The maintainer's moderation surface** is ported as `moderate_project(row_id, action)` — strict publish / reject / unpublish transitions over public rows, execute revoked from PUBLIC.
 
 ## Consequences
