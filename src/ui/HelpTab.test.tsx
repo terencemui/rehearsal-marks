@@ -36,6 +36,10 @@ describe('HelpTab', () => {
     // described the inspector that the playback-only player no longer has.
     expect(markers).toHaveTextContent(/whole seconds/i);
     expect(markers).not.toHaveTextContent('5:10.5');
+    // The panel moves itself now, and a list that moves on its own needs the
+    // rule stated — including the brake, which is the surprising half.
+    expect(markers).toHaveTextContent(/follows the playhead/i);
+    expect(markers).toHaveTextContent(/leaves you alone for a few seconds/i);
   });
 
   it('describes server-backed projects honestly', () => {

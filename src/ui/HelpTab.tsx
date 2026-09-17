@@ -109,6 +109,13 @@ export function HelpTab() {
             When a recording has movements, the markers group under sticky movement headers —
             click one to jump to that movement's start.
           </li>
+          <li>
+            The panel follows the playhead: jump, or let the recording play on, and the marker
+            you are on moves to the top of the list, so it is always the first one you read.
+            Scroll the list yourself and it leaves you alone for a few seconds before taking the
+            playhead back up — and while the playhead is not moving, a scroll is left alone for
+            as long as you like.
+          </li>
         </ul>
       </section>
 
