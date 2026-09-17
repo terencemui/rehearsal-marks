@@ -84,12 +84,18 @@ const STACKED_MARKERS_MIN = 120;
  * goes through the `controller`.
  *
  * The player page is shell chrome (T45): the persistent navbar and the shared
- * page rail (a maximum content width with fluid side margins) frame it — the
- * player carries no nav of its own (the in-player Projects control and the
- * `onExit` prop it rode on are retired: navigation is the only exit) — and
- * renders the project name in its own band above the recording. The page is
- * the route's content, so no `<main>` and no page rail of its own: the shell's
- * single `<main>` wraps the navbar and the route.
+ * page rail frame it, and the player carries no nav of its own (the in-player
+ * Projects control and the `onExit` prop it rode on are retired: navigation is
+ * the only exit). It renders the project name in its own band above the
+ * recording. The page is the route's content, so no `<main>` and no page rail
+ * of its own: the shell's single `<main>` wraps the navbar and the route.
+ *
+ * The player's rail is the one that escapes the text rail's reading measure
+ * (`page-rail-wide`, app.css): a recording is not prose, so instead of the
+ * 1600px column the page takes the width at which its 16:9 video would be
+ * exactly as tall as the window has left for it, and never more. A tall window
+ * gives a big recording, a short one a small recording, and the page fits the
+ * fold either way.
  *
  * The recording's clock is a single filled bar below the split (T38),
  * spanning the full content width — a click-to-seek progress track with the
@@ -100,10 +106,12 @@ const STACKED_MARKERS_MIN = 120;
  * click on the bar seeks; a marker row click jumps to that marker. When the
  * recording has movements (ADR-0005) the rows group under sticky movement
  * headers that jump to the movement's start, and the rehearsal letters
- * restart at A within each movement. The video column keeps only the
- * recording (the audio layer's own ruler band is hidden with CSS), and
- * everything is a percentage of the recording, so nothing scrolls: the
- * fit-to-viewport zoom machinery is gone.
+ * restart at A within each movement. The panel follows the playhead — the
+ * active row is kept at the top of the list, whether the playhead moved
+ * because of something here or because of the embedded player's own controls —
+ * with a grace period after the reader scrolls the list by hand. The video
+ * column keeps only the recording (the audio layer's own ruler band is hidden
+ * with CSS).
  *
  * A settled-state marker on the player's root (`data-settled`) signals that
  * the load has resolved. It means *settled*, not *playable*: it is set on

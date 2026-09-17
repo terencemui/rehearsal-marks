@@ -18,3 +18,51 @@
   padding-top: 24px;
   padding-bottom: 32px;
 }
+
+/* The practice split's own geometry (player.css), named here because the
+   player's rail cap is derived from it: the side column's track and the gap
+   between the two columns. Both are read in two files, and the cap is only
+   exact while they agree, so neither may be spelled twice. */
+:root {
+  --player-side-column: clamp(280px, 26vw, 26rem);
+  --player-gap: 32px;
+  /* Everything above and below the recording's own box on a player page: the
+     body's 8px default margin, the navbar and its rule (57px), the page's 24px
+     top and 32px bottom padding, the project page's save line (~28px) or the
+     public view's back link (~50px), the title band (~52px), and the timeline
+     stack below the video — the embed's margin, the track and its times
+     (~98px). The public view is the taller of the two stacks (~289px), so one
+     value covers both, with the rail's side padding as slack under it.
+
+     It is a hand-summed estimate, and its failure direction is chosen: too
+     small and the public page scrolls by a few pixels, too large and the
+     recording is only slightly narrower than it could be. Bias it upward. */
+  --player-chrome: 296px;
+}
+
+/* The player page escapes the text rail's cap. 1600px is a reading measure for
+   prose, and a recording is not prose. The player's rail is instead as wide as
+   its 16:9 video may be without outgrowing the window — the height the viewport
+   has left once the page's chrome is paid for, turned into a width — plus the
+   side column and the gap the split needs beside it. Above the cap the split
+   fills the rail and nothing scrolls; below it the window's own width binds
+   first, so the video is then necessarily shorter than the height budget too,
+   and the bound holds either way.
+
+   The rail's side padding is deliberately not added back: it sits inside this
+   border box, so it only ever makes the video a little narrower than the
+   budget allows — slack in the one direction that cannot cause a scroll. */
+.page-rail-wide {
+  max-width: calc(
+    (100vh - var(--player-chrome)) * 16 / 9 + var(--player-side-column) + var(--player-gap)
+  );
+}
+
+/* The same breakpoint the split itself stacks at (player.css) — the two values
+   must move together. Below it the video is full width, there is no side column
+   left to reserve, and the height budget has no reader. */
+@media (max-width: 920px) {
+  .page-rail-wide {
+    max-width: none;
+  }
+}

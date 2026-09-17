@@ -14,15 +14,21 @@ width — confirmation at a glance of which recording is being practised. */
 }
 
 /* The practice split view (T27): a YouTube project's player splits on a
-desktop viewport — the video keeps its 16:9 size in the left half (1.25 : 0.75,
-the ratio the redesign settled on: the video takes the wider share so its 16:9
-height clears the readout and leaves the markers room below it), the practice
-readout follows the live playhead on the right. Below the breakpoint the
-readout stacks under the video. */
+desktop viewport — the video takes every pixel the side column does not need,
+and the side column holds the design's own width (`--player-side-column`, named
+in app.css because the player's rail cap is derived from it and the two must
+never drift), with the practice readout following the live playhead on the
+right. Below the breakpoint the readout stacks under the video.
+
+`align-items: start` lets the side column be taller than the video, and the
+player's measured max-height on the marker list (Player.tsx) is what keeps that
+from happening in practice: the list is capped at the video's bottom, so the
+split is exactly as tall as the recording. Remove that measure and the page
+starts scrolling under a tall panel. */
 .player-practice-split {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 1fr) var(--player-side-column);
+  gap: var(--player-gap);
   align-items: start;
 }
 
