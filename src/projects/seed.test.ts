@@ -7,16 +7,16 @@ import { parseMarkers, parseMovements } from '../domain';
 const seedUrl = resolve(process.cwd(), 'supabase/seed.sql');
 
 /**
- * The seeded public project, checked for the invariants that exist today: the
- * markers and movements must parse under the domain's own rules, and the row
- * must carry the project shape the ticket promises — owner by email, editable
- * name distinct from the canonical recording title, public and published. The
- * video identity facts (the canonical URL and duration the ticket promises)
- * are pinned here so a seed edit can't silently re-key the row to another
- * recording. A full projects row parser lands with the client migration
- * (T50/T51); until then the row's shape is pinned by these SQL-text assertions.
+ * The development fixture, checked for the invariants that exist today: it
+ * must create its own owner, so a `db reset` succeeds on any machine with no
+ * account pre-created; its markers and movements must parse under the domain's
+ * own rules; and the row must carry the project shape — editable name distinct
+ * from the canonical recording title, public and published. The video identity
+ * facts (the canonical URL and duration) are pinned here so an edit can't
+ * silently re-key the row to another recording. The row's shape is otherwise
+ * pinned by these SQL-text assertions.
  */
-describe('the seeded public project', () => {
+describe('the development seed', () => {
   it('is one published public project for the Tchaikovsky No. 5 video, with parseable content', () => {
     const seed = readFileSync(seedUrl, 'utf8');
 
@@ -29,11 +29,9 @@ describe('the seeded public project', () => {
     expect(videoId).toBe('a_B02BZp-5Y');
     expect(seed).toMatch(/3036\.0/);
 
-    // The seed is a project, not a label set: it inserts into `projects`, the
-    // owner comes from the maintainer's auth.users email, and the user's
-    // editable name is distinct from the canonical recording title.
+    // The seed is a project, not a label set: it inserts into `projects`, and
+    // the user's editable name is distinct from the canonical recording title.
     expect(seed).toMatch(/insert into public\.projects/);
-    expect(seed).toMatch(/where email = 'you@example\.com'/);
     expect(seed).toMatch(/'Honeck Tchaikovsky 5'/);
     expect(seed).toMatch(/'Tschaikowsky: 5\. Sinfonie – hr-Sinfonieorchester, Manfred Honeck'/);
 
@@ -60,7 +58,41 @@ describe('the seeded public project', () => {
     const parsedMovements = parseMovements(movements);
     expect(parsedMovements.map((mv) => mv.start)).toEqual([34, 913, 1743, 2074]);
   });
+
+  it('creates its own owner, so a reset needs no account to exist first', () => {
+    const seed = readFileSync(seedUrl, 'utf8');
+
+    // The fixture supplies the account the project is foreign-keyed to...
+    expect(seed).toMatch(/insert into auth\.users/);
+    expect(seed).toMatch(/'dev@example\.com'/);
+    expect(seed).toMatch(/on conflict \(id\) do nothing/);
+
+    // ...rather than looking one up by an address that must already exist.
+    // That lookup aborted every `db reset` on a machine without the account,
+    // and keeping it working meant committing a real address to a public repo.
+    // Neither may come back.
+    expect(seed).not.toMatch(/where email =/);
+    expect(seed).not.toMatch(/raise exception/);
+
+    // The project names the account this same file creates: a mismatch is an
+    // FK violation on reset, not a silent no-op.
+    const created = uuidsAfter(seed, /insert into auth\.users/);
+    const referenced = uuidsAfter(seed, /insert into public\.projects/);
+    expect(referenced).toContain(created[0]);
+  });
 });
+
+/**
+ * The uuids the SQL names from the marked statement onward, in order. The
+ * markers and movements documents are excluded for free: their ids are
+ * double-quoted JSON, not single-quoted SQL.
+ */
+function uuidsAfter(sql: string, marker: RegExp): string[] {
+  const from = sql.slice(marker.exec(sql)?.index ?? 0);
+  return [...from.matchAll(
+    /'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'/g,
+  )].map((match) => match[1]);
+}
 
 /** The video ID the seed inserts — the first quoted 11-character token. */
 function firstVideoId(seed: string): string {

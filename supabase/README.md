@@ -7,9 +7,12 @@ authorization boundary.
 - `migrations/` — schema and RLS, one file per change, timestamp-prefixed in
   filename order. Apply with the Supabase CLI (`supabase db push`) against a
   linked project, or run each file in the dashboard's SQL editor.
-- `seed.sql` — content, not schema: the first published public project, so the
-  gallery is never empty. Runs as the postgres role (dashboard SQL editor),
-  never via `authenticated` — see `docs/maintainer-projects.md`.
+- `seed.sql` — content, not schema: the local development fixture, run
+  automatically by `supabase db reset` and `supabase start`. It creates its own
+  synthetic owner, so a fresh checkout needs no setup and no real address is
+  committed. It is never applied to the hosted project; production's first
+  published project is bootstrapped separately — see
+  `docs/maintainer-projects.md`.
 
 ## Wiring the app
 
