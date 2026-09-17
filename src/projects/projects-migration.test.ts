@@ -138,23 +138,29 @@ describe('the server-side projects migration', () => {
     expect(migration).toMatch(/drop function if exists public\.label_sets_gate_submissions\(\);/);
     expect(migration).toMatch(/drop function if exists public\.contributor_banned\(uuid\);/);
     expect(migration).toMatch(/drop function if exists public\.moderate_label_set\(uuid, text\);/);
+    expect(migration).toMatch(/drop function if exists public\.contributor_is_trusted\(uuid\);/);
   });
 
   it('drops in an order the dependencies allow', () => {
-    // The order is load-bearing, and the reason the migration first failed to
-    // apply anywhere: the table cannot go while `moderate_label_set` returns
-    // its row type, nor while its own policies call `contributor_banned` —
-    // which reads the separate bans table, so it outlives the table and a
-    // plain drop is refused. Hence: the table-naming functions, then the table
-    // with cascade, then what the policies and triggers were holding.
-    const table = migration.indexOf('drop table public.label_sets cascade;');
-    expect(migration.indexOf('drop function if exists public.moderate_label_set(uuid, text);'))
-      .toBeLessThan(table);
-    expect(migration.indexOf('drop function if exists public.contributor_is_trusted(uuid);'))
-      .toBeLessThan(table);
-    expect(migration.indexOf('drop function if exists public.contributor_banned(uuid);'))
-      .toBeGreaterThan(table);
-    expect(migration.indexOf('drop function if exists public.label_sets_gate_submissions();'))
-      .toBeGreaterThan(table);
+    // Two constraints, both established by running the chain rather than by
+    // reading it: `moderate_label_set` returns the table's row type and must go
+    // first, and `contributor_banned` cannot be dropped while the table's read
+    // policies still call it, so it must come after. Only the first blocks the
+    // table drop itself — a `LANGUAGE sql` body pins nothing, so
+    // `contributor_is_trusted` has no required position and is deliberately not
+    // asserted here.
+    const at = (statement: string) => {
+      const index = migration.indexOf(statement);
+      // indexOf answers -1 for a statement that is not there, and -1 sorts
+      // before everything — so ordering alone would pass on a retirement whose
+      // statement had been deleted outright. The existence check is the point.
+      expect(index, `${statement} is missing from the migration`).toBeGreaterThan(-1);
+      return index;
+    };
+
+    const table = at('drop table public.label_sets cascade;');
+    expect(at('drop function if exists public.moderate_label_set(uuid, text);')).toBeLessThan(table);
+    expect(at('drop function if exists public.contributor_banned(uuid);')).toBeGreaterThan(table);
+    expect(at('drop function if exists public.label_sets_gate_submissions();')).toBeGreaterThan(table);
   });
 });

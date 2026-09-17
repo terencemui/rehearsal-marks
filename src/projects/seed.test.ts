@@ -62,34 +62,55 @@ describe('the development seed', () => {
   it('creates its own owner, so a reset needs no account to exist first', () => {
     const seed = readFileSync(seedUrl, 'utf8');
 
+    // Structural claims run against the executable SQL, with comments
+    // stripped: a presence assertion against the raw file is satisfied by
+    // prose, so commenting out the insert it is guarding would leave it green.
+    const sql = executableSql(seed);
+
     // The fixture supplies the account the project is foreign-keyed to...
-    expect(seed).toMatch(/insert into auth\.users/);
-    expect(seed).toMatch(/'dev@example\.com'/);
-    expect(seed).toMatch(/on conflict \(id\) do nothing/);
+    expect(sql).toMatch(/insert into auth\.users/);
+    expect(sql).toMatch(/'dev@example\.com'/);
+    expect(sql).toMatch(/on conflict \(id\) do nothing/);
 
     // ...rather than looking one up by an address that must already exist.
     // That lookup aborted every `db reset` on a machine without the account,
     // and keeping it working meant committing a real address to a public repo.
-    // Neither may come back.
-    expect(seed).not.toMatch(/where email =/);
-    expect(seed).not.toMatch(/raise exception/);
+    // The ban is on the lookup, not on raising in general: a seed that refuses
+    // to run against a database it was not meant for is worth having.
+    expect(sql).not.toMatch(/where email =/);
 
-    // The project names the account this same file creates: a mismatch is an
-    // FK violation on reset, not a silent no-op.
-    const created = uuidsAfter(seed, /insert into auth\.users/);
-    const referenced = uuidsAfter(seed, /insert into public\.projects/);
-    expect(referenced).toContain(created[0]);
+    // The project's `owner_id` is the second value in its insert — the row's
+    // own id comes first — and it must be the account this same file created,
+    // so a mismatch is an FK violation on reset rather than a silent no-op.
+    // Positional on purpose: `toContain` alone is existential and would pass
+    // with the id appearing anywhere at all.
+    const created = uuidsAfter(sql, /insert into auth\.users/);
+    const referenced = uuidsAfter(sql, /insert into public\.projects/);
+    expect(referenced[1]).toBe(created[0]);
   });
 });
 
 /**
+ * The seed's executable SQL, with comments removed so that an assertion about
+ * what the file *does* cannot be satisfied by what it *says*. The seed's
+ * strings carry no `--` or `/*`, so line comments cannot hide inside a literal
+ * here; a brace-aware pass would be needed if that ever changed.
+ */
+function executableSql(seed: string): string {
+  return seed.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+}
+
+/**
  * The uuids the SQL names from the marked statement onward, in order. The
  * markers and movements documents are excluded for free: their ids are
- * double-quoted JSON, not single-quoted SQL.
+ * double-quoted JSON, not single-quoted SQL. A marker that does not match
+ * throws rather than scanning from the top of the file, which would answer
+ * with the wrong statement's uuids and quietly pass the cross-check above.
  */
 function uuidsAfter(sql: string, marker: RegExp): string[] {
-  const from = sql.slice(marker.exec(sql)?.index ?? 0);
-  return [...from.matchAll(
+  const at = marker.exec(sql);
+  if (!at) throw new Error(`Marker ${marker} not found in supabase/seed.sql`);
+  return [...sql.slice(at.index).matchAll(
     /'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'/g,
   )].map((match) => match[1]);
 }
