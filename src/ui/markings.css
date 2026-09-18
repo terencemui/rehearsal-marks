@@ -1,0 +1,23 @@
+/* The markings page (T55). The surface itself is the player's — the title
+   band, the split, the timeline and the markers panel are all shared with the
+   practice surface, and their styles live in player.css. Only the empty first
+   paint is this page's own: a project with nothing marked on it. */
+
+/* The empty column beside the recording. It sits where the markers panel
+   would, under the same small heading, so a project with marks and a project
+   without read as the same column in two states rather than two surfaces. */
+.markings-empty-copy {
+  margin: 0;
+  font: 400 15px/22px system-ui, sans-serif;
+  color: #475569;
+}
+
+/* The key that fills the column, once a recording is playing. */
+.markings-empty-copy kbd {
+  padding: 1px 5px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  font: 600 13px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #0f172a;
+}

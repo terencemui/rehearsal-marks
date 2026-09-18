@@ -199,6 +199,27 @@ towers over the recording. */
   color: #94a3b8;
 }
 
+/* The panel's heading row: the label with the markings page's way in (T55)
+   flush right, so the door sits with the list it opens onto. Quiet — a small
+   teal link, never a button — because the panel's job is the marks. */
+.player-markers-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.player-markings-open {
+  font: 600 12px/16px system-ui, sans-serif;
+  color: #0f766e;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.player-markings-open:hover {
+  text-decoration: underline;
+}
+
 /* The list scrolls within its band. In the side-by-side split the player
    measures that band against the video's bottom and caps the list inline, so
    a marker-heavy project never outruns the recording. In the stacked layout

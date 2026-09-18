@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { Link } from 'react-router';
 import type { LabeledMarker } from '../domain';
 import type { Movement } from '../domain';
 import { movementForTime } from '../domain';
@@ -38,6 +39,13 @@ export interface MarkersPanelProps {
    * where there is no video bottom to stay within.
    */
   maxHeight?: number;
+  /**
+   * The markings page's address — the quiet way in from the panel (T55),
+   * rendered beside the heading. The panel already holds the marks, so the
+   * door sits where the intent forms. Omitted in a read-only session, which
+   * offers no way in at all.
+   */
+  markingsHref?: string;
 }
 
 /** Markers grouped under their movement; markers before the first movement (or with no movements) lead. */
@@ -128,6 +136,7 @@ export function MarkersPanel({
   onSeek,
   onSeekMovement,
   maxHeight,
+  markingsHref,
 }: MarkersPanelProps) {
   const listRef = useRef<HTMLOListElement>(null);
   /** When the reader last scrolled the list themselves; null until they do. */
@@ -229,7 +238,16 @@ export function MarkersPanel({
 
   return (
     <section className="player-markers" aria-label="Markers">
-      <h2 className="player-markers-heading">Markers</h2>
+      <div className="player-markers-head">
+        <h2 className="player-markers-heading">Markers</h2>
+        {markingsHref !== undefined && (
+          // The way into the markings page (T55), where the marks can be
+          // changed. It navigates; it edits nothing from here.
+          <Link to={markingsHref} className="player-markings-open">
+            Markings <span aria-hidden="true">→</span>
+          </Link>
+        )}
+      </div>
       <ol
         ref={listRef}
         className="player-marker-list"
