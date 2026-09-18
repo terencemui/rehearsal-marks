@@ -19,6 +19,16 @@ export interface PlayerKeysOptions {
    */
   settled: boolean;
   /**
+   * Whether the surface has stood its shortcuts down (T60). The markings
+   * page's leave prompt is what sets it: the question is about the work, and
+   * a key that edits the work or moves the recording behind the question
+   * would be answering it on the owner's behalf. It silences every key this
+   * hook binds, the correction keys included, so it is checked above all of
+   * them rather than alongside `settled`. Nothing else in the app takes the
+   * keyboard, so nothing else sets it.
+   */
+  inert?: boolean;
+  /**
    * What `M` does — placing a mark at the playhead. Supplied only by the
    * markings page (T56), where adding is the job; the practice surface and the
    * read-only view pass nothing and the key is simply absent, so the surfaces
@@ -67,6 +77,7 @@ export function usePlayerKeys({
   controller,
   markers,
   settled,
+  inert = false,
   onAddMarker,
   onNudge,
   onWalk,
@@ -87,6 +98,15 @@ export function usePlayerKeys({
         target.isContentEditable);
 
     if (inTextInput) return;
+
+    // A surface that has stood its shortcuts down hears nothing at all (T60) —
+    // and this is the one gate above every key, the correction keys included.
+    // The two gates below ask different questions and are deliberately not one:
+    // `settled` asks whether there is a recording to act on, which is why the
+    // corrections sit above it, while this asks whether the page should be
+    // acting at all. A nudge behind the leave prompt would move the very mark
+    // its owner is being asked whether to keep.
+    if (inert) return;
 
     // Plain chords: no modifier that means something else to the browser or the
     // operating system. `Shift` is not one of them — it is the correction keys'

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router';
+import { createMemoryRouter, RouterProvider, useLocation, useNavigate } from 'react-router';
 import { act, render } from '@testing-library/react';
 import { onTestFinished, vi } from 'vitest';
 import App from '../App';
@@ -42,8 +42,9 @@ export interface RenderAppOptions {
 
 /**
  * Renders the app on a fake server project surface with mocked seams, served
- * by a memory router — the one App-level seam, so the tests control the
- * starting URL and can drive Back and Forward (T44). App's env gate (T51)
+ * by a memory-backed data router (T60) — the one App-level seam, so the tests
+ * control the starting URL and can drive Back and Forward (T44), and so a page
+ * that refuses to be left (T60) can be caught in the act. App's env gate (T51)
  * needs a wired env to reach the shell at all, so every test stubs one; the
  * api and auth seams keep the test off the network — no supabase-js client is
  * ever constructed.
@@ -88,42 +89,57 @@ export function renderApp({
    */
   const pathRef: { current: string } = { current: initialEntry };
   /** A probe inside the router that hands the helpers the navigate function and
-   * the live location. The async act with a microtask yield is deliberate: React
-   * 19 defers the history listener's location update, and a synchronous act would
-   * read the DOM before the new page commits. */
+   * the live location. Every drive is wrapped in an async act for the same
+   * reason throughout: the page a navigation lands on commits after the act's
+   * own turn, and a synchronous act would read the DOM before it did. */
   function HistoryProbe() {
     const navigate = useNavigate();
     const location = useLocation();
     useEffect(() => {
+      // The navigation is awaited, not merely started: a data router resolves
+      // `navigate` when the navigation settles, and a blocked one settles as
+      // blocked — so a test that drives the app into a leave prompt knows the
+      // router is holding still by the time it asserts.
       go = async (delta: number) => {
         await act(async () => {
-          navigate(delta);
-          await Promise.resolve();
+          await navigate(delta);
         });
       };
       navigateTo = async (path: string) => {
         await act(async () => {
-          navigate(path);
-          await Promise.resolve();
+          await navigate(path);
         });
       };
       pathRef.current = location.pathname;
     }, [navigate, location]);
     return null;
   }
-  const view = render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <HistoryProbe />
-      <App
-        controllerFactory={() => controller}
-        projectsApiFactory={() => api}
-        // Stubbed by default so no test reaches YouTube's oEmbed endpoint, and
-        // no test constructs a supabase-js client.
-        fetchTitle={fetchTitle}
-        authFactory={() => auth.controller}
-      />
-    </MemoryRouter>,
+  // A memory-backed data router (T60), matching the app's own — `main.tsx`
+  // carries why the router is a data one rather than a declarative one. The
+  // splat route leaves `App`'s internal `<Routes>` to do the real matching,
+  // exactly as the running app does.
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <>
+            <HistoryProbe />
+            <App
+              controllerFactory={() => controller}
+              projectsApiFactory={() => api}
+              // Stubbed by default so no test reaches YouTube's oEmbed
+              // endpoint, and no test constructs a supabase-js client.
+              fetchTitle={fetchTitle}
+              authFactory={() => auth.controller}
+            />
+          </>
+        ),
+      },
+    ],
+    { initialEntries: [initialEntry] },
   );
+  const view = render(<RouterProvider router={router} />);
   return {
     ...view,
     api,

@@ -1,0 +1,78 @@
+/* The leave prompt (T60): the one question the markings page asks before it
+   lets its owner walk away from work they have not committed. */
+
+/* The page's own content stays visible behind the question — the owner is
+   being asked about what they can still see, not taken somewhere else. The
+   backdrop is what makes the page inert to the pointer. */
+.unsaved-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(15 23 42 / 38%);
+  box-sizing: border-box;
+}
+
+.unsaved-dialog {
+  max-width: 30rem;
+  padding: 20px 22px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 24%);
+}
+
+.unsaved-dialog-question {
+  margin: 0 0 16px;
+  font: 400 15px/22px system-ui, sans-serif;
+  color: #1e293b;
+}
+
+.unsaved-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The two answers are one pair, so they share a shape and differ only in
+   colour: whatever else separates them, neither may read as the louder one. */
+/* Width and style only, never the `border` shorthand: this selector is more
+   specific than either button's own rule, so a shorthand here would set
+   border-color too and win — flattening both answers to currentColor. The
+   width and style are the shared shape; the colour is each answer's own. */
+.unsaved-dialog-actions button {
+  padding: 6px 14px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 6px;
+  cursor: pointer;
+  font: 600 13px/18px system-ui, sans-serif;
+}
+
+/* Stay carries the page's own accent: it is the answer that keeps the work,
+   and the one a stray Return should land on. */
+.unsaved-dialog-stay {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+.unsaved-dialog-stay:hover {
+  background: #115e59;
+  border-color: #115e59;
+}
+
+/* Discard keeps the destructive colour its verb earns, so the two answers
+   never read as a plain yes/no. */
+.unsaved-dialog-discard {
+  border-color: #b91c1c;
+  background: none;
+  color: #b91c1c;
+}
+
+.unsaved-dialog-discard:hover {
+  background: #b91c1c;
+  color: #fff;
+}

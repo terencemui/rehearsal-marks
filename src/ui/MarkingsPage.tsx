@@ -22,9 +22,11 @@ import type { AddMarkerControlProps, MarkersAuthoring } from './MarkersPanel';
 import { NotFoundPage } from './NotFoundPage';
 import { RecordingSurface } from './RecordingSurface';
 import { SaveStatusLine } from './SaveStatusLine';
+import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
+import { useUnsavedChanges } from './useUnsavedChanges';
 import './markings.css';
 
 /** One markings page session: the autosave over the loaded project and its controller. */
@@ -233,6 +235,40 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   /** The selected mark itself, as the surface is rendering it. */
   const selected = labeled.find((marker) => marker.id === selectedId) ?? null;
 
+  // The mode the session was built in, read off the autosave that owns it: this
+  // page shows a Save control exactly when the project waits for one.
+  const needsCommit = autosave.mode === 'manual';
+  /**
+   * Whether the server holds something other than what the record holds —
+   * `dirty` (waiting), `saving` (asked for, unanswered) and `error` (asked for,
+   * refused) alike. The failure counts because the record is still pending;
+   * the in-flight write counts because the commit has been *asked for*, not
+   * made, and a rejection arriving after the page is gone would come back to a
+   * disposed autosave with nothing left to retry it.
+   */
+  const uncommitted = status === 'dirty' || status === 'saving' || status === 'error';
+  /**
+   * Whether there is a commit for the Save control to make — `uncommitted` less
+   * the write already in flight. Save is how a waiting record is written and
+   * how a refused one is retried; offering it mid-write would only start a
+   * second.
+   */
+  const canCommit = status === 'dirty' || status === 'error';
+  /**
+   * Whether the page has work only its owner can settle (T60) — a `manual`
+   * record with something the server has not confirmed. An `auto` record never
+   * blocks, because a write is already scheduled for it: the page is not what
+   * settles that work, so leaving is not a decision to put to its owner. (An
+   * in-app exit does settle it — the session's teardown flushes — but closing
+   * the tab runs no teardown at all, and the debounce window is the autosave's
+   * own exposure rather than something this question reaches.) Only a `manual`
+   * record has nothing that will write it, which is why this is narrower than
+   * `uncommitted` and is named for what leaving would cost rather than for
+   * what the record holds.
+   */
+  const hasWorkToLose = needsCommit && uncommitted;
+  const blocker = useUnsavedChanges(hasWorkToLose);
+
   /**
    * Places a mark where the recording is — the playhead the student is hearing,
    * never zero and never a guess. The domain derives its label and sorts it into
@@ -324,6 +360,10 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     controller,
     markers: labeled,
     settled: session.settled,
+    // The leave prompt takes the keyboard while it is up (T60): a mark placed
+    // or a seek made behind the question would be changing the very work the
+    // owner is being asked about.
+    inert: blocker.state === 'blocked',
     onAddMarker: addAtPlayhead,
     // The correction keys act on the mark being corrected and on nothing else,
     // so with none selected they do nothing at all.
@@ -378,16 +418,14 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     timeError,
   };
 
-  // The mode the session was built in, read off the autosave that owns it: this
-  // page shows a Save control exactly when the project waits for one.
-  const needsCommit = autosave.mode === 'manual';
-  // A failed commit is the one other state the control must stay live for: the
-  // autosave parks in `error` with the record still pending, and Save is how a
-  // student retries it.
-  const canCommit = status === 'dirty' || status === 'error';
-
   return (
     <>
+      {/* The leave prompt (T60), while the router holds a navigation the owner
+          asked for. Rendered inside the page's own tree so the recording it is
+          asking about stays behind it, visible and unmoved. */}
+      {blocker.state === 'blocked' && (
+        <UnsavedChangesDialog onStay={blocker.reset} onDiscard={blocker.proceed} />
+      )}
       <div className="markings-save-bar">
         <SaveStatusLine autosave={autosave} />
         {needsCommit && (
