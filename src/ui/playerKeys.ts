@@ -13,6 +13,13 @@ export interface PlayerKeysOptions {
    * to play, seek, or jump to, so every shortcut is inert.
    */
   settled: boolean;
+  /**
+   * What `M` does — placing a mark at the playhead. Supplied only by the
+   * markings page (T56), where adding is the job; the practice surface and the
+   * read-only view pass nothing and the key is simply absent, so the surfaces
+   * that may not author carry no authoring key at all.
+   */
+  onAddMarker?: () => void;
 }
 
 /**
@@ -29,8 +36,18 @@ export interface PlayerKeysOptions {
  * `Alt` and the arrows stay the browser's — the marker nudge is not here, so
  * Alt+← is the browser's Back again, an accepted consequence of playback-only
  * — and `Shift`+arrows stay the browser's too (scroll, selection).
+ *
+ * One key is the markings page's alone: `M` places a mark at the playhead, and
+ * only a caller that supplies `onAddMarker` — the page where authoring is the
+ * job (T56) — hears it. The practice surface's copy of this hook carries no
+ * adding key and no way to author, which is the point of it being optional.
  */
-export function usePlayerKeys({ controller, markers, settled }: PlayerKeysOptions): void {
+export function usePlayerKeys({
+  controller,
+  markers,
+  settled,
+  onAddMarker,
+}: PlayerKeysOptions): void {
   const keyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   keyDownRef.current = (event: KeyboardEvent) => {
     // One action per press: holding a key repeats the event at the OS repeat
@@ -68,6 +85,17 @@ export function usePlayerKeys({ controller, markers, settled }: PlayerKeysOption
     // is the browser's Back again, an accepted consequence of playback-only.
     const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
     const plainArrows = plain && !event.shiftKey;
+
+    // The one authoring key, on the one surface that authors (T56): `M` places
+    // a mark at the playhead and touches nothing else, so the student hears the
+    // landmark and keeps listening. A plain chord only — ⌘M minimises the
+    // window on macOS — and unclaimed since ADR-0005 removed the A–Z letter
+    // jumps.
+    if (plain && onAddMarker !== undefined && event.key.toLowerCase() === 'm') {
+      onAddMarker();
+      return;
+    }
+
     if (plainArrows && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
       // Plain arrows seek ∓5s from the live playhead — the store's value can
       // trail the audible position by a timeupdate interval.

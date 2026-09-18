@@ -5,11 +5,28 @@ import type { ProjectVisibility, PublicationStatus, ServerProject, ProjectUpdate
  * The save-state line's vocabulary: `dirty` and `saving` both read as
  * "Saving…" in the UI; `saved-review` is a save that returned a public
  * project to the review queue (T52), reading as "back to review"; `error` is
- * the one failure state the user must see. There is no user-facing save
- * anywhere — `flush` settles pending writes on session exit, page teardown,
- * and the error card's retry.
+ * the one failure state the user must see. In `auto` mode no user-facing save
+ * exists — `flush` settles pending writes on session exit, page teardown, and
+ * the error card's retry; in `manual` mode the Save control is that flush, and
+ * it is the only write there is.
  */
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'saved-review' | 'error';
+
+/**
+ * How a pending write is settled (ADR-0007). `auto` is the app's everywhere
+ * else: the debounce writes ~500ms after the last mutation. `manual` is the
+ * markings page's mode for a project the server would return to review — the
+ * debounce never schedules, so a mutation only dirties the record and `flush`
+ * is the one thing that writes. The mode is fixed for the controller's life,
+ * because the project's review state is what chose it.
+ *
+ * The two modes name what settles a write, and `manual` is the truthful answer
+ * for a session that has no writes at all — the read-only view's autosave,
+ * whose `flush` is a no-op. `auto` would claim a self-writing record; a third
+ * mode would only restate what that session's own `readOnly` guard already
+ * decides.
+ */
+export type SaveMode = 'auto' | 'manual';
 
 /**
  * Debounced autosave over one server project: every mutation is applied to
@@ -20,6 +37,12 @@ export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'saved-review' 
  * mutation never rewrites it locally.
  */
 export interface Autosave {
+  /**
+   * How this controller settles a pending write. A surface tearing down reads
+   * it to decide whether to flush: flushing a `manual` record would be the
+   * commit its owner has not made yet.
+   */
+  readonly mode: SaveMode;
   /** The current in-memory record — the pending state. */
   get(): ServerProject;
   /**
@@ -53,11 +76,16 @@ export interface AutosaveOptions {
   save: (record: ServerProject) => Promise<ServerProject>;
   /** Debounce window; defaults to the spec's ~500ms. */
   debounceMs?: number;
+  /**
+   * How a pending write is settled; defaults to `auto`. `manual` never
+   * schedules a write — the caller's `flush` is the only thing that writes.
+   */
+  mode?: SaveMode;
 }
 
 export function createAutosave(
   initial: ServerProject,
-  { save, debounceMs = 500 }: AutosaveOptions,
+  { save, debounceMs = 500, mode = 'auto' }: AutosaveOptions,
 ): Autosave {
   let current = initial;
   let currentVersion = 0;
@@ -84,6 +112,10 @@ export function createAutosave(
   }
 
   function schedule(): void {
+    // A manual controller has no debounce at all: the record waits for its
+    // owner's commit, so there is no window of time after which the server is
+    // written to. `flush` is the only path to a write.
+    if (mode === 'manual') return;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
@@ -131,6 +163,7 @@ export function createAutosave(
   }
 
   return {
+    mode,
     get: () => current,
 
     mutate(fn) {

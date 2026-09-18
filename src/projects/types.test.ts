@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { marker } from '../test/marker-fixture';
+import { serverProject } from '../test/server-project-fixture';
 import { ProjectsError } from './errors';
 import {
   parseProjectRow,
+  requiresExplicitSave,
   returnsToReview,
   summarizeProject,
   type ProjectSummary,
@@ -148,5 +150,31 @@ describe('returnsToReview', () => {
 
   it('is false for a private project — private work never enters review', () => {
     expect(returnsToReview(review({ visibility: 'private' }), review({ visibility: 'private', publicationStatus: 'pending' }))).toBe(false);
+  });
+});
+
+describe('requiresExplicitSave', () => {
+  /** A review state shorthand — public by default, so tests name only what varies. */
+  const project = (overrides: Partial<{ visibility: 'public' | 'private'; publicationStatus: 'pending' | 'published' | 'rejected' }> = {}) =>
+    serverProject({
+      visibility: 'public' as const,
+      publicationStatus: 'published' as const,
+      ...overrides,
+    });
+
+  it('is true for a published public project — a write takes it off the gallery', () => {
+    expect(requiresExplicitSave(project())).toBe(true);
+  });
+
+  it('is true for a rejected public project — a write returns it to review too', () => {
+    expect(requiresExplicitSave(project({ publicationStatus: 'rejected' }))).toBe(true);
+  });
+
+  it('is false for a public project still pending — it is in the queue already', () => {
+    expect(requiresExplicitSave(project({ publicationStatus: 'pending' }))).toBe(false);
+  });
+
+  it('is false for a private project — nothing outside the owner’s account is at risk', () => {
+    expect(requiresExplicitSave(project({ visibility: 'private' }))).toBe(false);
   });
 });

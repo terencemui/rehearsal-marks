@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Navigate, useParams } from 'react-router';
 import type { AudioController } from '../audio';
+import { addMarker, createMarker, errorMessage, removeMarker, setAliases } from '../domain';
+import type { LabeledMarker } from '../domain';
 import { createAutosave, createProjectSave } from '../projects/autosave';
 import type { Autosave } from '../projects/autosave';
 import type { ProjectsApi } from '../projects/api';
-import { MarkersPanel } from './MarkersPanel';
+import { requiresExplicitSave } from '../projects/types';
+import { AddMarkerControl, MarkersHead, MarkersPanel } from './MarkersPanel';
+import type { AddMarkerControlProps, MarkersAuthoring } from './MarkersPanel';
 import { NotFoundPage } from './NotFoundPage';
 import { RecordingSurface } from './RecordingSurface';
+import { SaveStatusLine } from './SaveStatusLine';
 import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
@@ -39,7 +44,15 @@ export interface MarkingsPageProps {
  *
  * Deliberately not part of the practice surface (ADR-0007): that surface stays
  * playback-only and carries no editing affordance, only the markers panel's
- * quiet way through. This page is where a project stops being empty.
+ * quiet way through. This page is where a project stops being empty — a mark is
+ * placed with `M` at the playhead, named with the student's own word for it, and
+ * removed if it was a mistake (T56).
+ *
+ * Saving follows what the project is (T56, ADR-0007). A private project, or a
+ * public one still awaiting review, writes itself as the student works; a
+ * published or rejected one writes only when the owner commits, because a write
+ * returns it to review and takes it off the public gallery — a consequence the
+ * page names before the Save control, not after it.
  *
  * A project id that names no row shows the not-found page (T47) instead of a
  * blank or broken surface, with the way back to the Projects list in the page
@@ -96,11 +109,23 @@ export function MarkingsPage({ projectsApi, controllerFactory, onNotice }: Marki
         }
         built = {
           projectId: id,
-          // The same wire the project page saves through: a write reaches the
-          // server only when a persisted field has actually changed, so a page
-          // that edits nothing (T55) sends nothing — the recording load's
-          // duration stamp is not a persisted field.
-          autosave: createAutosave(project, { save: createProjectSave(projectsApi, project) }),
+          autosave: createAutosave(project, {
+            // The same wire the project page saves through: a write reaches the
+            // server only when a persisted field has actually changed, so a
+            // visit that edits nothing sends nothing — the recording load's
+            // duration stamp is not a persisted field.
+            save: createProjectSave(projectsApi, project),
+            // The save-mode rule (T56, ADR-0007), decided once from the project
+            // as the server returned it: a published or rejected public project
+            // is one a write disturbs, so it waits for a deliberate commit;
+            // everything else — private, or public and still in the queue —
+            // writes itself as the student works. The mode is fixed for the
+            // session: the client never learns the review state a save left the
+            // server holding (a demotion is the server's fact, surfaced on the
+            // status line), and re-deciding mid-session would swap the save
+            // model out from under work already in progress.
+            mode: requiresExplicitSave(project) ? 'manual' : 'auto',
+          }),
           controller: controllerFactory(),
         };
         setSession(built);
@@ -156,52 +181,159 @@ interface MarkingsSurfaceProps {
 
 /**
  * The page's one session, mounted once its record has landed: the recording
- * plays through the shared surface, and the marks the project already carries
- * sit beside it. Split out from the page so the session hooks run in a
- * component keyed by project — the page itself mounts and unmounts around the
- * read, which hooks cannot follow.
+ * plays through the shared surface, and the marks the project carries sit
+ * beside it, where they can be placed, named and removed (T56). Split out from
+ * the page so the session hooks run in a component keyed by project — the page
+ * itself mounts and unmounts around the read, which hooks cannot follow.
  */
 function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const session = useRecordingSession({ autosave, controller });
-  const { record } = session;
+  const { record, mutate } = session;
   // The playback view of the recording — the shared derivation (T55), the same
   // one the practice surface reads.
   const { labeled, duration, activeMarker } = useLabeledPlayback({ controller, record });
+  /**
+   * The alias the domain refused, and where it was refused. Held by the row
+   * that caused it — an alias rule broken on one mark says nothing about the
+   * next — and cleared by the next attempt on that mark, whatever it says.
+   */
+  const [aliasError, setAliasError] = useState<{ markerId: string; message: string } | null>(null);
+  const status = useSyncExternalStore(autosave.subscribe, autosave.status);
 
-  // The playback keys shared with the practice surface (T55): play and pause,
-  // seek, and walk the marks — inert until the load settles.
-  usePlayerKeys({ controller, markers: labeled, settled: session.settled });
+  /**
+   * Places a mark where the recording is — the playhead the student is hearing,
+   * never zero and never a guess. The domain derives its label and sorts it into
+   * place, so a mark placed out of order still lands in order.
+   */
+  const addAtPlayhead = useCallback((): void => {
+    mutate((current) => ({
+      ...current,
+      markers: addMarker(current.markers, createMarker(controller.getCurrentTime())),
+    }));
+  }, [controller, mutate]);
+
+  // The playback keys shared with the practice surface — play and pause, seek,
+  // and walk the marks — plus this page's one authoring key, `M`, inert until
+  // the load settles like the rest.
+  usePlayerKeys({
+    controller,
+    markers: labeled,
+    settled: session.settled,
+    onAddMarker: addAtPlayhead,
+  });
+
+  const authoring: MarkersAuthoring = {
+    onAdd: addAtPlayhead,
+    addDisabled: !session.settled,
+    onAlias(marker: LabeledMarker, alias: string): string {
+      const text = alias.trim();
+      try {
+        // The domain is the one that decides: an alias it refuses throws with
+        // its own guidance, and the mutation never happens.
+        mutate((current) => ({
+          ...current,
+          markers: setAliases(current.markers, marker.id, text === '' ? [] : [text]),
+        }));
+      } catch (error) {
+        setAliasError({ markerId: marker.id, message: errorMessage(error) });
+        // The refused text is not what the mark holds; the field goes back to
+        // the alias it does hold.
+        return marker.aliases[0] ?? '';
+      }
+      // Cleared for this row only: a rule broken on one mark is that mark's
+      // complaint, and another row's success says nothing about it.
+      setAliasError((current) => (current?.markerId === marker.id ? null : current));
+      return text;
+    },
+    aliasError,
+    onDelete(marker: LabeledMarker): void {
+      // The mark and its complaint go together.
+      setAliasError((current) => (current?.markerId === marker.id ? null : current));
+      mutate((current) => ({
+        ...current,
+        markers: removeMarker(current.markers, marker.id),
+      }));
+    },
+  };
+
+  // The mode the session was built in, read off the autosave that owns it: this
+  // page shows a Save control exactly when the project waits for one.
+  const needsCommit = autosave.mode === 'manual';
+  // A failed commit is the one other state the control must stay live for: the
+  // autosave parks in `error` with the record still pending, and Save is how a
+  // student retries it.
+  const canCommit = status === 'dirty' || status === 'error';
 
   return (
-    <RecordingSurface
-      controller={controller}
-      record={record}
-      videoRef={session.containerRef}
-      settled={session.settled}
-      loadFailed={session.loadFailed}
-      onRetryLoad={session.retryLoad}
-      side={(markersMaxHeight) =>
-        labeled.length === 0 ? (
-          <MarkingsEmptyState />
-        ) : (
-          // The same panel the practice surface shows: the same rows, the same
-          // derived labels, the same movement grouping — and the rows jump the
-          // recording when clicked. What changes on this page is only what can
-          // be done to them (T56).
-          <MarkersPanel
-            markers={labeled}
-            movements={record.movements}
-            duration={duration}
-            activeId={activeMarker?.id ?? null}
-            onSeek={(marker) => controller.seek(marker.time)}
-            onSeekMovement={(movement) => controller.seek(movement.start)}
-            maxHeight={markersMaxHeight ?? undefined}
-          />
-        )
-      }
-    />
+    <>
+      <div className="markings-save-bar">
+        <SaveStatusLine autosave={autosave} />
+        {needsCommit && (
+          <button
+            type="button"
+            className="markings-save"
+            disabled={!canCommit}
+            // A failed flush rejects; the status line is that failure's own
+            // surface, and an unhandled rejection would drown it.
+            onClick={() => void autosave.flush().catch(() => {})}
+          >
+            Save changes
+          </button>
+        )}
+        {needsCommit && <p className="markings-save-note">{RETURN_TO_REVIEW_NOTE}</p>}
+      </div>
+      <RecordingSurface
+        controller={controller}
+        record={record}
+        videoRef={session.containerRef}
+        settled={session.settled}
+        loadFailed={session.loadFailed}
+        onRetryLoad={session.retryLoad}
+        side={(markersMaxHeight) =>
+          labeled.length === 0 ? (
+            <MarkingsEmptyState onAdd={addAtPlayhead} addDisabled={!session.settled} />
+          ) : (
+            // The same panel the practice surface shows: the same rows, the
+            // same derived labels, the same movement grouping — and the rows
+            // jump the recording when clicked. What changes on this page is
+            // only what can be done to them (T56), which the authoring surface
+            // supplies.
+            <MarkersPanel
+              markers={labeled}
+              movements={record.movements}
+              duration={duration}
+              activeId={activeMarker?.id ?? null}
+              onSeek={(marker) => controller.seek(marker.time)}
+              onSeekMovement={(movement) => controller.seek(movement.start)}
+              maxHeight={markersMaxHeight ?? undefined}
+              authoring={authoring}
+            />
+          )
+        }
+      />
+    </>
   );
 }
+
+/**
+ * The consequence, named before the write (T56, ADR-0007). A published or
+ * rejected public project is one the owner did not ask to disturb: the server's
+ * review trigger returns it to the queue on any edit, and a published one leaves
+ * the public gallery until a maintainer approves it again. The page says so
+ * before the Save control is used, never after it — the consequence is one the
+ * owner chose knowingly or not at all.
+ *
+ * The exception is named too, because the owner cannot tell from here which
+ * kind they are: a trusted user's commit stays published, and the server is what
+ * decides. The page never asks.
+ */
+const RETURN_TO_REVIEW_NOTE =
+  'This project is public and already reviewed. Saving returns it to review and takes it off ' +
+  'the public gallery until a maintainer approves it again. A trusted user’s edits publish ' +
+  'immediately.';
+
+/** The empty column's own way to fill itself — the same action the head offers. */
+type MarkingsEmptyStateProps = AddMarkerControlProps;
 
 /**
  * The empty first paint (T55): a project with nothing marked on it says the one
@@ -209,19 +341,21 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
  * The recording is playable either way — that is what makes the first mark
  * placeable at all.
  *
- * The prompt names the action in the tense it is true in. Marking is not wired
- * up on this page yet (T56 owns the `M` key and the save rule), so the copy
- * frames placing a mark as what fills the column once it lands — never as an
- * instruction that works right now, which would be a promise the page cannot
- * keep.
+ * Since T56 the prompt names an action that works: marking is wired up, so the
+ * copy is an instruction rather than a promise about a later release. It leads
+ * with the key, because marking is a listening pass and the key is what keeps
+ * the hands on the recording; the control beside it is the same action for a
+ * pointer.
  */
-function MarkingsEmptyState() {
+function MarkingsEmptyState({ onAdd, addDisabled }: MarkingsEmptyStateProps) {
   return (
     <section className="markings-empty" aria-label="Markers">
-      <h2 className="player-markers-heading">Markers</h2>
+      <MarkersHead>
+        <AddMarkerControl onAdd={onAdd} addDisabled={addDisabled} />
+      </MarkersHead>
       <p className="markings-empty-copy">
-        Nothing marked yet. This column fills once marking lands — play the recording, press{' '}
-        <kbd>M</kbd> where a landmark goes by, and the mark falls at the playhead.
+        Nothing marked yet. Play the recording and press <kbd>M</kbd> where a landmark goes by —
+        the marker falls at the playhead, and you can name it afterwards.
       </p>
     </section>
   );

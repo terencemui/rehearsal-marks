@@ -166,6 +166,9 @@ function projectRecordFrom(project: PublicProject): ServerProject {
  */
 function readOnlyAutosave(record: ServerProject): Autosave {
   return {
+    // Nothing here settles itself, because nothing here writes at all — the
+    // reading session's own guard, alongside the readOnly prop.
+    mode: 'manual',
     get: () => record,
     mutate: () => record,
     status: () => 'idle',
