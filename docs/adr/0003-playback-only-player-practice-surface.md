@@ -2,6 +2,7 @@
 
 **Status:** Accepted — 2026-08-26
 **Caught up — 2026-08-28:** the timeline strip's flags and playhead were retired once the side column gained the markers panel (T38's remake, then the panel refinement). The strip now carries only the played fill; the marks show in the markers panel, whose rows are the click-to-jump surface the passages below describe as flags.
+**Caught up — 2026-09-17:** the `A`–`Z` jumps listed below as surviving were removed entirely by ADR-0005, which supersedes that clause; no letter-key handling exists in the player. `M` is therefore an unclaimed key rather than "a plain letter", and it returns as the add-a-marker key — but only on the **Markings page** (ADR-0007), never here. The Decision's keyboard sentence and the "What this invalidates" row about `M` should be read with that correction. ADR-0007 also closes the editing gap accepted below, so this ADR's "the app cannot author markers" and "a published set cannot be changed" no longer hold.
 **Supersedes:** the two-posture (Playback | Label) player design, and spec 0001's in-player editing (see _Consequences → What this invalidates_)
 
 ## Context
