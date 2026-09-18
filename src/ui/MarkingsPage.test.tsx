@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { LoadOptions } from '../audio';
@@ -8,6 +8,7 @@ import { renderApp } from '../test/app-fixture';
 import { mockController } from '../test/controller-fixture';
 import { marker } from '../test/marker-fixture';
 import { fakeProjectsApi } from '../test/projects-fixture';
+import { stubRevealGeometry } from '../test/reveal-fixture';
 import { serverProject } from '../test/server-project-fixture';
 import { waitForPlayerSettled } from '../test/settle-player';
 
@@ -74,6 +75,38 @@ function closeTheTab(): boolean {
   const event = new Event('beforeunload', { cancelable: true });
   window.dispatchEvent(event);
   return event.defaultPrevented;
+}
+
+/**
+ * The row the page is showing as selected (T57) — the one carrying the
+ * correction block, found by the attribute rather than the class so the test
+ * asserts what a reader is told, not only what is coloured.
+ */
+function selectedRow(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('li[aria-current="true"]');
+}
+
+/** The selected mark's time field — the exact place a correction is read and typed. */
+function timeField(container: HTMLElement): HTMLInputElement {
+  const field = container.querySelector<HTMLInputElement>('.markings-row-time');
+  if (field === null) throw new Error('No time field — no mark is selected.');
+  return field;
+}
+
+/** One of the selected row's nudge controls, by the words it shows. */
+function nudgeControl(direction: 'earlier' | 'later'): HTMLElement {
+  return screen.getByRole('button', { name: direction === 'earlier' ? '−0.1s' : '+0.1s' });
+}
+
+/**
+ * Nudges from the keyboard. The bracket keys are userEvent's own descriptor
+ * syntax, so the press is dispatched directly — the same keydown the hook
+ * listens for, Shift included.
+ */
+function pressNudge(key: '[' | ']', shift = false): void {
+  // A real keyboard reports the shifted character — Shift+[ arrives as "{".
+  const shifted = key === '[' ? '{' : '}';
+  fireEvent.keyDown(window, { key: shift ? shifted : key, shiftKey: shift });
 }
 
 describe('the markings page opens on a project and plays it (T55)', () => {
@@ -403,6 +436,400 @@ describe('a mark can be placed, named and removed (T56)', () => {
     // so the authoring key its neighbour owns is simply not bound here.
     await user.keyboard('m');
     expect(markerRows(container)).toHaveLength(2);
+    expect(api.saveProject).not.toHaveBeenCalled();
+  });
+});
+
+describe('a mark can be corrected: nudge and typed time (T57)', () => {
+  it('selects a mark by clicking it, and says which one is selected', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Nothing is selected until the student picks a mark: the column opens as
+    // the list it is.
+    expect(selectedRow(container)).toBeNull();
+    expect(container.querySelector('.markings-correct')).toBeNull();
+
+    await user.click(markerRows(container)[0]);
+
+    // The row holding the playhead and the row being corrected are different
+    // facts — the first moves on its own, the second is a choice — so the
+    // selection is the row that was clicked, and it is named for a reader
+    // rather than only coloured.
+    const selected = selectedRow(container);
+    expect(selected).not.toBeNull();
+    expect(within(selected!).getByText('A')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
+    // Clicking still jumps: selecting a mark is how it gets heard.
+    expect(controller.getCurrentTime()).toBe(10);
+  });
+
+  it('nudges the selected mark a tenth of a second either way from the bracket keys', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    // The correction block reads the exact time: the row's own clock stays the
+    // whole-second reading a music stand wants, and would not move for a tenth.
+    expect(timeField(container)).toHaveValue('00:10.000');
+
+    pressNudge('[');
+    expect(await screen.findByDisplayValue('00:09.900')).toBeInTheDocument();
+
+    pressNudge(']');
+    pressNudge(']');
+    expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
+
+    await waitFor(() => expect(api.get('p1')?.markers[0].time).toBeCloseTo(10.1));
+  });
+
+  it('nudges a whole second with Shift, and both controls carry the same step', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+
+    pressNudge(']', true);
+    expect(await screen.findByDisplayValue('00:11.000')).toBeInTheDocument();
+
+    pressNudge('[', true);
+    expect(await screen.findByDisplayValue('00:10.000')).toBeInTheDocument();
+
+    // The pointer's way to the same two steps, as Add marker is the pointer's
+    // way to `M`: the keys alone would leave the corrections unreachable
+    // without a keyboard, and Shift-click carries the coarse step they carry.
+    await user.click(nudgeControl('earlier'));
+    expect(await screen.findByDisplayValue('00:09.900')).toBeInTheDocument();
+    await user.click(nudgeControl('later'));
+    expect(await screen.findByDisplayValue('00:10.000')).toBeInTheDocument();
+
+    await user.keyboard('{Shift>}');
+    await user.click(nudgeControl('later'));
+    await user.keyboard('{/Shift}');
+    expect(await screen.findByDisplayValue('00:11.000')).toBeInTheDocument();
+  });
+
+  it('takes a time typed exactly, in the loose forms a student writes', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    const field = timeField(container);
+    // The field opens on the mark's own time, at the precision a correction needs.
+    expect(field).toHaveValue('00:10.000');
+
+    await user.clear(field);
+    await user.type(field, '5:10.5');
+    await user.keyboard('{Enter}');
+
+    // The clock form a score or a teacher's notes is written in, applied as the
+    // exact time it means.
+    expect(await screen.findByDisplayValue('05:10.500')).toBeInTheDocument();
+    await waitFor(() => expect(api.get('p1')?.markers[0].time).toBe(310.5));
+  });
+
+  it('refuses a time that makes no sense, with the domain’s guidance beside the field', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    const field = timeField(container);
+    await user.clear(field);
+    await user.type(field, '1:2:3:4');
+    await user.keyboard('{Enter}');
+
+    // The rule is the domain's, and so is the sentence explaining it — shown
+    // inside the block that holds the field that caused it, not down beside the
+    // alias field's own complaint.
+    const guidance = await screen.findByRole('alert');
+    expect(guidance).toHaveTextContent(/invalid time "1:2:3:4"/i);
+    expect(guidance).toHaveTextContent(/use seconds like/i);
+    expect(guidance.closest('.markings-correct')).not.toBeNull();
+    // The refused text is not what the mark holds: the field goes back to the
+    // time it does hold, and nothing was written.
+    expect(field).toHaveValue('00:10.000');
+    await pastDebounce();
+    expect(api.get('p1')?.markers[0].time).toBe(10);
+  });
+
+  it('drops a refused time when the mark is nudged instead', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    const field = timeField(container);
+    await user.clear(field);
+    await user.type(field, '1:2:3:4');
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/invalid time "1:2:3:4"/i);
+
+    pressNudge(']');
+
+    // A nudge puts the mark's own time back in the field, so the refusal is a
+    // complaint about text that is nowhere any more: it goes when the text
+    // does. Left standing it would sit under a valid time contradicting it, and
+    // be announced a second time when the mark was next selected.
+    expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('holds the row being corrected still when a correction takes the playhead from it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // The playhead sits past the second mark, so the second mark holds it.
+    await user.click(markerRows(container)[1]);
+    act(() => controller.emitPlayback({ currentTime: 22, duration: 372 }));
+
+    const list = container.querySelector('.player-marker-list') as HTMLElement;
+    const rows = markerRows(container).map((button) => button.closest('li') as HTMLElement);
+    // B is at the band's top and A is far below it, so a reveal aimed at either
+    // lands somewhere unmistakable.
+    stubRevealGeometry(list, rows[1], {
+      scrollTop: 200,
+      clientHeight: 320,
+      scrollHeight: 2000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 300,
+      rowBottom: 330,
+    });
+    stubRevealGeometry(list, rows[0], {
+      scrollTop: 200,
+      clientHeight: 320,
+      scrollHeight: 2000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 900,
+      rowBottom: 930,
+    });
+
+    // B moves past the playhead, so A takes it — and following the active row
+    // would carry B's correction block out of the band with it, just as the
+    // student was reading the time they had given it. The row being corrected
+    // is the row they are working on, and it stays where they put it.
+    const field = timeField(container);
+    await user.clear(field);
+    await user.type(field, '0:25');
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByDisplayValue('00:25.000')).toBeInTheDocument();
+    expect(list.scrollTop).toBe(200);
+
+    // Not a panel that has stopped revealing: picking another mark out hands
+    // the list back, and the mark picked — A, far below the band — comes to its
+    // top. The playhead is still audible throughout; the list is the student's
+    // while they are working on a mark, and the playhead's again after.
+    await user.click(markerRows(container)[0]);
+    expect(list.scrollTop).toBe(1000);
+  });
+
+  it('changes nothing about playback: the recording keeps playing as it was', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ playing: true, duration: 372 }));
+
+    await user.click(markerRows(container)[0]);
+    // The click's own jump is the selection's; from here on nothing moves the
+    // playhead.
+    const jumps = vi.mocked(controller.seek).mock.calls.length;
+
+    pressNudge(']');
+    pressNudge(']', true);
+    const field = timeField(container);
+    await user.clear(field);
+    await user.type(field, '12');
+    await user.keyboard('{Enter}');
+
+    // Correcting a mark is a correction, not a transport: the student is still
+    // hearing what they were hearing, from where they were hearing it.
+    expect(controller.getPlaybackState().playing).toBe(true);
+    expect(controller.togglePlay).not.toHaveBeenCalled();
+    expect(vi.mocked(controller.seek).mock.calls.length).toBe(jumps);
+    expect(await screen.findByDisplayValue('00:12.000')).toBeInTheDocument();
+    await waitFor(() => expect(api.get('p1')?.markers[0].time).toBe(12));
+  });
+
+  it('gives a corrected mark its place in time order, and its label follows it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // The first mark moves past the second: order is time's, and a label is a
+    // rank within it — never a name the mark keeps.
+    await user.click(markerRows(container)[0]);
+    const field = timeField(container);
+    await user.clear(field);
+    await user.type(field, '25');
+    await user.keyboard('{Enter}');
+
+    expect(markerTimes(container)).toEqual(['00:20', '00:25']);
+    expect(markerTitles(container)).toEqual(['A', 'B']);
+    // The selection follows the mark it was on, not the position it held.
+    expect(within(selectedRow(container)!).getByText('B')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.get('p1')?.markers).toEqual([
+        expect.objectContaining({ id: 'm1', time: 25 }),
+        expect.objectContaining({ id: 'm2', time: 20 }),
+      ]),
+    );
+  });
+
+  it('selects the mark the arrow keys land on, so the nudge is reachable by keyboard', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.keyboard('{ArrowDown}');
+
+    // ↑/↓ are how this panel is walked, so on this page the mark a walk lands
+    // on is the mark being worked on — otherwise the nudge keys could never
+    // reach a mark without a pointer.
+    expect(controller.getCurrentTime()).toBe(10);
+    expect(within(selectedRow(container)!).getByText('A')).toBeInTheDocument();
+
+    pressNudge(']');
+    expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
+  });
+
+  it('corrects a mark while the recording is still loading — a correction is not playback', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    // A load that never settles: the page is up and the marks are there, and
+    // the recording is not.
+    const controller = mockController({ load: vi.fn(() => new Promise<never>(() => {})) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
+
+    await user.click(markerRows(container)[0]);
+    pressNudge(']');
+
+    // `M` waits for the recording, because it marks a playhead that means
+    // nothing yet. A correction moves a mark the record already holds and asks
+    // the recording for nothing — so it is not held back, and the keys agree
+    // with the block's own controls rather than lagging them.
+    expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
+  });
+
+  it('moves the selection with the click, and drops it when the mark goes', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    expect(within(selectedRow(container)!).getByText('A')).toBeInTheDocument();
+
+    await user.click(markerRows(container)[1]);
+    expect(within(selectedRow(container)!).getByText('B')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Correct marker B' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker B' }));
+
+    // A selection that outlived its mark would be a correction aimed at nothing.
+    expect(selectedRow(container)).toBeNull();
+    expect(container.querySelector('.markings-correct')).toBeNull();
+  });
+
+  it('corrects nothing with no mark selected — the keys are inert until one is', async () => {
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    pressNudge('[');
+    pressNudge(']', true);
+    await pastDebounce();
+
+    expect(selectedRow(container)).toBeNull();
+    expect(container.querySelector('.markings-row-time')).toBeNull();
+    expect(api.get('p1')?.markers.map((m) => m.time)).toEqual([10, 20]);
+    expect(api.saveProject).not.toHaveBeenCalled();
+  });
+
+  it('leaves the marks alone while the student is typing in a correction field', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    await user.click(markerRows(container)[0]);
+
+    // A bracket aimed at a text field is the field's, not a nudge — the gesture
+    // is a shortcut only where there is no field to type into.
+    const alias = aliasFields(container)[0];
+    alias.focus();
+    fireEvent.keyDown(alias, { key: '[' });
+    fireEvent.keyDown(timeField(container), { key: ']' });
+    await pastDebounce();
+
+    expect(api.get('p1')?.markers[0].time).toBe(10);
+  });
+
+  it('offers no selection or correction on the practice surface, and the keys do nothing there', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private' }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    // The practice surface stays playback-only (ADR-0003): clicking a row still
+    // jumps and still does not select, and there is nothing to correct with.
+    await user.click(markerRows(container)[0]);
+    expect(selectedRow(container)).toBeNull();
+    expect(container.querySelector('.markings-correct')).toBeNull();
+    expect(container.querySelector('.markings-row-time')).toBeNull();
+
+    pressNudge('[');
+    pressNudge(']', true);
+    await pastDebounce();
+
+    expect(api.get('p1')?.markers.map((m) => m.time)).toEqual([10, 20]);
     expect(api.saveProject).not.toHaveBeenCalled();
   });
 });
@@ -793,6 +1220,33 @@ describe('leaving with unsaved changes (T60)', () => {
     await user.click(screen.getByRole('button', { name: 'Stay' }));
     await user.keyboard('m');
     expect(markerRows(container)).toHaveLength(1);
+  });
+
+  it('stands the correction keys down with the rest — the prompt takes the whole keyboard', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    // A mark picked out to correct, then an exit asked for.
+    await user.click(markerRows(container)[0]);
+    await user.click(screen.getByRole('button', { name: 'Delete marker B' }));
+    await navigateTo('/help');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    // `[`/`]` are the one pair that sits above the settle gate (T57), because a
+    // correction asks the recording for nothing — so they are the pair a
+    // question about the work can most easily miss. A nudge now would move the
+    // very mark the owner is being asked whether to keep.
+    pressNudge(']');
+    pressNudge('[', true);
+    expect(timeField(container)).toHaveValue('00:10.000');
   });
 
   it('holds the keyboard inside the question, so the page behind it cannot be edited', async () => {

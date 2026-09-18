@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { AudioController } from '../audio';
-import { nextMarker, previousMarker } from '../domain';
+import {
+  nextMarker,
+  previousMarker,
+  NUDGE_COARSE_STEP_SECONDS,
+  NUDGE_STEP_SECONDS,
+} from '../domain';
 import type { LabeledMarker } from '../domain';
 
 export interface PlayerKeysOptions {
@@ -17,8 +22,10 @@ export interface PlayerKeysOptions {
    * Whether the surface has stood its shortcuts down (T60). The markings
    * page's leave prompt is what sets it: the question is about the work, and
    * a key that edits the work or moves the recording behind the question
-   * would be answering it on the owner's behalf. Nothing else in the app
-   * takes the keyboard, so nothing else sets it.
+   * would be answering it on the owner's behalf. It silences every key this
+   * hook binds, the correction keys included, so it is checked above all of
+   * them rather than alongside `settled`. Nothing else in the app takes the
+   * keyboard, so nothing else sets it.
    */
   inert?: boolean;
   /**
@@ -28,6 +35,21 @@ export interface PlayerKeysOptions {
    * that may not author carry no authoring key at all.
    */
   onAddMarker?: () => void;
+  /**
+   * What `[` and `]` do — nudging the mark being corrected by `delta` seconds,
+   * negative for earlier (T57). Supplied only by the markings page, where a mark
+   * can be corrected; the practice surface and the read-only view pass nothing
+   * and the keys are simply absent, so the surfaces that may not change a mark
+   * carry no key that could.
+   */
+  onNudge?: (delta: number) => void;
+  /**
+   * What a walk with ↑/↓ landed on, beside the jump itself (T57). The markings
+   * page takes the mark it reached as the one being corrected, so a correction
+   * is reachable without a pointer. A surface that passes nothing keeps the walk
+   * bare: jumping never selects (ADR-0003).
+   */
+  onWalk?: (marker: LabeledMarker) => void;
 }
 
 /**
@@ -41,14 +63,15 @@ export interface PlayerKeysOptions {
  * through a ref reassigned every render, so a shortcut always sees the current
  * marks and playhead without re-registering per tick.
  *
- * `Alt` and the arrows stay the browser's — the marker nudge is not here, so
- * Alt+← is the browser's Back again, an accepted consequence of playback-only
- * — and `Shift`+arrows stay the browser's too (scroll, selection).
+ * `Alt` and the arrows stay the browser's — Alt+← is the browser's Back on
+ * Windows and Linux, an accepted consequence of playback-only — and
+ * `Shift`+arrows stay the browser's too (scroll, selection).
  *
- * One key is the markings page's alone: `M` places a mark at the playhead, and
- * only a caller that supplies `onAddMarker` — the page where authoring is the
- * job (T56) — hears it. The practice surface's copy of this hook carries no
- * adding key and no way to author, which is the point of it being optional.
+ * The markings page's own keys are the ones this hook binds and no other
+ * surface hears, because each arrives as a callback only that page supplies:
+ * `M` places a mark at the playhead (T56), and `[`/`]` nudge the mark being
+ * corrected (T57). The practice surface's copy carries no adding key and no
+ * correcting key, which is the point of both being optional.
  */
 export function usePlayerKeys({
   controller,
@@ -56,6 +79,8 @@ export function usePlayerKeys({
   settled,
   inert = false,
   onAddMarker,
+  onNudge,
+  onWalk,
 }: PlayerKeysOptions): void {
   const keyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   keyDownRef.current = (event: KeyboardEvent) => {
@@ -73,12 +98,45 @@ export function usePlayerKeys({
         target.isContentEditable);
 
     if (inTextInput) return;
+
+    // A surface that has stood its shortcuts down hears nothing at all (T60) —
+    // and this is the one gate above every key, the correction keys included.
+    // The two gates below ask different questions and are deliberately not one:
+    // `settled` asks whether there is a recording to act on, which is why the
+    // corrections sit above it, while this asks whether the page should be
+    // acting at all. A nudge behind the leave prompt would move the very mark
+    // its owner is being asked whether to keep.
+    if (inert) return;
+
+    // Plain chords: no modifier that means something else to the browser or the
+    // operating system. `Shift` is not one of them — it is the correction keys'
+    // own coarse step, and the arrows exclude it separately.
+    const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
+
+    // The correction keys, on the one surface that corrects (T57): `[` nudges
+    // the mark being corrected a tenth of a second earlier and `]` the same
+    // later, either by a whole second with Shift. A shifted bracket reaches the
+    // page as `{` or `}` on most layouts, so both spellings are the same key and
+    // Shift is read for the step rather than the key.
+    //
+    // Deliberately above the settle gate below: a correction moves a mark the
+    // record already holds and asks the recording for nothing, so it is not held
+    // back by a load it does not depend on — and the block's own nudge controls
+    // would otherwise work while their keys did not.
+    if (plain && onNudge !== undefined) {
+      const direction =
+        event.key === '[' || event.key === '{' ? -1 : event.key === ']' || event.key === '}' ? 1 : 0;
+      if (direction !== 0) {
+        event.preventDefault();
+        onNudge(direction * (event.shiftKey ? NUDGE_COARSE_STEP_SECONDS : NUDGE_STEP_SECONDS));
+        return;
+      }
+    }
+
     // Before the recording settles there is nothing to play, seek, or jump to
     // — the shortcuts are inert until then. The load takes a moment; a Space
-    // pressed into it would otherwise be swallowed against a dead embed. A
-    // surface that has stood its shortcuts down reads the same way, for the
-    // same reason: there is nothing here the page should be doing.
-    if (!settled || inert) return;
+    // pressed into it would otherwise be swallowed against a dead embed.
+    if (!settled) return;
 
     if (event.key === ' ') {
       // A focused button owns Space through native activation — handling it
@@ -91,17 +149,17 @@ export function usePlayerKeys({
       return;
     }
 
-    // Arrows are plain chords only: Shift+arrows stay the browser's (scroll,
-    // selection), and Alt+arrows do too — the marker nudge is gone, so Alt+←
-    // is the browser's Back again, an accepted consequence of playback-only.
-    const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
+    // Shift+arrows stay the browser's (scroll, selection), and Alt+arrows do
+    // too — Alt+← is the browser's Back on Windows and Linux, an accepted
+    // consequence of playback-only.
     const plainArrows = plain && !event.shiftKey;
 
     // The one authoring key, on the one surface that authors (T56): `M` places
     // a mark at the playhead and touches nothing else, so the student hears the
     // landmark and keeps listening. A plain chord only — ⌘M minimises the
     // window on macOS — and unclaimed since ADR-0005 removed the A–Z letter
-    // jumps.
+    // jumps. It is a playhead gesture, so it waits for the recording like the
+    // rest of the keys above it.
     if (plain && onAddMarker !== undefined && event.key.toLowerCase() === 'm') {
       onAddMarker();
       return;
@@ -116,15 +174,16 @@ export function usePlayerKeys({
     }
     if (plainArrows && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       // ↑/↓ jump between markers anchored at the live playhead, wrapping at
-      // the ends. Jumping never selects and never touches playback state. A
-      // key with nothing to jump to is left alone, so arrow scrolling still
-      // works.
+      // the ends. Jumping never touches playback state, and it never selects —
+      // except where a caller asks to hear about the landing (T57). A key with
+      // nothing to jump to is left alone, so arrow scrolling still works.
       const anchor = controller.getCurrentTime();
       const target =
         event.key === 'ArrowDown' ? nextMarker(markers, anchor) : previousMarker(markers, anchor);
       if (target === null) return;
       event.preventDefault();
       controller.seek(target.time);
+      onWalk?.(target);
       return;
     }
   };
