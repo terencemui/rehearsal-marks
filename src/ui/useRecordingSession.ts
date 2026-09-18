@@ -41,8 +41,6 @@ export interface RecordingSession {
   loadFailed: boolean;
   /** Re-runs the load after a failure — the error card's Retry. */
   retryLoad(): void;
-  /** Applies a mutation to the session: the autosave gets it, React mirrors it. */
-  update(fn: (current: ServerProject) => ServerProject): void;
 }
 
 /**
@@ -160,7 +158,6 @@ export function useRecordingSession({
     record,
     settled,
     loadFailed,
-    update,
     /** The failure card's retry: back to loading, then a fresh load attempt. */
     retryLoad: useCallback(() => {
       setSettled(false);

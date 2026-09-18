@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import type { AudioController } from '../audio';
-import { deriveLabels, practiceReadout } from '../domain';
 import { createAutosave, createProjectSave } from '../projects/autosave';
 import type { Autosave } from '../projects/autosave';
 import type { ProjectsApi } from '../projects/api';
 import { MarkersPanel } from './MarkersPanel';
 import { NotFoundPage } from './NotFoundPage';
 import { RecordingSurface } from './RecordingSurface';
+import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
 import './markings.css';
@@ -164,24 +164,13 @@ interface MarkingsSurfaceProps {
 function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const session = useRecordingSession({ autosave, controller });
   const { record } = session;
-  const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
-
-  // Labels derive from the recording's movements (ADR-0005): they restart at A
-  // within each movement, so a movement's letters read the same whether the
-  // piece is one movement or four. The derived label is what the page shows —
-  // it is never edited, only recomputed.
-  const labeled = useMemo(
-    () => deriveLabels(record.markers, record.movements),
-    [record.markers, record.movements],
-  );
-  const duration = playback.duration > 0 ? playback.duration : record.duration;
+  // The playback view of the recording — the shared derivation (T55), the same
+  // one the practice surface reads.
+  const { labeled, duration, activeMarker } = useLabeledPlayback({ controller, record });
 
   // The playback keys shared with the practice surface (T55): play and pause,
   // seek, and walk the marks — inert until the load settles.
   usePlayerKeys({ controller, markers: labeled, settled: session.settled });
-
-  const elapsed = Math.min(playback.currentTime, duration);
-  const activeMarker = practiceReadout(labeled, elapsed, duration).passed;
 
   return (
     <RecordingSurface
@@ -219,14 +208,20 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
  * thing that fills it, rather than showing a blank column beside a recording.
  * The recording is playable either way — that is what makes the first mark
  * placeable at all.
+ *
+ * The prompt names the action in the tense it is true in. Marking is not wired
+ * up on this page yet (T56 owns the `M` key and the save rule), so the copy
+ * frames placing a mark as what fills the column once it lands — never as an
+ * instruction that works right now, which would be a promise the page cannot
+ * keep.
  */
 function MarkingsEmptyState() {
   return (
-    <section className="markings-empty" aria-label="Markings">
+    <section className="markings-empty" aria-label="Markers">
       <h2 className="player-markers-heading">Markers</h2>
       <p className="markings-empty-copy">
-        Nothing marked yet. Play the recording and press <kbd>M</kbd> where a landmark goes by —
-        the mark lands at the playhead.
+        Nothing marked yet. This column fills once marking lands — play the recording, press{' '}
+        <kbd>M</kbd> where a landmark goes by, and the mark falls at the playhead.
       </p>
     </section>
   );

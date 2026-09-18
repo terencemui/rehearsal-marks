@@ -104,7 +104,9 @@ describe('the markings page opens on a project and plays it (T55)', () => {
     // No list — but the column says what fills it, and the recording is
     // playable, so the first mark can be placed at all.
     expect(markerRows(container)).toHaveLength(0);
-    const empty = screen.getByRole('region', { name: 'Markings' });
+    // The column keeps the panel's own name in both states — the empty column
+    // and the filled one are the same column, not two surfaces.
+    const empty = screen.getByRole('region', { name: 'Markers' });
     expect(empty.textContent).toMatch(/nothing marked yet/i);
     expect(empty.textContent).toContain('M');
     expect(container.querySelector('.player-ruler')).toBeInTheDocument();

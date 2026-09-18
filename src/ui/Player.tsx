@@ -1,11 +1,10 @@
-import { useMemo, useSyncExternalStore } from 'react';
 import type { AudioController } from '../audio';
-import { deriveLabels, practiceReadout } from '../domain';
 import type { LabeledMarker, Movement } from '../domain';
 import type { Autosave } from '../projects/autosave';
 import { MarkersPanel } from './MarkersPanel';
 import { PracticeReadout } from './PracticeReadout';
 import { RecordingSurface } from './RecordingSurface';
+import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
 import './player.css';
@@ -71,17 +70,12 @@ export interface PlayerProps {
 export function Player({ autosave, controller, readOnly = false, markingsHref }: PlayerProps) {
   const session = useRecordingSession({ autosave, controller, readOnly });
   const { record } = session;
-  // The playback store lives behind the seam; React subscribes to it directly.
-  const playback = useSyncExternalStore(controller.subscribe, controller.getPlaybackState);
-
-  // Labels derive from the recording's movements (ADR-0005): they restart at A
-  // within each movement, so a movement's letters read the same whether the
-  // piece is one movement or four.
-  const labeled = useMemo(
-    () => deriveLabels(record.markers, record.movements),
-    [record.markers, record.movements],
-  );
-  const duration = playback.duration > 0 ? playback.duration : record.duration;
+  // The playback view of the recording — the shared derivation (T55), so the
+  // practice surface and the markings page read the same record the same way.
+  const { playback, labeled, duration, activeMarker } = useLabeledPlayback({
+    controller,
+    record,
+  });
 
   // Space, the arrows, and the mark walk — the playback keys shared with the
   // markings page, inert until the load settles.
@@ -109,11 +103,6 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
   function handleReadoutSeek(time: number): void {
     controller.seek(time);
   }
-
-  // The elapsed time, clamped to the end — what the readout reads and divides by.
-  const elapsed = Math.min(playback.currentTime, duration);
-  // The active marker — the most recently passed marker (none before the first).
-  const activeMarker = practiceReadout(labeled, elapsed, duration).passed;
 
   return (
     <RecordingSurface
