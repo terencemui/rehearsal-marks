@@ -8,8 +8,11 @@ import {
   addMarker,
   createMarker,
   moveMarker,
+  nudgedTime,
   removeMarker,
   setAliases,
+  NUDGE_COARSE_STEP_SECONDS,
+  NUDGE_STEP_SECONDS,
 } from './markers';
 
 /** id → derived label, via the public API. */
@@ -102,6 +105,28 @@ describe('moveMarker', () => {
 
   it('rejects an unknown id', () => {
     expectDomainError(() => moveMarker([marker('a', 10)], 'nope', 5), 'marker-not-found');
+  });
+});
+
+describe('nudgedTime', () => {
+  it('moves the time by the delta, in either direction', () => {
+    expect(nudgedTime(10, NUDGE_STEP_SECONDS)).toBeCloseTo(10.1);
+    expect(nudgedTime(10, -NUDGE_STEP_SECONDS)).toBeCloseTo(9.9);
+    expect(nudgedTime(10, NUDGE_COARSE_STEP_SECONDS)).toBeCloseTo(11);
+    expect(nudgedTime(10, -NUDGE_COARSE_STEP_SECONDS)).toBeCloseTo(9);
+  });
+
+  it('never lands before the recording’s start', () => {
+    // A mark a hair past zero has nowhere earlier to go. The gesture has run out
+    // of room, so it lands on the floor rather than making an invalid time the
+    // caller would have to refuse for a keypress that was not a mistake.
+    expect(nudgedTime(0.05, -NUDGE_STEP_SECONDS)).toBe(0);
+    expect(nudgedTime(0, -NUDGE_STEP_SECONDS)).toBe(0);
+    expect(nudgedTime(0, -NUDGE_COARSE_STEP_SECONDS)).toBe(0);
+  });
+
+  it('keeps the full precision the marker carries — no rounding to the display', () => {
+    expect(nudgedTime(10.1234, NUDGE_STEP_SECONDS)).toBeCloseTo(10.2234, 10);
   });
 });
 

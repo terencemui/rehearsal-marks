@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Navigate, useParams } from 'react-router';
 import type { AudioController } from '../audio';
-import { addMarker, createMarker, errorMessage, removeMarker, setAliases } from '../domain';
+import {
+  addMarker,
+  createMarker,
+  errorMessage,
+  formatTime,
+  moveMarker,
+  nudgedTime,
+  parseTime,
+  removeMarker,
+  setAliases,
+} from '../domain';
 import type { LabeledMarker } from '../domain';
 import { createAutosave, createProjectSave } from '../projects/autosave';
 import type { Autosave } from '../projects/autosave';
@@ -46,7 +56,11 @@ export interface MarkingsPageProps {
  * playback-only and carries no editing affordance, only the markers panel's
  * quiet way through. This page is where a project stops being empty — a mark is
  * placed with `M` at the playhead, named with the student's own word for it, and
- * removed if it was a mistake (T56).
+ * removed if it was a mistake (T56) — and where a mark that landed wrong is put
+ * right: selected, nudged by a tenth of a second or a whole one, or given an
+ * exact time typed from a score (T57). A mark pressed at the moment a landmark
+ * is heard always lands late by human reaction time, so a page that can place
+ * marks and not correct them is a page that can only be wrong.
  *
  * Saving follows what the project is (T56, ADR-0007). A private project, or a
  * public one still awaiting review, writes itself as the student works; a
@@ -182,9 +196,10 @@ interface MarkingsSurfaceProps {
 /**
  * The page's one session, mounted once its record has landed: the recording
  * plays through the shared surface, and the marks the project carries sit
- * beside it, where they can be placed, named and removed (T56). Split out from
- * the page so the session hooks run in a component keyed by project — the page
- * itself mounts and unmounts around the read, which hooks cannot follow.
+ * beside it, where they can be placed, named, corrected and removed (T56, T57).
+ * Split out from the page so the session hooks run in a component keyed by
+ * project — the page itself mounts and unmounts around the read, which hooks
+ * cannot follow.
  */
 function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const session = useRecordingSession({ autosave, controller });
@@ -198,7 +213,25 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * next — and cleared by the next attempt on that mark, whatever it says.
    */
   const [aliasError, setAliasError] = useState<{ markerId: string; message: string } | null>(null);
+  /**
+   * The time the domain refused, and where — the twin of `aliasError`, held
+   * separately because the two are independent facts about a mark: a time
+   * refused says nothing about the alias, and one field's success is no answer
+   * to the other's complaint.
+   */
+  const [timeError, setTimeError] = useState<{ markerId: string; message: string } | null>(null);
+  /**
+   * The mark being corrected (T57), by id. Selection is the page's own state
+   * and deliberately does not follow the playhead: the row holding the playhead
+   * moves on its own as the recording plays, and a correction aimed at whatever
+   * a student happened to be passing would be a correction aimed at nothing.
+   * It is held by id, so a mark that a correction re-sorts keeps its selection
+   * — and its label, which is a rank and follows the mark into its new place.
+   */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const status = useSyncExternalStore(autosave.subscribe, autosave.status);
+  /** The selected mark itself, as the surface is rendering it. */
+  const selected = labeled.find((marker) => marker.id === selectedId) ?? null;
 
   /**
    * Places a mark where the recording is — the playhead the student is hearing,
@@ -212,14 +245,94 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     }));
   }, [controller, mutate]);
 
+  /**
+   * Picks a mark out as the one being corrected (T57). A pointer clicks its row
+   * and the keyboard walks to it with ↑/↓; both arrive here, so the two ways of
+   * choosing are one piece of state.
+   */
+  const select = useCallback((marker: LabeledMarker): void => {
+    setSelectedId(marker.id);
+  }, []);
+
+  /**
+   * Moves a mark by `delta` seconds — the one correction `[`, `]` and the
+   * block's two controls all make. Nothing here touches the controller: a
+   * correction moves the mark, and the recording the student is hearing carries
+   * on exactly as it was, playing or paused.
+   */
+  const nudge = useCallback(
+    (marker: LabeledMarker, delta: number): void => {
+      mutate((current) => {
+        // The mark's time is read from the record being written, not from the
+        // render this gesture started in, so a nudge always moves the mark from
+        // where it actually is. A mark that is no longer there corrects nothing
+        // rather than throwing — its selection went with it.
+        const held = current.markers.find((m) => m.id === marker.id);
+        if (held === undefined) return current;
+        return {
+          ...current,
+          markers: moveMarker(current.markers, marker.id, nudgedTime(held.time, delta)),
+        };
+      });
+      // A nudge re-seeds the field with the time the mark now holds, so a time
+      // refused a moment ago is a complaint about text that is no longer in the
+      // field — it goes with the text, exactly as applying a typed time clears
+      // it. Left standing, it would sit under a valid time contradicting it, and
+      // be announced again when the mark was next selected. The alias is a
+      // different fact about the mark and keeps its own.
+      setTimeError((current) => (current?.markerId === marker.id ? null : current));
+    },
+    [mutate],
+  );
+
+  /**
+   * Applies a time typed into the correction field. The domain parses it and is
+   * the one that decides: a time it refuses throws with its own guidance, and
+   * the mark is not moved — the refused text is never stored, and never left in
+   * the field as if it were.
+   */
+  const setTime = useCallback(
+    (marker: LabeledMarker, text: string): string => {
+      try {
+        const time = parseTime(text);
+        mutate((current) => ({
+          ...current,
+          markers: moveMarker(current.markers, marker.id, time),
+        }));
+        // Cleared for this mark only: a time refused on one mark is that mark's
+        // complaint, and another's acceptance says nothing about it.
+        setTimeError((current) => (current?.markerId === marker.id ? null : current));
+        return formatTime(time, duration);
+      } catch (error) {
+        setTimeError({ markerId: marker.id, message: errorMessage(error) });
+        // The refused text is not what the mark holds; the field goes back to
+        // the exact time it does hold.
+        return formatTime(marker.time, duration);
+      }
+    },
+    [duration, mutate],
+  );
+
   // The playback keys shared with the practice surface — play and pause, seek,
-  // and walk the marks — plus this page's one authoring key, `M`, inert until
-  // the load settles like the rest.
+  // and walk the marks — plus this page's own two: `M` places a mark, and `[`/`]`
+  // correct the selected one. The playback keys wait for the load to settle,
+  // since there is nothing to play or seek until it does; `M` waits with them,
+  // being a playhead gesture. The correction keys do not: they move a mark the
+  // record already holds and ask the recording for nothing, which is why the
+  // hook handles them above its own settle gate.
   usePlayerKeys({
     controller,
     markers: labeled,
     settled: session.settled,
     onAddMarker: addAtPlayhead,
+    // The correction keys act on the mark being corrected and on nothing else,
+    // so with none selected they do nothing at all.
+    onNudge: (delta) => {
+      if (selected !== null) nudge(selected, delta);
+    },
+    // A walk picks out the mark it lands on: without this the nudge keys could
+    // never reach a mark, since rows are pointer targets and not tab stops.
+    onWalk: select,
   });
 
   const authoring: MarkersAuthoring = {
@@ -247,13 +360,22 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     },
     aliasError,
     onDelete(marker: LabeledMarker): void {
-      // The mark and its complaint go together.
+      // The mark and its complaints go together.
       setAliasError((current) => (current?.markerId === marker.id ? null : current));
+      setTimeError((current) => (current?.markerId === marker.id ? null : current));
+      // And so does its selection: a correction left aimed at a mark that no
+      // longer exists is a correction aimed at nothing.
+      setSelectedId((current) => (current === marker.id ? null : current));
       mutate((current) => ({
         ...current,
         markers: removeMarker(current.markers, marker.id),
       }));
     },
+    selectedId,
+    onSelect: select,
+    onNudge: nudge,
+    onTime: setTime,
+    timeError,
   };
 
   // The mode the session was built in, read off the autosave that owns it: this

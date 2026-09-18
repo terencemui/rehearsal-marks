@@ -9,6 +9,13 @@
  * boundary. That is deliberately the one thing the panel does on its own, and
  * `revealDelay` is the brake on it.
  *
+ * Which row it follows is the panel's to decide and is not here either: on the
+ * markings page a student who has picked a mark out to correct (T57) has said
+ * which row they are working on, and a correction moves that mark rather than
+ * the playhead — so the panel follows the row being corrected while a
+ * selection stands, and the active row otherwise. What is left for this module
+ * is where the row goes once the reveal has been decided on.
+ *
  * Both functions are pure, and every number in them is a measurement the
  * caller reads off the elements or the clock. That separation is what makes
  * the policy testable: jsdom computes no layout — rects are all zero,
