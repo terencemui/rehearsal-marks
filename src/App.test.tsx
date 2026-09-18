@@ -1,10 +1,9 @@
-import { useEffect } from 'react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router';
+import { MemoryRouter } from 'react-router';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { LoadOptions } from './audio';
-import { mockAuth } from './test/auth-fixture';
+import { renderApp, VIDEO_ID, VIDEO_TITLE, YOUTUBE_CANONICAL } from './test/app-fixture';
 import type { MockAuthBackend } from './test/auth-fixture';
 import { mockController } from './test/controller-fixture';
 import { fakeProjectsApi } from './test/projects-fixture';
@@ -13,109 +12,6 @@ import { marker } from './test/marker-fixture';
 import { serverProject } from './test/server-project-fixture';
 import { waitForPlayerSettled } from './test/settle-player';
 import App from './App';
-
-/** The renderApp knobs — every App seam, named so a test reaches one without
- * skipping the others. */
-interface RenderAppOptions {
-  /** The audio-controller seam, like App's controllerFactory. */
-  controller?: ReturnType<typeof mockController>;
-  /** The server-project surface, like App's projectsApiFactory. */
-  api?: FakeProjectsApi;
-  /** The video-title lookup, so tests never reach the network. */
-  fetchTitle?: (canonicalUrl: string) => Promise<string | null>;
-  /** The Google sign-in seam, like App's authFactory. */
-  auth?: ReturnType<typeof mockAuth>;
-  /** The starting URL the memory router serves — the refresh/landing case. */
-  initialEntry?: string;
-}
-
-/**
- * Renders the app on a fake server project surface with mocked seams, served
- * by a memory router — the one App-level seam, so the tests control the
- * starting URL and can drive Back and Forward (T44). App's env gate (T51)
- * needs a wired env to reach the shell at all, so every test stubs one; the
- * api and auth seams keep the test off the network — no supabase-js client is
- * ever constructed.
- */
-function renderApp({
-  controller = mockController(),
-  api = fakeProjectsApi(),
-  fetchTitle = async () => VIDEO_TITLE,
-  auth = mockAuth(),
-  // The workspace home is the signed-in entry (T51); the gallery at the front
-  // door `/` is the anonymous entry, tested with its own initialEntry.
-  initialEntry = '/projects',
-}: RenderAppOptions = {}) {
-  vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
-  vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key');
-  /** The memory history's Back/Forward, driven like the browser's buttons. */
-  let go: (delta: number) => void = () => {};
-  /** Programmatic navigation to a path — the memory router's address bar. */
-  let navigateTo: (path: string) => void = () => {};
-  /**
-   * The memory router's committed path — a mutable holder the returned getter
-   * reads at call time. A getter that captured the location in an effect
-   * closure would freeze the initial path (the object literal copies the
-   * closure reference), so the probe writes the path here and the returned
-   * `currentPath` reads it fresh.
-   */
-  const pathRef: { current: string } = { current: initialEntry };
-  /** A probe inside the router that hands the helpers the navigate function and
-   * the live location. The async act with a microtask yield is deliberate: React
-   * 19 defers the history listener's location update, and a synchronous act would
-   * read the DOM before the new page commits. */
-  function HistoryProbe() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    useEffect(() => {
-      go = async (delta: number) => {
-        await act(async () => {
-          navigate(delta);
-          await Promise.resolve();
-        });
-      };
-      navigateTo = async (path: string) => {
-        await act(async () => {
-          navigate(path);
-          await Promise.resolve();
-        });
-      };
-      pathRef.current = location.pathname;
-    }, [navigate, location]);
-    return null;
-  }
-  const view = render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <HistoryProbe />
-      <App
-        controllerFactory={() => controller}
-        projectsApiFactory={() => api}
-        // Stubbed by default so no test reaches YouTube's oEmbed endpoint, and
-        // no test constructs a supabase-js client.
-        fetchTitle={fetchTitle}
-        authFactory={() => auth.controller}
-      />
-    </MemoryRouter>,
-  );
-  return {
-    ...view,
-    api,
-    controller,
-    auth: auth.backend,
-    go,
-    navigateTo,
-    currentPath: () => pathRef.current,
-  };
-}
-
-const VIDEO_ID = 'dQw4w9WgXcQ';
-const YOUTUBE_CANONICAL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
-const VIDEO_TITLE = 'Brahms — Intermezzo Op. 118 No. 2';
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
-});
 
 /** The navbar's sign-in control — the landing's own button is a second, distinct one. */
 function navSignIn(): HTMLElement {
