@@ -137,6 +137,88 @@
   color: #9a3412;
 }
 
+/* The row being corrected (T57). A ring rather than a tint, because the tint is
+   already spoken for: the active row is the one holding the playhead, which
+   moves on its own, while the selection is the one the student made. Both can
+   be true of one row, and each still reads as itself.
+
+   The ring wraps the whole item — the mark's row and the correction block under
+   it — so the block reads as belonging to the row above it rather than as
+   another row of the list. It is an outline, and inset, for two reasons: an
+   outline is painted over the row's own background instead of under it, so the
+   ring survives the active row's tint, and an inset one cannot be clipped by
+   the list's scroll box when the selected row sits at its edge. */
+.player-marker-list li.selected {
+  border-radius: 8px;
+  outline: 2px solid #0f766e;
+  outline-offset: -2px;
+}
+
+/* The correction block under the selected row: the mark's exact time, and the
+   two nudges. Its own inset and tint, so the controls read as a panel that
+   belongs to the row above them rather than as two more rows of the list. */
+.markings-correct {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px 16px;
+  padding: 6px 8px;
+  border: 1px solid #99f6e4;
+  border-radius: 6px;
+  background: #f0fdfa;
+}
+
+.markings-correct-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.markings-correct-label {
+  font: 600 12px/18px system-ui, sans-serif;
+  color: #0f766e;
+}
+
+/* The exact time, at the millisecond precision a correction is made in. */
+.markings-row-time {
+  width: 96px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  font: 400 13px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: #334155;
+}
+
+.markings-row-time:focus {
+  outline: 2px solid #0f766e;
+  outline-offset: -1px;
+}
+
+.markings-nudge {
+  padding: 4px 8px;
+  border: 1px solid #99f6e4;
+  border-radius: 5px;
+  background: #fff;
+  color: #0f766e;
+  cursor: pointer;
+  font: 600 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.markings-nudge:hover {
+  background: #ccfbf1;
+}
+
+/* The refused time's guidance, on its own line under the field it belongs to —
+   the block's inset is the indent, so it does not take the row error's. */
+.markings-correct .markings-row-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 /* The empty column beside the recording. It sits where the markers panel
    would, under the same small heading, so a project with marks and a project
    without read as the same column in two states rather than two surfaces. */

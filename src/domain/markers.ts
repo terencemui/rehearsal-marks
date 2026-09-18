@@ -108,6 +108,31 @@ export function moveMarker(markers: readonly Marker[], id: string, time: number)
   return updateAt(markers, index, { time });
 }
 
+/**
+ * The correction steps ADR-0007 gives the bracket keys: a tenth of a second,
+ * for human reaction time — a mark pressed at the moment a landmark is heard
+ * always lands late by about that much — and a whole second with `Shift`, for
+ * being a second out.
+ */
+export const NUDGE_STEP_SECONDS = 0.1;
+export const NUDGE_COARSE_STEP_SECONDS = 1;
+
+/**
+ * The time a mark lands on when nudged by `delta`, floored at the recording's
+ * start. A nudge past zero has run out of room, so it lands on the floor rather
+ * than on a time the domain would refuse — a held key is not a mistake to
+ * complain about.
+ *
+ * The floor is the only bound. The recording's end is deliberately not one: the
+ * duration is a soft fact (ADR-0006) — the stored value is a fallback and a
+ * measurement may never arrive — so it is not a limit the domain can hold a
+ * gesture to. The result keeps the full float precision the marker model
+ * carries; rounding belongs to the display.
+ */
+export function nudgedTime(time: number, delta: number): number {
+  return Math.max(0, time + delta);
+}
+
 export function setAliases(
   markers: readonly Marker[],
   id: string,
