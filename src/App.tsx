@@ -12,6 +12,7 @@ import { fetchYouTubeTitle } from './youtube';
 import { GalleryScreen } from './ui/GalleryScreen';
 import { HelpTab } from './ui/HelpTab';
 import { LandingScreen } from './ui/LandingScreen';
+import { MarkingsPage } from './ui/MarkingsPage';
 import { Navbar } from './ui/Navbar';
 import { NotWiredUpScreen } from './ui/NotWiredUpScreen';
 import { ProjectPage } from './ui/ProjectPage';
@@ -239,20 +240,24 @@ function WiredApp({
   }
 
   /**
-   * Whether the routed page is a player, on either surface — the owner's
-   * `/projects/:id` or the read-only `/gallery/:id`. A player page escapes the
-   * text rail's 1600px reading measure; its recording takes the window instead,
-   * bounded by the viewport's height (app.css).
+   * Whether the routed page is a player — the owner's `/projects/:id`, the
+   * markings page at `/projects/:id/markings`, or the read-only
+   * `/gallery/:id`. A player page escapes the text rail's 1600px reading
+   * measure; its recording takes the window instead, bounded by the viewport's
+   * height (app.css).
    *
    * Derived from the route patterns this shell declares rather than from a
    * pathname prefix, so a future `/projects/import` — text, however it starts —
    * does not silently widen. `matchPath` with a string pattern matches the
-   * whole path, so `/projects` itself and `/projects/:id/anything` do not.
+   * whole path, so `/projects` itself and any path below a page's own do not:
+   * every page that hosts a recording is named here, and a nested one that is
+   * not would fall to the narrow text rail while hosting a full player.
    * A player route that ends up rendering not-found or an error keeps the wide
    * rail; those surfaces are centred and carry their own caps.
    */
   const isPlayerPage =
     matchPath('/projects/:id', location.pathname) !== null ||
+    matchPath('/projects/:id/markings', location.pathname) !== null ||
     matchPath('/gallery/:id', location.pathname) !== null;
 
   return (
@@ -315,6 +320,22 @@ function WiredApp({
                   projectsApi={projectsApiRef.current}
                   controllerFactory={controllerFactory}
                   onExitStatus={handleExitStatus}
+                  onNotice={setNotice}
+                />
+              )
+            }
+          />
+          {/* Where a project's markings are authored (T55, ADR-0007) — the
+              markers panel's quiet way through, on the project's owner's own
+              URL. It reads the project through the same owner-scoped read the
+              project page uses; the server refuses it to anyone else. */}
+          <Route
+            path="/projects/:id/markings"
+            element={
+              projectsApiRef.current === null ? null : (
+                <MarkingsPage
+                  projectsApi={projectsApiRef.current}
+                  controllerFactory={controllerFactory}
                   onNotice={setNotice}
                 />
               )

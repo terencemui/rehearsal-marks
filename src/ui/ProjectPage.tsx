@@ -156,6 +156,10 @@ export function ProjectPage({ projectsApi, controllerFactory, onExitStatus, onNo
         key={session.projectId}
         autosave={session.autosave}
         controller={session.controller}
+        // The markings page's address (T55): the practice surface's one way
+        // through to where the marks are authored. It navigates — this surface
+        // itself stays playback-only (ADR-0003).
+        markingsHref={`/projects/${session.projectId}/markings`}
       />
     </>
   );
