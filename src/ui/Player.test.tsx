@@ -1024,16 +1024,19 @@ describe('Player — the timeline bar and markers (T38)', () => {
   it('observes the columns that grow without moving the split, so the cap re-measures', async () => {
     const { container } = await renderLoadedPlayer();
     const videoColumn = container.querySelector('.player-video-column') as HTMLElement;
-    const readout = container.querySelector('.player-practice-readout') as HTMLElement;
+    const sideColumn = container.querySelector('.player-side-column') as HTMLElement;
     // The split's height is driven by whichever column is taller, so a column
     // growing beneath the other doesn't move the split — and the measure
     // wouldn't re-run. On first paint the embed's host is empty (the video
     // column is short and the cap falls back to the stylesheet); the column
-    // grows to its 16:9 when the embed renders, and the readout grows as passed
-    // aliases wrap. Each must be observed for the cap to land.
+    // grows to its 16:9 when the embed renders, and the side column grows as a
+    // passed alias wraps or a mark is added. Each must be observed for the cap
+    // to land. The side column is observed whole rather than by its readout:
+    // the markings page (T55) shares the surface and has no readout, so the
+    // column is the thing that is always there to grow.
     const observed = getObservedTargets();
     expect(observed).toContain(videoColumn);
-    expect(observed).toContain(readout);
+    expect(observed).toContain(sideColumn);
   });
 
   it('scrolls the markers within their band, so a marker-heavy project never towers', () => {
