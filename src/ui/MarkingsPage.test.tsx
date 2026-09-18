@@ -62,6 +62,19 @@ async function pastDebounce(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 700));
 }
 
+/**
+ * Asks the page the browser's own question — "may this tab go?" — and reports
+ * whether it objected (T60). This is the only way a page can be asked: closing
+ * and reloading are the browser's, and the confirm that follows a refusal is
+ * the browser's too, which is why what is asserted is the refusal and not a
+ * dialog nobody can render.
+ */
+function closeTheTab(): boolean {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 describe('the markings page opens on a project and plays it (T55)', () => {
   it('opens at its own URL on the project it names, under the navbar, and plays the recording', async () => {
     const api = fakeProjectsApi();
@@ -550,7 +563,10 @@ describe('saving follows what the project is (T56)', () => {
     await waitForPlayerSettled();
 
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    // Work only its owner can settle does not leave on a link press any more
+    // (T60): the page asks, and discarding is the answer that lets it go.
     await navigateTo('/help');
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
     await screen.findByRole('heading', { name: 'Help' });
     await pastDebounce();
 
@@ -574,6 +590,244 @@ describe('saving follows what the project is (T56)', () => {
     await screen.findByRole('heading', { name: 'Help' });
 
     await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+  });
+});
+
+describe('leaving with unsaved changes (T60)', () => {
+  it('asks before an in-app navigation away from work the owner has not committed', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    // Public and published: the mode that waits for a deliberate commit.
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
+
+    await navigateTo('/help');
+
+    // The router held where it was, and the page is asking.
+    expect(currentPath()).toBe('/projects/p1/markings');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved changes/i);
+    expect(screen.queryByRole('heading', { name: 'Help' })).toBeNull();
+  });
+
+  it('stays put with the work intact when the owner declines, and asks again next time', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await navigateTo('/help');
+    await user.click(screen.getByRole('button', { name: 'Stay' }));
+
+    // Nowhere moved, the question is answered and gone, and the edit is still
+    // in hand — declining costs the owner nothing.
+    expect(currentPath()).toBe('/projects/p1/markings');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(markerRows(container)).toHaveLength(0);
+    expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
+    expect(api.get('p1')?.markers).toEqual([marker('m1', 10)]);
+
+    // Declining refused *that* navigation, it did not spend the guard: the
+    // next attempt is a fresh question rather than a page that can now be
+    // walked out of.
+    await navigateTo('/help');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(currentPath()).toBe('/projects/p1/markings');
+  });
+
+  it('prompts when the owner clicks their way out through the navbar', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    // The everyday exit: a link in the navbar, which navigates through the
+    // router rather than through anything this page owns.
+    await user.click(screen.getByRole('link', { name: 'Help' }));
+
+    expect(currentPath()).toBe('/projects/p1/markings');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('opening the project again shows what the server holds, not the discarded draft', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await navigateTo('/help');
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await screen.findByRole('heading', { name: 'Help' });
+
+    await navigateTo('/projects/p1/markings');
+    await waitForPlayerSettled();
+
+    // The mark the owner walked away from is still there. Nothing was written
+    // on the way out and no draft was kept to paint over the server's row, so
+    // the page the owner comes back to is the page the server describes.
+    expect(currentPath()).toBe('/projects/p1/markings');
+    expect(markerTimes(container)).toEqual(['00:10']);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('leaves without a word when there is nothing uncommitted to lose', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // A published project, but one whose owner has touched nothing: there is
+    // no commit outstanding, so leaving is not a decision to put to them — and
+    // the same navbar link that would raise the question stays a plain link.
+    await user.click(screen.getByRole('link', { name: 'Help' }));
+
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(currentPath()).toBe('/help');
+  });
+
+  it('does not stand in the way of a recording that saves itself — leaving writes it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await navigateTo('/help');
+
+    // An autosaving record has nothing for its owner to answer for: the
+    // teardown settles the work on the way out rather than asking about it.
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(currentPath()).toBe('/help');
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+  });
+
+  it('refuses the browser’s Back button as well — a Back press is not a way past the question', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    // Arrived at the page from Help, so Back is a real history move off it.
+    const { currentPath, go, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/help',
+    });
+    await navigateTo('/projects/p1/markings');
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await go(-1);
+
+    expect(currentPath()).toBe('/projects/p1/markings');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    // And the same prompt answers it: discarding is what lets Back through.
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(currentPath()).toBe('/help');
+  });
+
+  it('stands the page’s shortcuts down while the question is up', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(60));
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await navigateTo('/help');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    // The question is about the work, so nothing answers it on the owner's
+    // behalf: a mark placed now would be editing the thing being asked about,
+    // and a seek would move the recording out from under the answer.
+    await user.keyboard('m');
+    await user.keyboard('{ArrowRight}');
+    expect(markerRows(container)).toHaveLength(0);
+    expect(controller.getCurrentTime()).toBe(60);
+
+    // Answering hands the page back, keys and all.
+    await user.click(screen.getByRole('button', { name: 'Stay' }));
+    await user.keyboard('m');
+    expect(markerRows(container)).toHaveLength(1);
+  });
+
+  it('asks the browser before the tab is closed or reloaded, while work is uncommitted', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Nothing uncommitted yet: the tab may go.
+    expect(closeTheTab()).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
+
+    // The router's prompt cannot reach this exit — closing and reloading are
+    // the browser's own — so the browser is asked to put its confirm up.
+    expect(closeTheTab()).toBe(true);
+  });
+
+  it('stops asking once the work is committed', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+
+    // The commit settled it, so there is nothing left to lose and nothing
+    // left to stand in the tab's way.
+    expect(closeTheTab()).toBe(false);
   });
 });
 

@@ -14,6 +14,14 @@ export interface PlayerKeysOptions {
    */
   settled: boolean;
   /**
+   * Whether the surface has stood its shortcuts down (T60). The markings
+   * page's leave prompt is what sets it: the question is about the work, and
+   * a key that edits the work or moves the recording behind the question
+   * would be answering it on the owner's behalf. Nothing else in the app
+   * takes the keyboard, so nothing else sets it.
+   */
+  inert?: boolean;
+  /**
    * What `M` does — placing a mark at the playhead. Supplied only by the
    * markings page (T56), where adding is the job; the practice surface and the
    * read-only view pass nothing and the key is simply absent, so the surfaces
@@ -46,6 +54,7 @@ export function usePlayerKeys({
   controller,
   markers,
   settled,
+  inert = false,
   onAddMarker,
 }: PlayerKeysOptions): void {
   const keyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -66,8 +75,10 @@ export function usePlayerKeys({
     if (inTextInput) return;
     // Before the recording settles there is nothing to play, seek, or jump to
     // — the shortcuts are inert until then. The load takes a moment; a Space
-    // pressed into it would otherwise be swallowed against a dead embed.
-    if (!settled) return;
+    // pressed into it would otherwise be swallowed against a dead embed. A
+    // surface that has stood its shortcuts down reads the same way, for the
+    // same reason: there is nothing here the page should be doing.
+    if (!settled || inert) return;
 
     if (event.key === ' ') {
       // A focused button owns Space through native activation — handling it

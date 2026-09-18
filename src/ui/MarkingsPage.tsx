@@ -12,9 +12,11 @@ import type { AddMarkerControlProps, MarkersAuthoring } from './MarkersPanel';
 import { NotFoundPage } from './NotFoundPage';
 import { RecordingSurface } from './RecordingSurface';
 import { SaveStatusLine } from './SaveStatusLine';
+import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
+import { useUnsavedChanges } from './useUnsavedChanges';
 import './markings.css';
 
 /** One markings page session: the autosave over the loaded project and its controller. */
@@ -200,6 +202,26 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const [aliasError, setAliasError] = useState<{ markerId: string; message: string } | null>(null);
   const status = useSyncExternalStore(autosave.subscribe, autosave.status);
 
+  // The mode the session was built in, read off the autosave that owns it: this
+  // page shows a Save control exactly when the project waits for one.
+  const needsCommit = autosave.mode === 'manual';
+  /**
+   * Whether the record holds work the server does not. A failed commit counts:
+   * the autosave parks in `error` with the record still pending, so the same
+   * difference is in hand — and it is the state the Save control must stay
+   * live for, since Save is how a student retries it.
+   */
+  const uncommitted = status === 'dirty' || status === 'error';
+  /**
+   * Whether the page has work only its owner can settle (T60) — a `manual`
+   * record with something pending. An `auto` record never blocks, and the
+   * teardown is why it need not: it flushes on the way out, so leaving settles
+   * the work instead of losing it. Only a `manual` record has nothing that
+   * will write it.
+   */
+  const unsaved = needsCommit && uncommitted;
+  const blocker = useUnsavedChanges(unsaved);
+
   /**
    * Places a mark where the recording is — the playhead the student is hearing,
    * never zero and never a guess. The domain derives its label and sorts it into
@@ -219,6 +241,10 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     controller,
     markers: labeled,
     settled: session.settled,
+    // The leave prompt takes the keyboard while it is up (T60): a mark placed
+    // or a seek made behind the question would be changing the very work the
+    // owner is being asked about.
+    inert: blocker.state === 'blocked',
     onAddMarker: addAtPlayhead,
   });
 
@@ -256,23 +282,21 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     },
   };
 
-  // The mode the session was built in, read off the autosave that owns it: this
-  // page shows a Save control exactly when the project waits for one.
-  const needsCommit = autosave.mode === 'manual';
-  // A failed commit is the one other state the control must stay live for: the
-  // autosave parks in `error` with the record still pending, and Save is how a
-  // student retries it.
-  const canCommit = status === 'dirty' || status === 'error';
-
   return (
     <>
+      {/* The leave prompt (T60), while the router holds a navigation the owner
+          asked for. Rendered inside the page's own tree so the recording it is
+          asking about stays behind it, visible and unmoved. */}
+      {blocker.state === 'blocked' && (
+        <UnsavedChangesDialog onStay={blocker.reset} onDiscard={blocker.proceed} />
+      )}
       <div className="markings-save-bar">
         <SaveStatusLine autosave={autosave} />
         {needsCommit && (
           <button
             type="button"
             className="markings-save"
-            disabled={!canCommit}
+            disabled={!uncommitted}
             // A failed flush rejects; the status line is that failure's own
             // surface, and an unhandled rejection would drown it.
             onClick={() => void autosave.flush().catch(() => {})}

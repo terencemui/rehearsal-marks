@@ -1,0 +1,71 @@
+/* The leave prompt (T60): the one question the markings page asks before it
+   lets its owner walk away from work they have not committed. */
+
+/* The page's own content stays visible behind the question — the owner is
+   being asked about what they can still see, not taken somewhere else. The
+   backdrop is what makes the page inert to the pointer. */
+.unsaved-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(15 23 42 / 38%);
+  box-sizing: border-box;
+}
+
+.unsaved-dialog {
+  max-width: 30rem;
+  padding: 20px 22px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 24%);
+}
+
+.unsaved-dialog-question {
+  margin: 0 0 16px;
+  font: 400 15px/22px system-ui, sans-serif;
+  color: #1e293b;
+}
+
+.unsaved-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Stay carries the page's own accent: it is the answer that keeps the work,
+   and the one a stray Return should land on. */
+.unsaved-dialog-stay {
+  padding: 6px 14px;
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #fff;
+  cursor: pointer;
+  font: 600 13px/18px system-ui, sans-serif;
+}
+
+.unsaved-dialog-stay:hover {
+  background: #115e59;
+  border-color: #115e59;
+}
+
+/* Discard keeps the destructive colour its verb earns, so the two answers
+   never read as a plain yes/no. */
+.unsaved-dialog-discard {
+  padding: 6px 14px;
+  border: 1px solid #b91c1c;
+  border-radius: 6px;
+  background: none;
+  color: #b91c1c;
+  cursor: pointer;
+  font: 600 13px/18px system-ui, sans-serif;
+}
+
+.unsaved-dialog-discard:hover {
+  background: #b91c1c;
+  color: #fff;
+}
