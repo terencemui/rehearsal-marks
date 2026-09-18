@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { Autosave } from '../projects/autosave';
-import { STATUS_TEXT } from './status';
+import { MANUAL_STATUS_TEXT, STATUS_TEXT } from './status';
 import './saveStatusLine.css';
 
 export interface SaveStatusLineProps {
@@ -14,9 +14,15 @@ export interface SaveStatusLineProps {
  * one interactive state is a failed save: the autosave parks in `error` until
  * the next mutation, so the line offers Retry — a flush now — instead of
  * waiting for the user to make another edit.
+ *
+ * Under a manual autosave (T56) the line says the same things about the same
+ * states, but a dirty record reads as unsaved work rather than as a write in
+ * flight — the mode is the autosave's own, so the line reads it rather than
+ * being told.
  */
 export function SaveStatusLine({ autosave }: SaveStatusLineProps) {
   const status = useSyncExternalStore(autosave.subscribe, autosave.status);
+  const text = autosave.mode === 'manual' ? MANUAL_STATUS_TEXT : STATUS_TEXT;
 
   if (status === 'error') {
     return (
@@ -37,7 +43,7 @@ export function SaveStatusLine({ autosave }: SaveStatusLineProps) {
 
   return (
     <p role="status" data-save-status={status} className="save-status">
-      {STATUS_TEXT[status]}
+      {text[status]}
     </p>
   );
 }

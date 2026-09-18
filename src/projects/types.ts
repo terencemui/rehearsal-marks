@@ -112,6 +112,25 @@ export function returnsToReview(
 }
 
 /**
+ * Whether a project's edits wait for a deliberate commit — the markings page's
+ * save-mode rule (ADR-0007). True exactly when the project is public and its
+ * publication status is anything but pending: the two states, published and
+ * rejected, where an owner's write has a consequence they did not ask for —
+ * the server's review trigger returns the project to the queue, and a
+ * published one leaves the public gallery until a maintainer approves it
+ * again. A private project, and a public one still awaiting review, autosave.
+ *
+ * Derived from the project's own review state alone: whether the owner is a
+ * trusted user is the server's fact, and the client never asks.
+ */
+export function requiresExplicitSave(project: {
+  visibility: ProjectVisibility;
+  publicationStatus: PublicationStatus;
+}): boolean {
+  return project.visibility === 'public' && project.publicationStatus !== 'pending';
+}
+
+/**
  * Parses one `projects` row as PostgREST returns it, mapping snake_case to
  * the app's camelCase and routing the content documents through the domain's
  * own parsers — the same rule every document boundary applies: a row no

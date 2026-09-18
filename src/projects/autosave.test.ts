@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { marker } from '../test/marker-fixture';
 import { serverProject } from '../test/server-project-fixture';
 import { createAutosave, createProjectSave, type Autosave, type SaveStatus } from './autosave';
 import type { ProjectUpdate, ServerProject } from './types';
@@ -285,6 +286,101 @@ describe('createAutosave', () => {
     autosave.mutate((c) => ({ ...c, name: 'Too big' }));
     await expect(autosave.flush()).rejects.toBeInstanceOf(Error);
     expect(autosave.status()).toBe('error');
+  });
+});
+
+describe('createAutosave in manual mode', () => {
+  it('never schedules a write, however long the record stays dirty', async () => {
+    // The markings page's explicit-save mode (T56): a published project's
+    // edits wait for a deliberate commit, so the debounce must not exist —
+    // there is no window of time after which the server is written to.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const save = vi.fn<(record: ServerProject) => Promise<ServerProject>>(async (record) => record);
+    const autosave = createAutosave(serverProject(), { save, mode: 'manual' });
+
+    autosave.mutate((c) => ({ ...c, name: 'Renamed' }));
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(save).not.toHaveBeenCalled();
+    // Dirty, not saved: the status line says there is something to commit.
+    expect(autosave.status()).toBe('dirty');
+    expect(autosave.mode).toBe('manual');
+    vi.useRealTimers();
+  });
+
+  it('writes on flush, and the status line walks dirty → saving → saved', async () => {
+    const save = vi.fn<(record: ServerProject) => Promise<ServerProject>>(async (record) => record);
+    const autosave = createAutosave(serverProject(), { save, mode: 'manual' });
+    const seen: SaveStatus[] = [];
+    autosave.subscribe((status) => seen.push(status));
+
+    autosave.mutate((c) => ({ ...c, markers: [...c.markers, marker('m3', 30)] }));
+    expect(save).not.toHaveBeenCalled();
+
+    await autosave.flush();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0].markers).toHaveLength(3);
+    expect(seen).toEqual(['dirty', 'saving', 'saved']);
+  });
+
+  it('surfaces a committed save that returned the project to the queue', async () => {
+    // Manual mode is the published project's mode, so this is the case the
+    // "back to review" state was built for: the commit demotes, and the line
+    // must say so rather than claim a plain save.
+    const save = vi.fn<(record: ServerProject) => Promise<ServerProject>>(async () =>
+      serverProject({ publicationStatus: 'pending' }),
+    );
+    const autosave = createAutosave(serverProject(), { save, mode: 'manual' });
+
+    autosave.mutate((c) => ({ ...c, name: 'Renamed' }));
+    await autosave.flush();
+
+    expect(autosave.status()).toBe('saved-review');
+  });
+
+  it('parks a failed commit in error, keeping the record to retry', async () => {
+    // A save that fails must say so rather than appear to have succeeded.
+    const save = vi.fn<(record: ServerProject) => Promise<ServerProject>>(async () => {
+      throw new Error('the server said no');
+    });
+    const autosave = createAutosave(serverProject(), { save, mode: 'manual' });
+
+    autosave.mutate((c) => ({ ...c, name: 'Renamed' }));
+    await expect(autosave.flush()).rejects.toBeInstanceOf(Error);
+
+    expect(autosave.status()).toBe('error');
+    expect(autosave.error()).toBeInstanceOf(Error);
+    // The commit never landed, so the record is still dirty — a retry writes.
+    save.mockImplementation(async (record) => record);
+    await autosave.flush();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(autosave.status()).toBe('saved');
+  });
+
+  it('writes nothing on dispose — an uncommitted record is discarded, not saved', async () => {
+    // The whole point of the mode: leaving without committing must not write.
+    // The surface's teardown reads `mode` to decide whether to flush.
+    const save = vi.fn<(record: ServerProject) => Promise<ServerProject>>(async (record) => record);
+    const autosave = createAutosave(serverProject(), { save, mode: 'manual' });
+
+    autosave.mutate((c) => ({ ...c, name: 'Renamed' }));
+    autosave.dispose();
+
+    expect(autosave.mode).toBe('manual');
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('defaults to autosave mode', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const save = vi.fn<(record: ServerProject) => Promise<ServerProject>>(async (record) => record);
+    const autosave = createAutosave(serverProject(), { save });
+
+    expect(autosave.mode).toBe('auto');
+    autosave.mutate((c) => ({ ...c, name: 'Renamed' }));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(save).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });
 

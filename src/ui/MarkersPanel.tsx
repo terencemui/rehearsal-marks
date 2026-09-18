@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { LabeledMarker } from '../domain';
 import type { Movement } from '../domain';
@@ -12,6 +13,35 @@ import { revealDelay, revealScroll } from './revealScroll';
  * feel stuck once they stop.
  */
 const MANUAL_SCROLL_GRACE_MS = 3000;
+
+/**
+ * The panel's editing surface (T56). Supplied only by the markings page, where
+ * a mark can be placed, named and removed; absent on the practice surface and
+ * the read-only public view, which then carry no control that could change a
+ * mark. There is deliberately no "selected marker" here — the page edits every
+ * row in place, so nothing has to be selected first.
+ */
+export interface MarkersAuthoring {
+  /** Places a mark at the playhead. */
+  onAdd(): void;
+  /** Whether the recording's load has settled — the Add control is inert until it has. */
+  addDisabled: boolean;
+  /**
+   * Commits an alias for the marker; an empty value clears it. Returns the
+   * alias the marker holds once the attempt is over — the normalized text on
+   * success, the unchanged stored alias when the domain refused it — so the
+   * field can be put back to the truth without the panel re-reading a record
+   * it has not seen yet.
+   */
+  onAlias(marker: LabeledMarker, alias: string): string;
+  /**
+   * The alias the domain refused and the guidance it gave, for the field that
+   * caused it. The row it names shows the message; every other row is quiet.
+   */
+  aliasError: { markerId: string; message: string } | null;
+  /** Removes the marker. */
+  onDelete(marker: LabeledMarker): void;
+}
 
 export interface MarkersPanelProps {
   /** Markers with derived labels, in time order. */
@@ -46,6 +76,54 @@ export interface MarkersPanelProps {
    * offers no way in at all.
    */
   markingsHref?: string;
+  /**
+   * What the panel may do to its marks, supplied only by the markings page
+   * (T56). Present, the rows carry the alias field and the delete control and
+   * the head carries Add marker; absent, the panel is the browsing list the
+   * practice surface and the read-only view have always shown.
+   */
+  authoring?: MarkersAuthoring;
+}
+
+export interface MarkersHeadProps {
+  /** The control beside the heading — whatever this surface offers where the marks are. */
+  children?: ReactNode;
+}
+
+/**
+ * The markers column's head: the heading, and the one control this surface puts
+ * beside it. Shared so an empty column and a filled one read as the same column
+ * in two states (T55) rather than two surfaces — the markings page's first
+ * paint and its marked one carry the same head above them.
+ */
+export function MarkersHead({ children }: MarkersHeadProps) {
+  return (
+    <div className="player-markers-head">
+      <h2 className="player-markers-heading">Markers</h2>
+      {children}
+    </div>
+  );
+}
+
+export interface AddMarkerControlProps {
+  /** Places a mark at the playhead. */
+  onAdd(): void;
+  /** Whether the recording has settled; the control is inert until it has. */
+  addDisabled: boolean;
+}
+
+/**
+ * The pointer's way to do what `M` does (T56). Marking is a listening pass and
+ * the key is what keeps the hands on the recording, but the key alone would
+ * make the column's whole purpose unreachable without a keyboard — so the same
+ * action exists where the marks land, inert until the playhead means something.
+ */
+export function AddMarkerControl({ onAdd, addDisabled }: AddMarkerControlProps) {
+  return (
+    <button type="button" className="markings-add" onClick={onAdd} disabled={addDisabled}>
+      Add marker
+    </button>
+  );
 }
 
 /** Markers grouped under their movement; markers before the first movement (or with no movements) lead. */
@@ -125,6 +203,12 @@ function pinnedHeaderInset(row: HTMLElement): number {
  * movement headers that pin to the list's top and swap as the next movement's
  * group scrolls into place; clicking a header seeks to the movement's start.
  * Without them the panel is the flat list it always was.
+ *
+ * Given an `authoring` surface (T56) the panel becomes the markings page's own column:
+ * rows carry the alias field and the delete control, and the head carries Add
+ * marker. The list itself is untouched — the same grouping, the same derived
+ * labels, the same follow-the-playhead reveal — because the marks a student
+ * edits are the marks they were reading a moment ago.
  */
 export function MarkersPanel({
   markers,
@@ -137,6 +221,7 @@ export function MarkersPanel({
   onSeekMovement,
   maxHeight,
   markingsHref,
+  authoring,
 }: MarkersPanelProps) {
   const listRef = useRef<HTMLOListElement>(null);
   /** When the reader last scrolled the list themselves; null until they do. */
@@ -238,16 +323,21 @@ export function MarkersPanel({
 
   return (
     <section className="player-markers" aria-label="Markers">
-      <div className="player-markers-head">
-        <h2 className="player-markers-heading">Markers</h2>
-        {markingsHref !== undefined && (
-          // The way into the markings page (T55), where the marks can be
-          // changed. It navigates; it edits nothing from here.
-          <Link to={markingsHref} className="player-markings-open">
-            Markings <span aria-hidden="true">→</span>
-          </Link>
+      <MarkersHead>
+        {authoring !== undefined ? (
+          // The page's own control (T56): the head of the column the mark
+          // lands in, so placing one is where the list is.
+          <AddMarkerControl onAdd={authoring.onAdd} addDisabled={authoring.addDisabled} />
+        ) : (
+          markingsHref !== undefined && (
+            // The way into the markings page (T55), where the marks can be
+            // changed. It navigates; it edits nothing from here.
+            <Link to={markingsHref} className="player-markings-open">
+              Markings <span aria-hidden="true">→</span>
+            </Link>
+          )
         )}
-      </div>
+      </MarkersHead>
       <ol
         ref={listRef}
         className="player-marker-list"
@@ -279,35 +369,120 @@ export function MarkersPanel({
             </li>
           ),
           ...groupMarkers.map((marker) => (
-            <li key={marker.id} className={marker.id === activeId ? 'active' : undefined}>
-              <button
-                type="button"
-                tabIndex={-1}
-                className="player-marker-row"
-                onClick={(event) => {
-                  onSeek(marker);
-                  // The row is a pointer target, not a focus stop: leaving
-                  // focus on it would make the next Space re-activate the row
-                  // (jump back to it) instead of meaning play/pause.
-                  event.currentTarget.blur();
-                }}
-                title={
-                  marker.aliases.length > 0
-                    ? `${marker.label} — ${marker.aliases.join(', ')}`
-                    : marker.label
-                }
-              >
-                <span className="player-marker-title">
-                  {marker.aliases.length > 0 ? `${marker.label} — ${marker.aliases[0]}` : marker.label}
-                </span>
-                <span className="player-marker-time">
-                  {formatWholeSeconds(marker.time, duration)}
-                </span>
-              </button>
-            </li>
+            <MarkerRow
+              key={marker.id}
+              marker={marker}
+              active={marker.id === activeId}
+              duration={duration}
+              onSeek={onSeek}
+              authoring={authoring}
+            />
           )),
         ])}
       </ol>
     </section>
+  );
+}
+
+interface MarkerRowProps {
+  marker: LabeledMarker;
+  /** Whether this row holds the playhead. */
+  active: boolean;
+  /** The recording's length — the row's clock divides by it. */
+  duration: number;
+  onSeek(marker: LabeledMarker): void;
+  /** What the panel may do to its marks, when the markings page supplies it. */
+  authoring?: MarkersAuthoring;
+}
+
+/**
+ * One marker's row. On the browsing surfaces it is the seek control alone, as
+ * it has always been. On the markings page (T56) the same seek control is
+ * joined by the two things that change a mark: the alias field, and Delete.
+ *
+ * An editable row shows its derived label on its own rather than the browsing
+ * rows' `label — alias`, because the alias is the field beside it — printing
+ * it twice would read as two different facts about one mark.
+ *
+ * The alias field is uncontrolled and commits on leaving it (or on Enter,
+ * which is the same thing): the marker's stored alias is what the field is
+ * seeded with, and what it is put back to when the domain refuses the text.
+ */
+function MarkerRow({ marker, active, duration, onSeek, authoring }: MarkerRowProps) {
+  const storedAlias = marker.aliases[0] ?? '';
+  const aliasError =
+    authoring !== undefined && authoring.aliasError?.markerId === marker.id
+      ? authoring.aliasError.message
+      : null;
+
+  const seek = (
+    <button
+      type="button"
+      tabIndex={-1}
+      className="player-marker-row"
+      onClick={(event) => {
+        onSeek(marker);
+        // The row is a pointer target, not a focus stop: leaving focus on it
+        // would make the next Space re-activate the row (jump back to it)
+        // instead of meaning play/pause.
+        event.currentTarget.blur();
+      }}
+      title={
+        marker.aliases.length > 0 ? `${marker.label} — ${marker.aliases.join(', ')}` : marker.label
+      }
+    >
+      <span className="player-marker-title">
+        {authoring !== undefined || marker.aliases.length === 0
+          ? marker.label
+          : `${marker.label} — ${marker.aliases[0]}`}
+      </span>
+      <span className="player-marker-time">{formatWholeSeconds(marker.time, duration)}</span>
+    </button>
+  );
+
+  return (
+    <li className={active ? 'active' : undefined}>
+      {authoring === undefined ? (
+        seek
+      ) : (
+        <div className="markings-row">
+          {seek}
+          <input
+            type="text"
+            className="markings-row-alias"
+            defaultValue={storedAlias}
+            placeholder="alias"
+            aria-label={`Alias for marker ${marker.label}`}
+            onBlur={(event) => {
+              const field = event.currentTarget;
+              // Nothing typed is nothing to commit — and re-committing the
+              // stored alias would only re-validate text already accepted.
+              if (field.value === storedAlias) return;
+              // The panel writes the honest value back: the normalized alias
+              // when the domain took it, the unchanged stored one when it did
+              // not — so the field never shows text the record does not hold.
+              field.value = authoring.onAlias(marker, field.value);
+            }}
+            onKeyDown={(event) => {
+              // Enter commits by leaving the field — one commit path, not two.
+              if (event.key === 'Enter') event.currentTarget.blur();
+            }}
+          />
+          <button
+            type="button"
+            className="markings-row-delete"
+            aria-label={`Delete marker ${marker.label}`}
+            onClick={() => authoring.onDelete(marker)}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+      {aliasError !== null && (
+        <p role="alert" className="markings-row-error">
+          {aliasError}
+        </p>
+      )}
+    </li>
   );
 }

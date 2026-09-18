@@ -242,8 +242,12 @@ towers over the recording. */
    clock column (`space-between` pushes the time to the right edge). The row's
    left padding is the marker's indent under its movement header (which sits at
    the panel's 10px inset), so the letter markers read as nested under their
-   movement while the movement names stay flush. */
-.player-marker-list li button {
+   movement while the movement names stay flush.
+
+   Scoped to the row's own class rather than to `li button`, so the markings
+   page's row (T56) — which carries its own delete control beside the seek
+   button — does not lay that control out as a second marker row. */
+.player-marker-list .player-marker-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -259,12 +263,12 @@ towers over the recording. */
   color: #334155;
 }
 
-.player-marker-list li button:hover {
+.player-marker-list .player-marker-row:hover {
   background: #f1f5f9;
 }
 
 /* The active marker — the row holding the playhead. */
-.player-marker-list li.active button {
+.player-marker-list li.active .player-marker-row {
   background: #ecfdf5;
   color: #0f172a;
 }
@@ -291,9 +295,10 @@ towers over the recording. */
    white, with the panel's bottom edge as its rule), the movement name flush at
    the panel's 10px inset — the marker rows' 16px indent is measured from it —
    and the movement's start time sharing the rows' right-aligned clock column.
-   Scoped under `.player-marker-movement` so it outranks the base row rule
-   (`.player-marker-list li button`), which would otherwise win the
-   specificity fight and lay the header out as another row. */
+   Scoped under `.player-marker-movement` because the header is the list's own
+   band rather than a row: the base row rule (`.player-marker-list
+   .player-marker-row`) is what a marker row is laid out by, and nothing about
+   a movement's header should be read off it. */
 .player-marker-movement {
   position: sticky;
   top: 0;

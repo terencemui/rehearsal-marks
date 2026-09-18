@@ -39,6 +39,12 @@ export interface RecordingSession {
   settled: boolean;
   /** Whether the load reported that the recording cannot play. */
   loadFailed: boolean;
+  /**
+   * Applies a mutation to the session's record: the autosave takes it, and
+   * React re-renders from the result. The way an editing surface changes what
+   * the record holds — whether that reaches the server is the autosave's mode.
+   */
+  mutate(fn: (current: ServerProject) => ServerProject): void;
   /** Re-runs the load after a failure — the error card's Retry. */
   retryLoad(): void;
 }
@@ -144,10 +150,12 @@ export function useRecordingSession({
     // Teardown: write anything still pending, then release. The route that
     // built the session (T45) owns the exit as well — this is the safety net
     // beneath it, and its flush settles the pending write before the route's
-    // own flush (which is then a no-op) reports the result. A read-only
-    // session (T50) never flushes — there is nothing it wrote.
+    // own flush (which is then a no-op) reports the result. Two sessions never
+    // flush: a read-only one (T50), which wrote nothing, and a manual one
+    // (T56), whose pending record is a commit its owner has not made — writing
+    // it here would be the write the mode exists to withhold.
     return () => {
-      if (!readOnly) void autosave.flush().catch(() => {});
+      if (!readOnly && autosave.mode === 'auto') void autosave.flush().catch(() => {});
       autosave.dispose();
       controller.destroy();
     };
@@ -158,6 +166,7 @@ export function useRecordingSession({
     record,
     settled,
     loadFailed,
+    mutate: update,
     /** The failure card's retry: back to loading, then a fresh load attempt. */
     retryLoad: useCallback(() => {
       setSettled(false);

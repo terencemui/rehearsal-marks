@@ -42,6 +42,26 @@ function markerRows(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll('.player-marker-row'));
 }
 
+/** The rows' derived labels, in DOM order. */
+function markerTitles(container: HTMLElement): (string | null)[] {
+  return Array.from(container.querySelectorAll('.player-marker-title')).map((t) => t.textContent);
+}
+
+/** The rows' clocks, in DOM order. */
+function markerTimes(container: HTMLElement): (string | null)[] {
+  return Array.from(container.querySelectorAll('.player-marker-time')).map((t) => t.textContent);
+}
+
+/** The alias fields, in DOM order — one per row, on the authoring rows. */
+function aliasFields(container: HTMLElement): HTMLInputElement[] {
+  return Array.from(container.querySelectorAll<HTMLInputElement>('.markings-row-alias'));
+}
+
+/** Waits past the autosave debounce, so a write that was going to happen has. */
+async function pastDebounce(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 700));
+}
+
 describe('the markings page opens on a project and plays it (T55)', () => {
   it('opens at its own URL on the project it names, under the navbar, and plays the recording', async () => {
     const api = fakeProjectsApi();
@@ -197,6 +217,363 @@ describe('the markings page opens on a project and plays it (T55)', () => {
     expect(controller.destroy).toHaveBeenCalled();
     expect(container.querySelector('.player-ruler')).toBeNull();
     expect(api.get('p1')).toEqual(expect.objectContaining({ markers: project().markers }));
+  });
+});
+
+describe('a mark can be placed, named and removed (T56)', () => {
+  it('places a mark at the playhead with M, without interrupting playback', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ playing: true, duration: 372 }));
+    act(() => controller.seek(42));
+
+    await user.keyboard('m');
+
+    // The mark fell where the student was hearing, not at zero and not at the
+    // last place the playhead was written.
+    expect(markerRows(container)).toHaveLength(1);
+    expect(markerTimes(container)).toEqual(['00:42']);
+    // Placing a mark is a listening gesture: the recording kept playing.
+    expect(controller.getPlaybackState().playing).toBe(true);
+    expect(controller.togglePlay).not.toHaveBeenCalled();
+    expect(controller.seek).toHaveBeenLastCalledWith(42);
+  });
+
+  it('lands the marks in time order with their derived labels, however they were placed', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    // Placed out of order — 30s, then 10s, then 20s.
+    for (const time of [30, 10, 20]) {
+      act(() => controller.seek(time));
+      await user.keyboard('m');
+    }
+
+    expect(markerTimes(container)).toEqual(['00:10', '00:20', '00:30']);
+    expect(markerTitles(container)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('places a mark from the column’s own control as well as the key', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(15));
+
+    await user.click(screen.getByRole('button', { name: 'Add marker' }));
+
+    expect(markerTimes(container)).toEqual(['00:15']);
+    // The column stays open to a second mark — the control does not disappear
+    // with the empty state that carried it.
+    act(() => controller.seek(45));
+    await user.click(screen.getByRole('button', { name: 'Add marker' }));
+    expect(markerTimes(container)).toEqual(['00:15', '00:45']);
+  });
+
+  it('names a mark with the student’s own word, and clears it again', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    // Private, so the work saves itself and the server's copy is the assertion.
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    const fields = aliasFields(container);
+    expect(fields).toHaveLength(2);
+    await user.type(fields[0], 'Meno');
+    await user.tab();
+
+    await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual(['Meno']));
+    expect(fields[0]).toHaveValue('Meno');
+    // An alias is a name, not a mark: typing into the field placed nothing.
+    expect(markerRows(container)).toHaveLength(2);
+
+    await user.clear(fields[0]);
+    await user.tab();
+
+    await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual([]));
+    expect(fields[0]).toHaveValue('');
+  });
+
+  it('refuses an alias that breaks a rule, with the domain’s own guidance', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    const field = aliasFields(container)[0];
+    // Longer than the domain's 16 characters.
+    await user.type(field, 'seventeen chars!!');
+    await user.tab();
+
+    // The rule is the domain's, and so is the sentence explaining it.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at most 16 characters/i);
+    // The refused text is not what the mark holds, and the field shows what it
+    // does hold — nothing was taken and nothing was silently mangled.
+    expect(field).toHaveValue('');
+    expect(api.get('p1')?.markers[0].aliases).toEqual([]);
+  });
+
+  it('keeps that guidance where it was refused — another row’s success is no answer to it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private' }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    const [first, second] = aliasFields(container);
+    await user.type(first, 'seventeen chars!!');
+    await user.tab();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at most 16 characters/i);
+
+    // A rule broken on one mark is that mark's complaint. Naming a different
+    // one successfully says nothing about it, so the refusal outlives it —
+    // otherwise the refused text sits in its field unexplained.
+    await user.type(second, 'Recap');
+    await user.tab();
+
+    await waitFor(() => expect(api.get('p1')?.markers[1].aliases).toEqual(['Recap']));
+    expect(screen.getByRole('alert')).toHaveTextContent(/at most 16 characters/i);
+    expect(first).toHaveValue('');
+  });
+
+  it('removes a mark that was a mistake', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+
+    // Gone from the column, and the mark behind it took its label.
+    expect(markerTimes(container)).toEqual(['00:20']);
+    expect(markerTitles(container)).toEqual(['A']);
+    await waitFor(() => expect(api.get('p1')?.markers.map((m) => m.id)).toEqual(['m2']));
+  });
+
+  it('offers no editing control on the practice surface, and M places nothing there', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(50));
+
+    // No control that could change a mark — the panel is the browsing list.
+    expect(container.querySelector('.markings-row')).toBeNull();
+    expect(container.querySelector('.markings-add')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete marker A' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Markings' })).toBeInTheDocument();
+
+    // And no key either: the practice surface stays playback-only (ADR-0003),
+    // so the authoring key its neighbour owns is simply not bound here.
+    await user.keyboard('m');
+    expect(markerRows(container)).toHaveLength(2);
+    expect(api.saveProject).not.toHaveBeenCalled();
+  });
+});
+
+describe('saving follows what the project is (T56)', () => {
+  it('saves a private project as the student works, with nothing to commit', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+    // Nothing outside the owner's own account was at risk, so there is no
+    // commit to make and no consequence to name.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+    expect(screen.queryByText(/returns it to review/i)).toBeNull();
+    expect(markerRows(container)).toHaveLength(0);
+    // The line reports the write it made, in the autosave's own tense. Read
+    // off the state, not the words: "Saved" is also what an untouched record
+    // reads, so the text alone could not tell a landed write from no write.
+    expect(screen.getByRole('status')).toHaveAttribute('data-save-status', 'saved');
+  });
+
+  it('saves a public project still awaiting review without a commit', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(
+      project({
+        publicationStatus: 'pending',
+        markers: [marker('m1', 10)],
+      }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+    // Already in the queue: a write costs the owner nothing, so it takes no
+    // decision.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+    expect(markerRows(container)).toHaveLength(0);
+  });
+
+  it('holds a rejected project’s edits for a commit too — it is awaiting another look', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(
+      project({
+        publicationStatus: 'rejected',
+        markers: [marker('m1', 10)],
+      }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Rejected is the other state a write disturbs: the same consequence, and
+    // the same control, as a published project.
+    expect(screen.getByText(/returns it to review/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+
+    expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
+    expect(markerRows(container)).toHaveLength(0);
+
+    await pastDebounce();
+
+    // An uncommitted record writes nothing, however long the page is left.
+    expect(api.saveProject).not.toHaveBeenCalled();
+    expect(api.get('p1')?.markers).toEqual([marker('m1', 10)]);
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(api.saveProject).toHaveBeenCalledTimes(1));
+    expect(api.get('p1')?.markers).toEqual([]);
+  });
+
+  it('writes nothing to a published project until the owner commits, and names the consequence first', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // The consequence is on the page before the first write, not after it.
+    expect(screen.getByText(/returns it to review/i)).toHaveTextContent(
+      /takes it off the public gallery/i,
+    );
+    expect(screen.getByText(/trusted user/i)).toHaveTextContent(/publish immediately/i);
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+
+    // The edit is in hand and the line says so — "unsaved", not "saving".
+    expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
+    expect(markerRows(container)).toHaveLength(0);
+
+    await pastDebounce();
+
+    // However long the page is left, an uncommitted record writes nothing.
+    expect(api.saveProject).not.toHaveBeenCalled();
+    expect(api.get('p1')?.markers).toEqual([marker('m1', 10)]);
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(api.saveProject).toHaveBeenCalledTimes(1));
+    expect(api.get('p1')?.markers).toEqual([]);
+  });
+
+  it('reports a committed save that returned the project to the queue', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(api.saveProject).toHaveBeenCalledTimes(1));
+    // The fake server's review trigger demoted it; the line says what happened
+    // rather than claiming a plain save.
+    expect(api.get('p1')?.publicationStatus).toBe('pending');
+    expect(await screen.findByText('Saved — back to review')).toBeInTheDocument();
+  });
+
+  it('says so when a commit fails, rather than appearing to have succeeded', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    api.failNext('saveProject');
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/save failed/i);
+    // Nothing was stored, and the record is still in hand to retry.
+    expect(api.get('p1')?.markers).toEqual([marker('m1', 10)]);
+    expect(markerRows(container)).toHaveLength(0);
+  });
+
+  it('leaves an uncommitted published project untouched on the way out', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { navigateTo } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await navigateTo('/help');
+    await screen.findByRole('heading', { name: 'Help' });
+    await pastDebounce();
+
+    // Leaving is not committing: the teardown of a waiting record writes
+    // nothing, so the server still holds the mark the owner did not save past.
+    expect(api.saveProject).not.toHaveBeenCalled();
+    expect(api.get('p1')?.markers).toEqual([marker('m1', 10)]);
+  });
+
+  it('settles a private project’s pending work on the way out', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { navigateTo } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Left inside the debounce window: the teardown is what settles it.
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await navigateTo('/help');
+    await screen.findByRole('heading', { name: 'Help' });
+
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
   });
 });
 

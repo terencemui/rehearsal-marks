@@ -1,7 +1,141 @@
-/* The markings page (T55). The surface itself is the player's — the title
+/* The markings page (T55, T56). The surface itself is the player's — the title
    band, the split, the timeline and the markers panel are all shared with the
-   practice surface, and their styles live in player.css. Only the empty first
-   paint is this page's own: a project with nothing marked on it. */
+   practice surface, and their styles live in player.css. What is this page's
+   own: the empty first paint, the editing controls the panel's rows grow, and
+   the save bar that carries the commit and the consequence of making one. */
+
+/* The save bar above the recording: the status line, the commit control when
+   the project waits for one, and the consequence that control carries. Flex
+   with a wrap so the note takes its own line under both. */
+.markings-save-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 4px;
+}
+
+/* The status line's own bottom margin is for the project page's stack; here it
+   shares a row with the commit control. */
+.markings-save-bar .save-status {
+  margin-bottom: 0;
+}
+
+.markings-save {
+  padding: 6px 14px;
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #fff;
+  cursor: pointer;
+  font: 600 13px/18px system-ui, sans-serif;
+}
+
+.markings-save:hover:not(:disabled) {
+  background: #115e59;
+  border-color: #115e59;
+}
+
+/* Nothing to commit — the control is present so the mode is legible, and
+   inert so it never claims a write it would not make. */
+.markings-save:disabled {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #94a3b8;
+  cursor: default;
+}
+
+/* The consequence, before the write: what saving does to a project that is
+   already out in the world. Its own line under the control it belongs to. */
+.markings-save-note {
+  flex-basis: 100%;
+  margin: 0;
+  max-width: 68ch;
+  font: 400 13px/19px system-ui, sans-serif;
+  color: #92400e;
+}
+
+/* The Add control, in the column's head where the marks it adds will land. */
+.markings-add {
+  padding: 4px 12px;
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  background: none;
+  color: #0f766e;
+  cursor: pointer;
+  font: 600 12px/18px system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.markings-add:hover:not(:disabled) {
+  background: #f0fdfa;
+}
+
+/* The recording has not settled: the playhead means nothing yet, so the
+   control is inert rather than placing a mark at zero. */
+.markings-add:disabled {
+  border-color: #cbd5e1;
+  color: #94a3b8;
+  cursor: default;
+}
+
+/* An editable row: the seek control, then the two things that change the
+   mark. The seek control keeps the browsing row's own layout — the label
+   left, the timestamp flush right — and gives up only the width the controls
+   beside it need. */
+.markings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.markings-row .player-marker-row {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.markings-row-alias {
+  flex: 0 0 96px;
+  width: 96px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  font: 400 13px/18px system-ui, sans-serif;
+  color: #334155;
+}
+
+.markings-row-alias::placeholder {
+  color: #94a3b8;
+}
+
+.markings-row-alias:focus {
+  outline: 2px solid #0f766e;
+  outline-offset: -1px;
+}
+
+.markings-row-delete {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: #b91c1c;
+  cursor: pointer;
+  font: 600 12px/18px system-ui, sans-serif;
+}
+
+.markings-row-delete:hover {
+  background: #fef2f2;
+}
+
+/* The alias the domain refused, under the row that broke the rule. */
+.markings-row-error {
+  margin: 2px 0 4px 16px;
+  font: 400 12px/17px system-ui, sans-serif;
+  color: #9a3412;
+}
 
 /* The empty column beside the recording. It sits where the markers panel
    would, under the same small heading, so a project with marks and a project
