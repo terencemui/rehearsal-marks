@@ -25,6 +25,7 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
     projects: [summary()],
     status: 'idle',
     onOpen: vi.fn(),
+    onOpenMarkings: vi.fn(),
     onRename: vi.fn(),
     onDelete: vi.fn(),
     onToggleVisibility: vi.fn(),
@@ -61,9 +62,47 @@ describe('ProjectsScreen list', () => {
     expect(props.onOpen).toHaveBeenCalledWith('project-1');
   });
 
+  it('opens a project’s markings page from its row', async () => {
+    const user = userEvent.setup();
+    const { props } = renderScreen();
+    await user.click(screen.getByRole('button', { name: /^Markings/ }));
+    expect(props.onOpenMarkings).toHaveBeenCalledWith('project-1');
+  });
+
+  it('offers the way in on every row, each opening its own project', async () => {
+    const user = userEvent.setup();
+    const { props } = renderScreen({
+      projects: [summary(), summary({ id: 'project-2', name: 'Chopin Op. 28' })],
+    });
+
+    // Each door names its own project, so a reader walking the list can tell
+    // them apart — and so this test can put the finger on a row rather than
+    // on a position.
+    const first = screen.getByRole('button', { name: 'Markings for Brahms Op. 118 No. 2' });
+    const second = screen.getByRole('button', { name: 'Markings for Chopin Op. 28' });
+
+    // Every row, not only the first: a list where one project can be filled
+    // and its neighbour cannot is a list with a hole in it.
+    await user.click(first);
+    expect(props.onOpenMarkings).toHaveBeenLastCalledWith('project-1');
+
+    await user.click(second);
+    expect(props.onOpenMarkings).toHaveBeenLastCalledWith('project-2');
+    expect(props.onOpenMarkings).toHaveBeenCalledTimes(2);
+  });
+
   it('disables rows while a workspace pipeline (a link create) runs', () => {
     renderScreen({ busy: true });
-    expect(screen.getByRole('button', { name: /Brahms/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Brahms/ })).toBeDisabled();
+  });
+
+  it('holds the way in inert while a workspace pipeline runs', () => {
+    // The list disables its controls while a create runs, and this door joins
+    // them (T61). Not because navigation would be dropped by the working
+    // lock — it holds no lock — but because a list that is inert everywhere
+    // else and live here is a list that lies about what it will accept.
+    renderScreen({ busy: true });
+    expect(screen.getByRole('button', { name: /^Markings/ })).toBeDisabled();
   });
 
   it('renders the status line vocabulary', () => {

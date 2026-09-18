@@ -52,6 +52,12 @@ export interface ProjectsScreenProps {
   /** A transient failure the user must see (e.g. a project that won't open). */
   notice?: string | null;
   onOpen: (id: string) => void;
+  /**
+   * Opens the project's markings page (T61) — the same page the marks panel's
+   * link reaches, so a project can be filled without opening its player first.
+   * Navigating, not editing: this screen writes nothing.
+   */
+  onOpenMarkings: (id: string) => void;
   /** Commits a validated, trimmed name; the caller persists and refreshes. */
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
@@ -73,6 +79,7 @@ export function ProjectsScreen({
   busy = false,
   notice = null,
   onOpen,
+  onOpenMarkings,
   onRename,
   onDelete,
   onToggleVisibility,
@@ -159,6 +166,27 @@ export function ProjectsScreen({
                   {formatDuration(project.duration)} · {project.markerCount} marker
                   {project.markerCount === 1 ? '' : 's'} · {formatUpdatedAt(project.updatedAt, Date.now())}
                 </span>
+              </button>
+              {/* The markings page, reached from the row (T61) — navigation
+                  like the open above it, and saying what the marks panel's
+                  door to the same page says, so the two ways in read as one
+                  page.
+                  A button rather than the panel's link, deliberately: this
+                  door must go inert with the rest of the row while a create
+                  runs (T61), and an anchor cannot be disabled. It shares the
+                  limitation the open button above it already carries — no
+                  cmd-click, no middle-click — which is the row's own
+                  behaviour, not this control's. The name carries the project
+                  because the row is one of many: a reader walking the list
+                  hears which project each door belongs to, and the visible
+                  word is still the name's. */}
+              <button
+                type="button"
+                aria-label={`Markings for ${project.name}`}
+                disabled={busy}
+                onClick={() => onOpenMarkings(project.id)}
+              >
+                Markings
               </button>
               {editingId === project.id ? (
                 <input
