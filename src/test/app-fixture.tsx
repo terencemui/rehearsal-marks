@@ -89,9 +89,9 @@ export function renderApp({
    */
   const pathRef: { current: string } = { current: initialEntry };
   /** A probe inside the router that hands the helpers the navigate function and
-   * the live location. The async act with a microtask yield is deliberate: React
-   * 19 defers the history listener's location update, and a synchronous act would
-   * read the DOM before the new page commits. */
+   * the live location. Every drive is wrapped in an async act for the same
+   * reason throughout: the page a navigation lands on commits after the act's
+   * own turn, and a synchronous act would read the DOM before it did. */
   function HistoryProbe() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -114,10 +114,10 @@ export function renderApp({
     }, [navigate, location]);
     return null;
   }
-  // A data router (T60), matching the app's own (`main.tsx`): the markings
-  // page refuses navigation away from uncommitted work, and blocking is a
-  // data-router capability. The splat route leaves `App`'s internal `<Routes>`
-  // to do the real matching, exactly as the running app does.
+  // A memory-backed data router (T60), matching the app's own — `main.tsx`
+  // carries why the router is a data one rather than a declarative one. The
+  // splat route leaves `App`'s internal `<Routes>` to do the real matching,
+  // exactly as the running app does.
   const router = createMemoryRouter(
     [
       {

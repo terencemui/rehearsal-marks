@@ -206,21 +206,35 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   // page shows a Save control exactly when the project waits for one.
   const needsCommit = autosave.mode === 'manual';
   /**
-   * Whether the record holds work the server does not. A failed commit counts:
-   * the autosave parks in `error` with the record still pending, so the same
-   * difference is in hand — and it is the state the Save control must stay
-   * live for, since Save is how a student retries it.
+   * Whether the server holds something other than what the record holds —
+   * `dirty` (waiting), `saving` (asked for, unanswered) and `error` (asked for,
+   * refused) alike. The failure counts because the record is still pending;
+   * the in-flight write counts because the commit has been *asked for*, not
+   * made, and a rejection arriving after the page is gone would come back to a
+   * disposed autosave with nothing left to retry it.
    */
-  const uncommitted = status === 'dirty' || status === 'error';
+  const uncommitted = status === 'dirty' || status === 'saving' || status === 'error';
+  /**
+   * Whether there is a commit for the Save control to make — `uncommitted` less
+   * the write already in flight. Save is how a waiting record is written and
+   * how a refused one is retried; offering it mid-write would only start a
+   * second.
+   */
+  const canCommit = status === 'dirty' || status === 'error';
   /**
    * Whether the page has work only its owner can settle (T60) — a `manual`
-   * record with something pending. An `auto` record never blocks, and the
-   * teardown is why it need not: it flushes on the way out, so leaving settles
-   * the work instead of losing it. Only a `manual` record has nothing that
-   * will write it.
+   * record with something the server has not confirmed. An `auto` record never
+   * blocks, because a write is already scheduled for it: the page is not what
+   * settles that work, so leaving is not a decision to put to its owner. (An
+   * in-app exit does settle it — the session's teardown flushes — but closing
+   * the tab runs no teardown at all, and the debounce window is the autosave's
+   * own exposure rather than something this question reaches.) Only a `manual`
+   * record has nothing that will write it, which is why this is narrower than
+   * `uncommitted` and is named for what leaving would cost rather than for
+   * what the record holds.
    */
-  const unsaved = needsCommit && uncommitted;
-  const blocker = useUnsavedChanges(unsaved);
+  const hasWorkToLose = needsCommit && uncommitted;
+  const blocker = useUnsavedChanges(hasWorkToLose);
 
   /**
    * Places a mark where the recording is — the playhead the student is hearing,
@@ -296,7 +310,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
           <button
             type="button"
             className="markings-save"
-            disabled={!uncommitted}
+            disabled={!canCommit}
             // A failed flush rejects; the status line is that failure's own
             // surface, and an unhandled rejection would drown it.
             onClick={() => void autosave.flush().catch(() => {})}

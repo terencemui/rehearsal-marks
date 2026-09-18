@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { LoadOptions } from '../audio';
 import { canonicalYouTubeUrl } from '../domain';
+import type { ServerProject } from '../projects/types';
 import { renderApp } from '../test/app-fixture';
 import { mockController } from '../test/controller-fixture';
 import { marker } from '../test/marker-fixture';
@@ -792,6 +793,86 @@ describe('leaving with unsaved changes (T60)', () => {
     await user.click(screen.getByRole('button', { name: 'Stay' }));
     await user.keyboard('m');
     expect(markerRows(container)).toHaveLength(1);
+  });
+
+  it('holds the keyboard inside the question, so the page behind it cannot be edited', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await navigateTo('/help');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    // The two answers are the whole of the keyboard while the question stands:
+    // Tab out of the last one comes back to the first. Without the wrap it
+    // walks on into the page — Save changes, Add marker — and a Return there
+    // would commit or edit the very work the owner is being asked about.
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Discard changes' })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Stay' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'Discard changes' })).toHaveFocus();
+
+    // Nothing behind the question was reached, and nothing was edited.
+    expect(markerRows(container)).toHaveLength(1);
+    expect(currentPath()).toBe('/projects/p1/markings');
+  });
+
+  it('refuses to leave while a commit is in flight — the server has not answered yet', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    const seeded = project({ markers: [marker('m1', 10)] });
+    api.seed(seeded);
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    // A commit asked for but not landed: the write is held open, so the page
+    // sits between the state it was in and the state the server will answer
+    // with. The Save control knows the difference — it goes down for the
+    // duration — and so must the exit.
+    let land: (() => void) | undefined;
+    vi.mocked(api.saveProject).mockImplementation(
+      () =>
+        new Promise<ServerProject>((resolve) => {
+          land = () => resolve(seeded);
+        }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled(),
+    );
+
+    await navigateTo('/help');
+
+    // Requesting the commit is not making it: left now, a write that rejects
+    // would come back to a disposed autosave with nothing left to retry it,
+    // and the owner would never be asked.
+    expect(currentPath()).toBe('/projects/p1/markings');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    // And the answer still settles it: the held write lands and the page is
+    // free to go.
+    await act(async () => {
+      land?.();
+    });
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
   });
 
   it('asks the browser before the tab is closed or reloaded, while work is uncommitted', async () => {

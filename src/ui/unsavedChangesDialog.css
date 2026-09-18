@@ -36,16 +36,27 @@
   gap: 8px;
 }
 
+/* The two answers are one pair, so they share a shape and differ only in
+   colour: whatever else separates them, neither may read as the louder one. */
+/* Width and style only, never the `border` shorthand: this selector is more
+   specific than either button's own rule, so a shorthand here would set
+   border-color too and win — flattening both answers to currentColor. The
+   width and style are the shared shape; the colour is each answer's own. */
+.unsaved-dialog-actions button {
+  padding: 6px 14px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 6px;
+  cursor: pointer;
+  font: 600 13px/18px system-ui, sans-serif;
+}
+
 /* Stay carries the page's own accent: it is the answer that keeps the work,
    and the one a stray Return should land on. */
 .unsaved-dialog-stay {
-  padding: 6px 14px;
-  border: 1px solid #0f766e;
-  border-radius: 6px;
+  border-color: #0f766e;
   background: #0f766e;
   color: #fff;
-  cursor: pointer;
-  font: 600 13px/18px system-ui, sans-serif;
 }
 
 .unsaved-dialog-stay:hover {
@@ -56,13 +67,9 @@
 /* Discard keeps the destructive colour its verb earns, so the two answers
    never read as a plain yes/no. */
 .unsaved-dialog-discard {
-  padding: 6px 14px;
-  border: 1px solid #b91c1c;
-  border-radius: 6px;
+  border-color: #b91c1c;
   background: none;
   color: #b91c1c;
-  cursor: pointer;
-  font: 600 13px/18px system-ui, sans-serif;
 }
 
 .unsaved-dialog-discard:hover {
