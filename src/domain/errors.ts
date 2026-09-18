@@ -11,6 +11,10 @@ export type DomainErrorCode =
   | 'invalid-value'
   | 'invalid-markers'
   | 'invalid-movements'
+  | 'movement-name-empty'
+  | 'movement-start-taken'
+  | 'duplicate-movement-id'
+  | 'movement-not-found'
   | 'unsupported-schema-version'
   | 'invalid-youtube-link'
   | 'youtube-playlist-link';

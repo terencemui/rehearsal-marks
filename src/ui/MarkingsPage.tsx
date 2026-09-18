@@ -3,22 +3,25 @@ import { Navigate, useParams } from 'react-router';
 import type { AudioController } from '../audio';
 import {
   addMarker,
+  addMovement,
   createMarker,
+  createMovement,
   errorMessage,
   formatTime,
   moveMarker,
   nudgedTime,
   parseTime,
   removeMarker,
+  renameMovement,
   setAliases,
 } from '../domain';
-import type { LabeledMarker } from '../domain';
+import type { LabeledMarker, Movement } from '../domain';
 import { createAutosave, createProjectSave } from '../projects/autosave';
 import type { Autosave } from '../projects/autosave';
 import type { ProjectsApi } from '../projects/api';
 import { requiresExplicitSave } from '../projects/types';
-import { AddMarkerControl, MarkersHead, MarkersPanel } from './MarkersPanel';
-import type { AddMarkerControlProps, MarkersAuthoring } from './MarkersPanel';
+import { MarkingsAddControls, MarkersHead, MarkersPanel } from './MarkersPanel';
+import type { MarkingsAddControlsProps, MarkersAuthoring } from './MarkersPanel';
 import { NotFoundPage } from './NotFoundPage';
 import { RecordingSurface } from './RecordingSurface';
 import { SaveStatusLine } from './SaveStatusLine';
@@ -223,6 +226,22 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    */
   const [timeError, setTimeError] = useState<{ markerId: string; message: string } | null>(null);
   /**
+   * Why the last attempt to set a movement boundary was refused (T58). Unlike
+   * the two above it is not held by a row, because the attempt that failed left
+   * no movement behind: the playhead was already a boundary. The complaint
+   * belongs beside the control that made it.
+   */
+  const [movementAddError, setMovementAddError] = useState<string | null>(null);
+  /**
+   * The movement name the domain refused, and which header it was refused in —
+   * the movement twin of `aliasError`, held the same way and for the same
+   * reason: a name refused on one movement says nothing about the next.
+   */
+  const [movementNameError, setMovementNameError] = useState<{
+    movementId: string;
+    message: string;
+  } | null>(null);
+  /**
    * The mark being corrected (T57), by id. Selection is the page's own state
    * and deliberately does not follow the playhead: the row holding the playhead
    * moves on its own as the recording plays, and a correction aimed at whatever
@@ -280,6 +299,62 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
       markers: addMarker(current.markers, createMarker(controller.getCurrentTime())),
     }));
   }, [controller, mutate]);
+
+  /**
+   * Sets a movement boundary where the recording is (T58) — the boundary twin
+   * of placing a mark, made the same way and for the same reason: the student
+   * hears the movement begin, and presses for it there.
+   *
+   * A boundary is named as it is placed. The name is provisional and honestly
+   * so — "Movement 2" is the second one this student set, not a claim about the
+   * score — because the domain has no unnamed movement to place and the student
+   * can rename it in the header a moment later. What the provisional name buys
+   * is that the movement is a real movement from the instant it exists: the
+   * record never holds one the parser would refuse to read back.
+   */
+  const addMovementAtPlayhead = useCallback((): void => {
+    try {
+      mutate((current) => ({
+        ...current,
+        movements: addMovement(
+          current.movements,
+          createMovement(`Movement ${current.movements.length + 1}`, controller.getCurrentTime()),
+        ),
+      }));
+      // Cleared by the attempt that succeeded, like every other complaint here.
+      setMovementAddError(null);
+    } catch (error) {
+      // The one way this refuses: the playhead sits on a boundary that is
+      // already there. The domain says which one, and the student can see it.
+      setMovementAddError(errorMessage(error));
+    }
+  }, [controller, mutate]);
+
+  /**
+   * Commits a name typed into a movement's header. The domain decides, as it
+   * does for an alias: a name it refuses throws with its own guidance and the
+   * movement is not renamed, so the refused text is never stored.
+   */
+  const setMovementName = useCallback(
+    (movement: Movement, name: string): string => {
+      try {
+        mutate((current) => ({
+          ...current,
+          movements: renameMovement(current.movements, movement.id, name),
+        }));
+      } catch (error) {
+        setMovementNameError({ movementId: movement.id, message: errorMessage(error) });
+        // The refused text is not what the movement holds; the field goes back
+        // to the name it does hold.
+        return movement.name;
+      }
+      // Cleared for this header only: a name refused on one movement is that
+      // movement's complaint, and another header's acceptance says nothing.
+      setMovementNameError((current) => (current?.movementId === movement.id ? null : current));
+      return name.trim();
+    },
+    [mutate],
+  );
 
   /**
    * Picks a mark out as the one being corrected (T57). A pointer clicks its row
@@ -376,7 +451,11 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   });
 
   const authoring: MarkersAuthoring = {
-    onAdd: addAtPlayhead,
+    onAddMarker: addAtPlayhead,
+    onAddMovement: addMovementAtPlayhead,
+    movementAddError,
+    onMovementName: setMovementName,
+    movementNameError,
     addDisabled: !session.settled,
     onAlias(marker: LabeledMarker, alias: string): string {
       const text = alias.trim();
@@ -450,8 +529,16 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
         loadFailed={session.loadFailed}
         onRetryLoad={session.retryLoad}
         side={(markersMaxHeight) =>
-          labeled.length === 0 ? (
-            <MarkingsEmptyState onAdd={addAtPlayhead} addDisabled={!session.settled} />
+          // Empty means empty of everything the column holds (T58): a recording
+          // with its movements laid out and no marks in them yet is a project
+          // being filled, and the panel is what shows the boundaries back.
+          labeled.length === 0 && record.movements.length === 0 ? (
+            <MarkingsEmptyState
+              onAddMarker={addAtPlayhead}
+              onAddMovement={addMovementAtPlayhead}
+              addDisabled={!session.settled}
+              movementAddError={movementAddError}
+            />
           ) : (
             // The same panel the practice surface shows: the same rows, the
             // same derived labels, the same movement grouping — and the rows
@@ -492,8 +579,8 @@ const RETURN_TO_REVIEW_NOTE =
   'the public gallery until a maintainer approves it again. A trusted user’s edits publish ' +
   'immediately.';
 
-/** The empty column's own way to fill itself — the same action the head offers. */
-type MarkingsEmptyStateProps = AddMarkerControlProps;
+/** The empty column's own way to fill itself — the same actions the head offers. */
+type MarkingsEmptyStateProps = MarkingsAddControlsProps;
 
 /**
  * The empty first paint (T55): a project with nothing marked on it says the one
@@ -506,12 +593,28 @@ type MarkingsEmptyStateProps = AddMarkerControlProps;
  * with the key, because marking is a listening pass and the key is what keeps
  * the hands on the recording; the control beside it is the same action for a
  * pointer.
+ *
+ * The head carries the same two controls the filled column's does (T58), so a
+ * project can be started at its boundaries as readily as at its marks: a
+ * recording whose movements are laid out first is a perfectly ordinary way to
+ * work through a symphony. The copy below stays about the marks, which is what
+ * the key it names does.
  */
-function MarkingsEmptyState({ onAdd, addDisabled }: MarkingsEmptyStateProps) {
+function MarkingsEmptyState({
+  onAddMarker,
+  onAddMovement,
+  addDisabled,
+  movementAddError,
+}: MarkingsEmptyStateProps) {
   return (
     <section className="markings-empty" aria-label="Markers">
       <MarkersHead>
-        <AddMarkerControl onAdd={onAdd} addDisabled={addDisabled} />
+        <MarkingsAddControls
+          onAddMarker={onAddMarker}
+          onAddMovement={onAddMovement}
+          addDisabled={addDisabled}
+          movementAddError={movementAddError}
+        />
       </MarkersHead>
       <p className="markings-empty-copy">
         Nothing marked yet. Play the recording and press <kbd>M</kbd> where a landmark goes by —

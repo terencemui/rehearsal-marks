@@ -21,7 +21,10 @@ import type { LabeledMarker } from './marker';
  * One media frame of tolerance, in seconds: an MP3 frame is ~26ms. The
  * practice readout's passed/next boundary shares this constant, so a marker
  * flips from next to passed at the same instant the arrow jumps consider it
- * reached.
+ * reached. Movement boundaries share it too (T58), and for the same reason: a
+ * boundary placed at the playhead is placed at a seek-snapped time, so "the
+ * playhead is already on a movement" is a question about a frame, not a
+ * number.
  */
 export const FRAME_EPSILON = 0.05;
 

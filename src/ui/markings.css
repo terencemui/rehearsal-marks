@@ -237,3 +237,108 @@
   font: 600 13px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #0f172a;
 }
+
+/* The two things a markings column can be given (T56, T58): a mark, and a
+   movement boundary. They sit together at the column's head — and above the
+   empty column's prompt — so the column reads as the same column in both
+   states: what a project can be started with is what it can be added to. */
+.markings-add-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* The boundary control. Quieter than Add marker — placing a movement is the
+   rarer act, and the two side by side would otherwise read as equal weight. */
+.markings-add-movement {
+  padding: 4px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: none;
+  color: #334155;
+  cursor: pointer;
+  font: 600 12px/18px system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.markings-add-movement:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
+/* The recording has not settled: there is no playhead to set a boundary at. */
+.markings-add-movement:disabled {
+  border-color: #e2e8f0;
+  color: #94a3b8;
+  cursor: default;
+}
+
+/* A boundary that could not be placed, under the control that asked. It takes
+   a line of its own: a create that refused left no movement behind, so the
+   complaint names the movement already in the way rather than one of its own
+   headers. */
+.markings-add-error {
+  flex: 1 0 100%;
+  margin: 0;
+  text-align: right;
+  font: 400 12px/17px system-ui, sans-serif;
+  color: #9a3412;
+}
+
+/* A movement's header on the markings page (T58): the movement is named where
+   it is read, so the name becomes the field and the header keeps the band, the
+   start time, and the jump. `align-items` leaves the base rule's baseline,
+   which an input does not share and would sit oddly against. */
+.player-marker-movement .markings-movement-header {
+  align-items: center;
+  gap: 8px;
+}
+
+/* The movement's name, editable in place. It keeps the browsing header's
+   accent — semibold ink, so the movements still read as the section headers —
+   and shows its edges only under the pointer or the caret, so a list of
+   boundaries reads as names rather than as a form. */
+.markings-movement-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  font: 600 15px/22px system-ui, sans-serif;
+  color: #0f172a;
+}
+
+.markings-movement-name:hover {
+  border-color: #cbd5e1;
+}
+
+.markings-movement-name:focus {
+  border-color: #cbd5e1;
+  background: #fff;
+  outline: 2px solid #0f766e;
+  outline-offset: -1px;
+}
+
+/* The provisional name is a starting point, not a claim — so it reads as one
+   until the student replaces it. */
+.markings-movement-name::placeholder {
+  font-weight: 400;
+  color: #94a3b8;
+}
+
+/* The movement's start, and now the header's one control: the name is a field,
+   so the jump lives on the time it jumps to. */
+.markings-movement-jump {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.markings-movement-jump:hover {
+  background: #e2e8f0;
+}

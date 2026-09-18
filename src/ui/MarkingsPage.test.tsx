@@ -59,6 +59,14 @@ function aliasFields(container: HTMLElement): HTMLInputElement[] {
   return Array.from(container.querySelectorAll<HTMLInputElement>('.markings-row-alias'));
 }
 
+/**
+ * The movement name fields, in DOM order — one per header, on the authoring
+ * surface (T58), where a movement is named where it sits in the list.
+ */
+function movementNameFields(container: HTMLElement): HTMLInputElement[] {
+  return Array.from(container.querySelectorAll<HTMLInputElement>('.markings-movement-name'));
+}
+
 /** Waits past the autosave debounce, so a write that was going to happen has. */
 async function pastDebounce(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 700));
@@ -157,8 +165,11 @@ describe('the markings page opens on a project and plays it (T55)', () => {
     const rows = markerRows(container);
     expect(rows[0].textContent).toContain('00:10');
     expect(rows[2].textContent).toContain('00:30');
-    // Grouped by movement, with the leading sequence named as such.
-    expect(screen.getByRole('button', { name: /II\. Andante/ })).toBeInTheDocument();
+    // Grouped by movement, with the leading sequence named as such. On this
+    // page the movement's header is where its name is edited (T58), so the
+    // header reads as the field holding it rather than as a button labelled
+    // with it; the grouping it performs is the same grouping.
+    expect(movementNameFields(container).map((f) => f.value)).toEqual(['II. Andante']);
     expect(screen.getByText('Before the first movement')).toBeInTheDocument();
   });
 
@@ -831,6 +842,167 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 
     expect(api.get('p1')?.markers.map((m) => m.time)).toEqual([10, 20]);
     expect(api.saveProject).not.toHaveBeenCalled();
+  });
+});
+
+describe('movements exist, so the letters restart (T58)', () => {
+  it('adds a movement at the playhead, and the marks group under it with the letters starting over', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // A project with no movements: one flat sequence, exactly as before.
+    expect(container.querySelectorAll('.player-movement-header')).toHaveLength(0);
+    expect(markerTitles(container)).toEqual(['A', 'B']);
+
+    // The boundary goes where the recording is — the student marks a movement
+    // start by hearing it, the same way they place a mark.
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(15));
+    await user.click(screen.getByRole('button', { name: 'Add movement' }));
+
+    const names = movementNameFields(container);
+    expect(names).toHaveLength(1);
+    expect(names[0].value).toBe('Movement 1');
+
+    // And it is a boundary in earnest: the mark before it leads a sequence of
+    // its own, and the mark after it opens the movement's letters at A — the
+    // whole reason movements exist (ADR-0005).
+    expect(markerTitles(container)).toEqual(['A', 'A']);
+    expect(screen.getByText('Before the first movement')).toBeInTheDocument();
+
+    // The 00:20 mark is *under* the boundary rather than merely second in the
+    // letters. A header and the rows beneath it are the movement — membership is
+    // what the list's own order says it is — so the shape has to be the leading
+    // group and its mark, then the boundary and its own.
+    expect(
+      [...container.querySelectorAll('.player-marker-list > li')].map((item) => {
+        const header = item.querySelector('.markings-movement-header');
+        if (header !== null) {
+          return (header.querySelector('input') as HTMLInputElement).value;
+        }
+        if (item.classList.contains('player-marker-movement')) return 'before the first movement';
+        return item.querySelector('.player-marker-title')?.textContent ?? '?';
+      }),
+    ).toEqual(['before the first movement', 'A', 'Movement 1', 'A']);
+
+    // And the boundary is authored in earnest, not merely drawn: it is what the
+    // server ends up holding once the project is committed.
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.get('p1')?.movements).toHaveLength(1));
+    expect(api.get('p1')?.movements.map((m) => [m.name, m.start])).toEqual([['Movement 1', 15]]);
+  });
+
+  it('refuses a boundary the playhead already sits on, naming the movement in the way', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(
+      project({
+        markers: [marker('m1', 10), marker('m2', 20)],
+        movements: [{ id: 'mv1', name: 'I. Allegro', start: 15 }],
+      }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Clicking a movement's header parks the playhead exactly on its start —
+    // the one moment a boundary cannot be set, and one a student reaches by
+    // doing the most ordinary thing on the page.
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(15));
+    await user.click(screen.getByRole('button', { name: 'Add movement' }));
+
+    // The domain's own guidance, beside the control that asked — there is no
+    // movement to hang it on, because the attempt left none behind.
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent).toContain('I. Allegro');
+    expect(refusal.textContent).toMatch(/strictly after/i);
+    expect(movementNameFields(container)).toHaveLength(1);
+  });
+
+  it('names a movement in its header, and the name is what the server ends up holding', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(
+      project({
+        visibility: 'private',
+        movements: [{ id: 'mv1', name: 'Movement 1', start: 15 }],
+      }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    const field = movementNameFields(container)[0];
+    expect(field.value).toBe('Movement 1');
+
+    // The name is edited where it is read — in the header the movement owns.
+    await user.clear(field);
+    await user.type(field, 'II. Andante{Enter}');
+
+    await pastDebounce();
+    expect(api.get('p1')?.movements.map((m) => m.name)).toEqual(['II. Andante']);
+    // A rename moves nothing: the boundary is exactly where it was.
+    expect(api.get('p1')?.movements.map((m) => m.start)).toEqual([15]);
+  });
+
+  it('refuses a name a movement cannot hold, with the domain’s guidance in its header', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(
+      project({
+        visibility: 'private',
+        movements: [{ id: 'mv1', name: 'Movement 1', start: 15 }],
+      }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // The field is emptied before it is retyped, so an emptied field is a state
+    // the page meets — and it must leave the record alone rather than persist a
+    // movement with no name.
+    const field = movementNameFields(container)[0];
+    await user.clear(field);
+    await user.tab();
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent).toMatch(/must be named/i);
+    // And the field goes back to the name the movement still holds.
+    expect(field.value).toBe('Movement 1');
+
+    await pastDebounce();
+    expect(api.get('p1')?.movements.map((m) => m.name)).toEqual(['Movement 1']);
+  });
+
+  it('keeps a movement visible before anything is marked inside it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Nothing at all on the project: the column says what fills it.
+    expect(screen.getByRole('region', { name: 'Markers' }).textContent).toMatch(
+      /nothing marked yet/i,
+    );
+
+    // Laying a symphony's movements out before marking any of them is an
+    // ordinary way to work through it — and it has to be visible while it is
+    // being done, or the student cannot see the boundary they just set.
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(100));
+    await user.click(screen.getByRole('button', { name: 'Add movement' }));
+
+    expect(movementNameFields(container)).toHaveLength(1);
+    expect(container.querySelectorAll('.player-marker-row')).toHaveLength(0);
+    // The prompt gave way to the boundary: the column holds something now.
+    expect(screen.queryByText(/nothing marked yet/i)).toBeNull();
   });
 });
 
