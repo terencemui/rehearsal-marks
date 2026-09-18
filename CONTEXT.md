@@ -28,6 +28,14 @@ _Avoid_: name, title, custom label
 A self-contained, editable unit owned by a signed-in User: one recording plus its name, markers, movements, and visibility. Stored server-side and public by default, so its markings are a contribution unless the owner opts out.
 _Avoid_: file, document, track
 
+**Markings**:
+A project's authored substance: its markers and movements taken together, as distinct from the recording they are pinned to and the name its owner gives it.
+_Avoid_: label set, labels, annotations
+
+**Markings page**:
+The surface where a project's owner authors its markings — its markers and movements — and the only place they can be changed.
+_Avoid_: label-editing page, label set page, editor
+
 **Recording**:
 The performance a project is built on — a YouTube video, streamed from Google.
 _Avoid_: audio, media, clip

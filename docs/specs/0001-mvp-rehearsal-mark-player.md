@@ -1,5 +1,14 @@
 # Spec: Classical Rehearsal-Mark Player — MVP
 
+> **Superseded — 2026-09-17.** This is the original MVP spec, kept as the record of what was first proposed. It is **not** a description of the app that exists. Four ADRs have since removed most of it:
+>
+> - **ADR-0002** — uploads, the Library, and import/export: stories #1–#3, #6, #9–#10, #29–#31, #34–#39, #40–#44, #48–#49, and the Storage, Audio pipeline, App shell, Export/import, and Library & community sections.
+> - **ADR-0003** — in-player editing: stories #7–#8, #16, #20–#22, #28, #32, #46, and the Interactions section. ADR-0007 returns #7–#8 and #20–#21 to the Markings page.
+> - **ADR-0005** — the `A`–`Z` letter jumps (#26); multi-movement projects are now in scope rather than out.
+> - **ADR-0006** — "client-only, no server, no accounts" and the browser Storage decision: stories #33 and #47.
+>
+> What still stands is the domain core: labels derived from time rank (#11–#15), aliases (#17–#19), the navigation keys (#23–#25, #27), and the `Marker` shape. `CONTEXT.md` and `docs/adr/` describe what is true now. The tracker copy of this spec — GitHub issue #1 — was closed as superseded on the same date.
+
 > *This spec was synthesized by Claude Code from a grilling session with the maintainer. Every decision in it was confirmed by a human.*
 
 ## Problem Statement
