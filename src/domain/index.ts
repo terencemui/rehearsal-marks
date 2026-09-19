@@ -9,7 +9,7 @@ export { deriveLabels, labelForRank } from './labels';
 export { FRAME_EPSILON, nextMarker, previousMarker } from './navigation';
 export { movementForTime } from './movement';
 export type { Movement } from './movement';
-export { addMovement, createMovement, renameMovement } from './movements';
+export { addMovement, createMovement, moveMovement, removeMovement, renameMovement } from './movements';
 export { practiceReadout } from './practice';
 export type { PracticeReadout } from './practice';
 export {

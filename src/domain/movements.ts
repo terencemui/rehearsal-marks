@@ -58,14 +58,108 @@ export function addMovement(movements: readonly Movement[], movement: Movement):
   }
   const clash = movements.find((m) => Math.abs(m.start - movement.start) <= FRAME_EPSILON);
   if (clash !== undefined) {
-    throw new DomainError(
-      `A movement already starts there — "${clash.name}". A movement must start strictly after ` +
-        'the one before it and strictly before the one after it, so pick a moment between them.',
-      'movement-start-taken',
-    );
+    // The create lands on a boundary that is already there, which is the same
+    // refusal a re-time earns for the same reason — so it is the same sentence.
+    throw boundaryRefusal(clash, true);
   }
   const name = validateName(movement.name);
   return [...movements, { ...movement, name }].sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Re-times one movement — moves its boundary to `start`. The movement twin of
+ * `moveMarker`, and the one movement operation with a rule of its own: starts
+ * stay strictly increasing (ADR-0005), so a boundary may not be moved onto or
+ * past either of its neighbours. A re-time that would is refused, naming the
+ * movement in the way; the set is never silently rearranged behind the
+ * student's back.
+ *
+ * Assumes the set is in start order, as `addMovement` produces it and
+ * `parseMovements` enforces — a movement's neighbours are the ones either side
+ * of it in the list, which is what its own extent is derived from.
+ */
+export function moveMovement(
+  movements: readonly Movement[],
+  id: string,
+  start: number,
+): Movement[] {
+  assertValidStart(start);
+  const index = findIndex(movements, id);
+  assertFitsBetweenNeighbours(movements, index, start);
+  return updateAt(movements, index, { start }).sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Refuses a start that does not fit where the movement currently sits. A
+ * movement's neighbours are the two boundaries its own extent is drawn
+ * between, so a re-time must land strictly inside them — reaching one and
+ * passing one are both out, and the guidance says which happened and names the
+ * movement in the way.
+ *
+ * Both edges are judged to a media frame, the same tolerance `addMovement`
+ * judges a create by, and for the same reason: a boundary set at the playhead
+ * reads back off the media element, so it lands a frame or so from the time
+ * that was asked for, and two boundaries inside one frame render the same
+ * MM:SS with nothing between them.
+ *
+ * The window subsumes the create's rule for a movement already in the set: no
+ * movement lies strictly between its neighbours, so keeping inside them is
+ * exactly keeping off every other start.
+ */
+function assertFitsBetweenNeighbours(
+  movements: readonly Movement[],
+  index: number,
+  start: number,
+): void {
+  const previous = movements[index - 1];
+  const next = movements[index + 1];
+  if (previous !== undefined && start <= previous.start + FRAME_EPSILON) {
+    throw boundaryRefusal(previous, Math.abs(start - previous.start) <= FRAME_EPSILON);
+  }
+  if (next !== undefined && start >= next.start - FRAME_EPSILON) {
+    throw boundaryRefusal(next, Math.abs(start - next.start) <= FRAME_EPSILON);
+  }
+}
+
+/**
+ * The refusal a boundary earns for landing where it may not, in the words for
+ * what actually happened: landing on a boundary that is already there is one
+ * thing, and putting this movement on the far side of one is another — and the
+ * second is the one the ordering rule exists for, since it is the one that
+ * would leave two extents overlapping.
+ *
+ * One refusal for a create and for a re-time both, because it is one rule: a
+ * create that lands on an existing start breaks the strict ordering exactly as
+ * a re-time that lands on a neighbour does, and says so in the same words.
+ */
+function boundaryRefusal(movement: Movement, onIt: boolean): DomainError {
+  const guidance =
+    'A movement must start strictly after the one before it and strictly before the one after ' +
+    'it, so pick a moment between them.';
+  return new DomainError(
+    onIt
+      ? `A movement already starts there — "${movement.name}". ${guidance}`
+      : `That would cross "${movement.name}". ${guidance}`,
+    onIt ? 'movement-start-taken' : 'movement-start-crossed',
+  );
+}
+
+/**
+ * Removes one movement. The twin of `removeMarker`, and — deliberately — no
+ * more than a removal: the set alone is written, and what the recording holds
+ * outside it is not this function's to touch.
+ *
+ * What that leaves is the whole of ADR-0007's rule about deleting a movement:
+ * **the markers inside it are not deleted with it.** They are never attached to
+ * a movement in the first place — membership is derived from the starts
+ * (ADR-0005) and labels are derived from membership — so removing a boundary
+ * re-derives both, and a mark that stood inside it simply falls into whatever
+ * movement now runs over its time: the one before it, or the leading,
+ * movement-less group if it was the first.
+ */
+export function removeMovement(movements: readonly Movement[], id: string): Movement[] {
+  const index = findIndex(movements, id);
+  return movements.filter((_, i) => i !== index);
 }
 
 /**
@@ -78,11 +172,25 @@ export function renameMovement(
   id: string,
   name: string,
 ): Movement[] {
-  if (!movements.some((m) => m.id === id)) {
+  const index = findIndex(movements, id);
+  const validated = validateName(name);
+  return updateAt(movements, index, { name: validated });
+}
+
+function findIndex(movements: readonly Movement[], id: string): number {
+  const index = movements.findIndex((m) => m.id === id);
+  if (index === -1) {
     throw new DomainError(`No movement with id "${id}".`, 'movement-not-found');
   }
-  const validated = validateName(name);
-  return movements.map((m) => (m.id === id ? { ...m, name: validated } : m));
+  return index;
+}
+
+function updateAt(
+  movements: readonly Movement[],
+  index: number,
+  patch: Partial<Movement>,
+): Movement[] {
+  return movements.map((m, i) => (i === index ? { ...m, ...patch } : m));
 }
 
 function assertValidStart(start: number): void {

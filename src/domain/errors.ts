@@ -13,6 +13,7 @@ export type DomainErrorCode =
   | 'invalid-movements'
   | 'movement-name-empty'
   | 'movement-start-taken'
+  | 'movement-start-crossed'
   | 'duplicate-movement-id'
   | 'movement-not-found'
   | 'unsupported-schema-version'

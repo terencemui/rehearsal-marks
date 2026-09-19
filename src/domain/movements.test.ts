@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DomainError } from './errors';
 import type { Movement } from './movement';
-import { addMovement, createMovement, renameMovement } from './movements';
+import { addMovement, createMovement, moveMovement, removeMovement, renameMovement } from './movements';
 
 /** The ADR-0005 boundary model: start-only, strictly increasing starts. */
 function movements(): Movement[] {
@@ -9,6 +9,25 @@ function movements(): Movement[] {
     { id: 'm1', name: 'I. Allegro', start: 0 },
     { id: 'm2', name: 'II. Adagio', start: 831 },
   ];
+}
+
+/** The same, with a movement after the one most re-times are aimed at. */
+function symphony(): Movement[] {
+  return [
+    { id: 'm1', name: 'I. Allegro', start: 0 },
+    { id: 'm2', name: 'II. Adagio', start: 831 },
+    { id: 'm3', name: 'III. Finale', start: 1620 },
+  ];
+}
+
+/** The refusal `run` throws, or null when it threw none. */
+function refusalOf(run: () => void): DomainError | null {
+  try {
+    run();
+    return null;
+  } catch (error) {
+    return error as DomainError;
+  }
 }
 
 describe('addMovement', () => {
@@ -130,6 +149,98 @@ describe('createMovement', () => {
       refusal = error as DomainError;
     }
     expect(refusal?.code).toBe('movement-name-empty');
+  });
+});
+
+describe('moveMovement', () => {
+  it('re-times the movement it names, and leaves every other boundary where it was', () => {
+    // A boundary placed by ear lands late by reaction time, and a typed time is
+    // how it is made exact (ADR-0007). Only the one boundary moves.
+    const moved = moveMovement(symphony(), 'm2', 900);
+
+    expect(moved.map((m) => m.start)).toEqual([0, 900, 1620]);
+    expect(moved.map((m) => m.name)).toEqual(['I. Allegro', 'II. Adagio', 'III. Finale']);
+    // Identity follows the movement, not its start.
+    expect(moved.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('refuses a start that would cross the movement after it, naming the one in the way', () => {
+    // A re-time is the one movement write that can put the set out of order:
+    // moving II past III would leave the two extents overlapping, so the
+    // ordering stays honest instead of rearranging itself behind the student.
+    const refusal = refusalOf(() => moveMovement(symphony(), 'm2', 1700));
+
+    expect(refusal?.code).toBe('movement-start-crossed');
+    expect(refusal?.message).toContain('III. Finale');
+    expect(refusal?.message).toMatch(/strictly after .* strictly before/);
+  });
+
+  it('refuses a start that would cross the movement before it, naming that one', () => {
+    // The same rule read the other way. III may not be moved back before II —
+    // and the movement it crossed is the one it is named against, not whichever
+    // boundary happens to be furthest away.
+    const refusal = refusalOf(() => moveMovement(symphony(), 'm3', 100));
+
+    expect(refusal?.code).toBe('movement-start-crossed');
+    expect(refusal?.message).toContain('II. Adagio');
+  });
+
+  it('refuses a start a neighbour already holds, naming it as taken rather than crossed', () => {
+    // Typing the time an adjacent movement already starts at is the ordinary
+    // way to reach this: the boundary would land exactly where one is, not past
+    // it — and the guidance says so.
+    const refusal = refusalOf(() => moveMovement(symphony(), 'm2', 1620));
+
+    expect(refusal?.code).toBe('movement-start-taken');
+    expect(refusal?.message).toContain('III. Finale');
+  });
+
+  it('judges reaching a neighbour, in either direction, to a media frame', () => {
+    // The same tolerance a create is judged by, and for the same reason: the
+    // playhead reads back off the media element, so a boundary set there lands
+    // a frame or so off — two movements that close together render the same
+    // MM:SS and hold nothing between them.
+    expect(refusalOf(() => moveMovement(symphony(), 'm2', 1620 - 0.02))?.code).toBe(
+      'movement-start-taken',
+    );
+    expect(refusalOf(() => moveMovement(symphony(), 'm2', 0 + 0.02))?.code).toBe(
+      'movement-start-taken',
+    );
+    // And the tolerance is a frame, not a fudge: a boundary the student really
+    // did move somewhere else is still theirs to move.
+    expect(refusalOf(() => moveMovement(symphony(), 'm2', 1620 - 0.06))).toBeNull();
+    expect(refusalOf(() => moveMovement(symphony(), 'm2', 0.06))).toBeNull();
+  });
+
+  it('leaves the first and last movements free to move within their one open side', () => {
+    // A movement with no neighbour on a side has no boundary to cross there —
+    // the recording's start is the floor, and its end is a soft fact the domain
+    // deliberately does not hold a boundary to (ADR-0006).
+    expect(moveMovement(symphony(), 'm1', 400).map((m) => m.start)).toEqual([400, 831, 1620]);
+    expect(moveMovement(symphony(), 'm3', 5000).map((m) => m.start)).toEqual([0, 831, 5000]);
+  });
+
+  it('refuses a time that is not a real one, and an id the set does not hold', () => {
+    // Both are the two facts `parseMovements` would refuse the row back out
+    // for, checked at the write just as `addMovement` checks them.
+    expect(refusalOf(() => moveMovement(symphony(), 'm2', -1))?.code).toBe('invalid-time');
+    expect(refusalOf(() => moveMovement(symphony(), 'm2', NaN))?.code).toBe('invalid-time');
+    expect(refusalOf(() => moveMovement(symphony(), 'nope', 900))?.code).toBe('movement-not-found');
+  });
+});
+
+describe('removeMovement', () => {
+  it('removes the movement it names and re-times nothing else', () => {
+    // The boundaries that remain are exactly where they were: a deletion is a
+    // deletion, not a re-laying-out of the movements around the gap.
+    const remaining = removeMovement(symphony(), 'm2');
+
+    expect(remaining.map((m) => m.id)).toEqual(['m1', 'm3']);
+    expect(remaining.map((m) => m.start)).toEqual([0, 1620]);
+  });
+
+  it('refuses an id the set does not hold', () => {
+    expect(refusalOf(() => removeMovement(symphony(), 'nope'))?.code).toBe('movement-not-found');
   });
 });
 
