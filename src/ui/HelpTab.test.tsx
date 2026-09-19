@@ -9,21 +9,38 @@ import { HelpTab } from './HelpTab';
  * projects, the review flow, and the account rules — as facts, not as layout.
  */
 describe('HelpTab', () => {
-  it('documents the single-posture keyboard reference', () => {
+  it('documents what each surface answers to, and which keys belong to which', () => {
     render(<HelpTab />);
 
     const keyboard = screen.getByRole('heading', { name: 'Keyboard reference' }).closest('section')!;
-    expect(keyboard).toHaveTextContent('Space');
-    expect(keyboard).toHaveTextContent('Seek ∓5 seconds');
     // The A–Z letter jump is gone (ADR-0005); navigation is Space, the arrows,
     // and clicks. Labels restart at A within each movement.
     expect(keyboard).not.toHaveTextContent('A–Z');
     expect(keyboard).toHaveTextContent(/restarting at A within each movement/i);
-    // One posture only: the editing rows are gone.
-    expect(keyboard).not.toHaveTextContent('Add a marker');
-    expect(keyboard).not.toHaveTextContent(/Nudge the selected marker/i);
-    expect(keyboard).not.toHaveTextContent('Delete');
+    // The delete-and-deselect keys the playback-only player shed (ADR-0003)
+    // were never keys; nothing claims them back.
     expect(keyboard).not.toHaveTextContent('Esc');
+    expect(keyboard).not.toHaveTextContent('Delete');
+
+    // Two surfaces play a recording and they are described separately, because
+    // they answer to different keys: the practice surface is playback-only and
+    // may not author (ADR-0003), while the Markings page adds the two keys that
+    // place and correct a marker (ADR-0007). What each table holds, row for
+    // row, is pinned against the document and the keyboard elsewhere
+    // (keyboardReference.test.tsx); the claim made here is the one this page
+    // can make on its own — that each surface is given the keys it has, and
+    // that the keys which author are not given to the surface that may not.
+    const playbackKeys = ['Space', '← / →', '↑ / ↓'];
+    const practice = keyColumn(screen.getByRole('table', { name: 'The practice surface' }));
+    const markings = keyColumn(screen.getByRole('table', { name: 'The Markings page' }));
+    expect(practice).toEqual(expect.arrayContaining(playbackKeys));
+    expect(markings).toEqual(expect.arrayContaining([...playbackKeys, 'M', '[ / ]']));
+    expect(practice).not.toContain('M');
+    expect(practice).not.toContain('[ / ]');
+
+    // Alt+arrows are the browser's again (ADR-0003); the reference says so
+    // rather than leaving the reader to find out by pressing them.
+    expect(keyboard).toHaveTextContent(/Alt\+arrows are the browser's again/);
   });
 
   it('states the marker rules and their limits', () => {
@@ -42,6 +59,21 @@ describe('HelpTab', () => {
     expect(markers).toHaveTextContent(/leaves you alone for a few seconds/i);
   });
 
+  it('says where a student marks a recording', () => {
+    render(<HelpTab />);
+
+    const markers = screen.getByRole('heading', { name: /markers/i }).closest('section')!;
+    // Where a marker is placed has to be findable from where the markers are
+    // read: the page it happens on, the link that opens it, and the key that
+    // drops the marker at the playhead.
+    expect(markers).toHaveTextContent(/Markings page/);
+    expect(markers).toHaveTextContent(/Markings →/);
+    expect(markers).toHaveTextContent(/press M where a landmark goes by/);
+    // And what a marker that landed wrong can do about it — placement is only
+    // half the pass (ADR-0007).
+    expect(markers).toHaveTextContent(/corrected there too/);
+  });
+
   it('describes server-backed projects honestly', () => {
     render(<HelpTab />);
 
@@ -50,8 +82,10 @@ describe('HelpTab', () => {
     expect(projects).toHaveTextContent(/not in this browser/i);
     expect(projects).toHaveTextContent('automatically');
     // Autosave replaced the save button; nothing project-shaped is evictable
-    // browser storage anymore.
+    // browser storage anymore. The one exception is named here rather than left
+    // to be discovered on a published project's page (T62).
     expect(projects).toHaveTextContent(/no save button/i);
+    expect(projects).toHaveTextContent(/already out in the world/i);
   });
 
   it('says reading and playing never need an account; creating and editing do', () => {
@@ -98,6 +132,23 @@ describe('HelpTab', () => {
     expect(review).toHaveTextContent(/public by default/i);
   });
 
+  it('says what saving means for a project already out in the world', () => {
+    render(<HelpTab />);
+
+    const review = screen.getByRole('heading', { name: /public projects/i }).closest('section')!;
+    // A save on a published project is the owner's decision, and the reason is
+    // the consequence: the review trigger takes it off the gallery (T56,
+    // ADR-0007). The page names that before the control; Help says it too.
+    expect(review).toHaveTextContent(/Save changes/);
+    expect(review).toHaveTextContent(/returns a published project to review/);
+    expect(review).toHaveTextContent(/off the public gallery/);
+    // The other half of the rule, so the reader can tell which project is
+    // which: everything else still writes itself.
+    expect(review).toHaveTextContent(/saves itself as you work/);
+    // And the exception the owner cannot see from their own side.
+    expect(review).toHaveTextContent(/trusted user/);
+  });
+
   it('makes the privacy policy reachable, with the honest line intact', async () => {
     const user = userEvent.setup();
     render(<HelpTab />);
@@ -129,6 +180,17 @@ describe('HelpTab', () => {
   });
 
 });
+
+/**
+ * The first cell of each row of a keyboard table — the key it names, or the
+ * click it describes: the column that says which affordances a surface has,
+ * which is what tells the two tables apart.
+ */
+function keyColumn(table: HTMLElement): string[] {
+  return Array.from(table.querySelectorAll('tbody tr')).map(
+    (row) => row.querySelector('th, td')?.textContent?.trim() ?? '',
+  );
+}
 
 /** The `<li>` elements of the nth ordered list inside a container. */
 function withinOrderedList(container: HTMLElement, index: number): HTMLElement[] {
