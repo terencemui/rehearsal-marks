@@ -15,20 +15,48 @@ import { revealDelay, revealScroll } from './revealScroll';
 const MANUAL_SCROLL_GRACE_MS = 3000;
 
 /**
- * The panel's editing surface (T56, T57). Supplied only by the markings page,
- * where a mark can be placed, named, corrected and removed; absent on the
- * practice surface and the read-only public view, which then carry no control
- * that could change a mark.
+ * The panel's editing surface (T56, T57, T58). Supplied only by the markings
+ * page, where a mark can be placed, named, corrected and removed and a movement
+ * boundary can be set and named; absent on the practice surface and the
+ * read-only public view, which then carry no control that could change either.
  *
  * Naming and deleting act on the row they are in, so neither needs anything
- * selected first. Correcting does: a nudge has to be told which mark it moves,
- * and a time has to be typed into one particular field, so the page holds one
- * selected mark at a time and the panel shows it — see `selectedId`.
+ * selected first — and a movement is named in its own header, the same way.
+ * Correcting does: a nudge has to be told which mark it moves, and a time has to
+ * be typed into one particular field, so the page holds one selected mark at a
+ * time and the panel shows it — see `selectedId`.
  */
 export interface MarkersAuthoring {
   /** Places a mark at the playhead. */
-  onAdd(): void;
-  /** Whether the recording's load has settled — the Add control is inert until it has. */
+  onAddMarker(): void;
+  /**
+   * Places a movement boundary at the playhead (T58), named provisionally —
+   * movements are markers' peers (ADR-0007), so a boundary is set where the
+   * student hears it, exactly as a mark is.
+   */
+  onAddMovement(): void;
+  /**
+   * Why a movement could not be placed at all (T58) — the domain's own refusal
+   * when the playhead sits on a boundary that already exists. Shown beside the
+   * control that made the attempt, since a create that refused has no movement
+   * of its own to hang the complaint on.
+   */
+  movementAddError: string | null;
+  /**
+   * Commits a name for the movement. Returns the name the movement holds once
+   * the attempt is over — the normalized text on success, the unchanged stored
+   * name when the domain refused it — so the field can be put back to the truth
+   * without the panel re-reading a record it has not seen yet, as the alias
+   * field is.
+   */
+  onMovementName(movement: Movement, name: string): string;
+  /**
+   * The movement name the domain refused and the guidance it gave, for the
+   * field that caused it. The header it names shows the message; every other
+   * header is quiet.
+   */
+  movementNameError: { movementId: string; message: string } | null;
+  /** Whether the recording's load has settled — the Add controls are inert until it has. */
   addDisabled: boolean;
   /**
    * Commits an alias for the marker; an empty value clears it. Returns the
@@ -118,12 +146,13 @@ export interface MarkersPanelProps {
    */
   markingsHref?: string;
   /**
-   * What the panel may do to its marks, supplied only by the markings page
-   * (T56, T57). Present, the head carries Add marker and the rows carry the
-   * alias field, the delete control, and — on the selected row — the correction
-   * block that nudges the mark and takes an exact time for it; absent, the panel
-   * is the browsing list the practice surface and the read-only view have always
-   * shown, with no control that could change a mark.
+   * What the panel may do to its marks and its movements, supplied only by the
+   * markings page (T56, T57, T58). Present, the head carries Add marker and Add
+   * movement, the rows carry the alias field, the delete control, and — on the
+   * selected row — the correction block that nudges the mark and takes an exact
+   * time for it, and a movement's header becomes the field its name is edited
+   * in; absent, the panel is the browsing list the practice surface and the
+   * read-only view have always shown, with no control that could change either.
    */
   authoring?: MarkersAuthoring;
 }
@@ -148,24 +177,65 @@ export function MarkersHead({ children }: MarkersHeadProps) {
   );
 }
 
-export interface AddMarkerControlProps {
+/**
+ * What the column's two add controls take. They are the same act against
+ * different nouns — set something at the playhead — so they take the same
+ * shape, and each prop is named for the thing its control adds: beside
+ * `onAddMovement`, a bare `onAdd` would read as either.
+ */
+export interface MarkingsAddControlsProps {
   /** Places a mark at the playhead. */
-  onAdd(): void;
-  /** Whether the recording has settled; the control is inert until it has. */
+  onAddMarker(): void;
+  /** Places a movement boundary at the playhead. */
+  onAddMovement(): void;
+  /** Why the last attempt to place a movement was refused, or null while none was. */
+  movementAddError: string | null;
+  /** Whether the recording has settled; both controls are inert until it has. */
   addDisabled: boolean;
 }
 
 /**
- * The pointer's way to do what `M` does (T56). Marking is a listening pass and
- * the key is what keeps the hands on the recording, but the key alone would
- * make the column's whole purpose unreachable without a keyboard — so the same
- * action exists where the marks land, inert until the playhead means something.
+ * The two things a markings column can be given: a mark, and a boundary. Shared
+ * by the panel's head and the empty column's prompt so the two read as the same
+ * column in two states (T55) — the actions a project can be started with are
+ * the actions it can be added to.
+ *
+ * Both are the pointer's way to do what a key does. Marking is a listening pass
+ * and the keys are what keep the hands on the recording, but a key alone would
+ * make the column's purpose unreachable without a keyboard — so each action
+ * also exists here, where the marks land, inert until the playhead means
+ * something. A boundary is placed by ear for the same reason a mark is: the
+ * student hears the movement begin, and it goes there (T58).
+ *
+ * The movement control carries its own refusal because a create that was
+ * refused left no movement behind to hang the complaint on: the message belongs
+ * beside the control that made the attempt, not in a row.
  */
-export function AddMarkerControl({ onAdd, addDisabled }: AddMarkerControlProps) {
+export function MarkingsAddControls({
+  onAddMarker,
+  addDisabled,
+  onAddMovement,
+  movementAddError,
+}: MarkingsAddControlsProps) {
   return (
-    <button type="button" className="markings-add" onClick={onAdd} disabled={addDisabled}>
-      Add marker
-    </button>
+    <div className="markings-add-controls">
+      <button type="button" className="markings-add" onClick={onAddMarker} disabled={addDisabled}>
+        Add marker
+      </button>
+      <button
+        type="button"
+        className="markings-add-movement"
+        onClick={onAddMovement}
+        disabled={addDisabled}
+      >
+        Add movement
+      </button>
+      {movementAddError !== null && (
+        <p role="alert" className="markings-add-error">
+          {movementAddError}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -179,22 +249,26 @@ interface MarkerGroup {
  * Markers partitioned by movement membership (latest start ≤ time), in
  * movement order. Markers before the first movement — or every marker when the
  * recording has no movements — form the leading, movement-less group.
+ *
+ * Every movement gets its group whether or not a mark falls in it (T58). A
+ * movement is a fact about the recording and a place the recording can be
+ * jumped to, not a heading a mark earns; and now that a boundary can be set
+ * where the student hears one, a movement they have just placed must be
+ * visible before they have marked anything inside it.
  */
 function groupMarkers(
   markers: readonly LabeledMarker[],
   movements: readonly Movement[],
 ): MarkerGroup[] {
   const groups = movements.map((movement) => ({ movement, markers: [] as LabeledMarker[] }));
-  const byId = new Map(movements.map((movement) => [movement.id, movement]));
+  const byId = new Map(groups.map((group) => [group.movement.id, group]));
   const leading = { movement: null, markers: [] as LabeledMarker[] };
   for (const marker of markers) {
     const movement = movementForTime(movements, marker.time);
-    const group =
-      movement !== null ? groups.find((g) => g.movement === byId.get(movement.id)) : undefined;
+    const group = movement !== null ? byId.get(movement.id) : undefined;
     (group ?? leading).markers.push(marker);
   }
-  const filled = groups.filter((g) => g.markers.length > 0);
-  return leading.markers.length > 0 ? [leading, ...filled] : filled;
+  return leading.markers.length > 0 ? [leading, ...groups] : groups;
 }
 
 /**
@@ -386,7 +460,11 @@ export function MarkersPanel({
     };
   }, [revealId, scheduleReveal]);
 
-  if (markers.length === 0) return null;
+  // An empty column paints nothing — unless it holds movements, which are the
+  // column's content in their own right (T58): a recording with its boundaries
+  // laid out and nothing marked inside them yet is a project being filled, not
+  // an empty one.
+  if (markers.length === 0 && movements.length === 0) return null;
   const hasMovements = movements.length > 0;
   const groups = groupMarkers(markers, movements);
 
@@ -394,9 +472,14 @@ export function MarkersPanel({
     <section className="player-markers" aria-label="Markers">
       <MarkersHead>
         {authoring !== undefined ? (
-          // The page's own control (T56): the head of the column the mark
-          // lands in, so placing one is where the list is.
-          <AddMarkerControl onAdd={authoring.onAdd} addDisabled={authoring.addDisabled} />
+          // The page's own controls (T56, T58): the head of the column the mark
+          // and the boundary land in, so placing either is where the list is.
+          <MarkingsAddControls
+            onAddMarker={authoring.onAddMarker}
+            onAddMovement={authoring.onAddMovement}
+            addDisabled={authoring.addDisabled}
+            movementAddError={authoring.movementAddError}
+          />
         ) : (
           markingsHref !== undefined && (
             // The way into the markings page (T55), where the marks can be
@@ -418,23 +501,12 @@ export function MarkersPanel({
               key={movement ? `movement-${movement.id}` : 'before-first-movement'}
               className="player-marker-movement"
             >
-              {movement ? (
-                <button
-                  type="button"
-                  className="player-movement-header"
-                  onClick={() => onSeekMovement(movement)}
-                  title={`Jump to ${movement.name}`}
-                >
-                  <span className="player-movement-name">{movement.name}</span>
-                  <span className="player-marker-time">
-                    {formatWholeSeconds(movement.start, duration)}
-                  </span>
-                </button>
-              ) : (
-                <div className="player-movement-header" aria-hidden="true">
-                  <span className="player-movement-name">Before the first movement</span>
-                </div>
-              )}
+              <MovementHeader
+                movement={movement}
+                duration={duration}
+                onSeek={onSeekMovement}
+                authoring={authoring}
+              />
             </li>
           ),
           ...groupMarkers.map((marker) => (
@@ -450,6 +522,105 @@ export function MarkersPanel({
         ])}
       </ol>
     </section>
+  );
+}
+
+interface MovementHeaderProps {
+  /** The movement this header names, or null for the leading, movement-less group. */
+  movement: Movement | null;
+  /** The recording's length — the header's clock divides by it. */
+  duration: number;
+  onSeek(movement: Movement): void;
+  /** What the panel may do to its movements, when the markings page supplies it. */
+  authoring?: MarkersAuthoring;
+}
+
+/**
+ * A movement's header: its name and its start, and the way to jump there. On
+ * the browsing surfaces it is the jump control alone, as it has always been —
+ * the whole header is the button, and clicking anywhere in it seeks.
+ *
+ * On the markings page (T58) the same header is where the movement is *named*,
+ * so the name becomes the editable field, exactly as a mark's alias does in its
+ * row. What is left of the header is the movement's start, and that is the jump:
+ * a name written in a button would be a second copy of the field beside it,
+ * reading as two different facts about one movement. The control is labelled by
+ * the time it shows and titled with where it goes, the same convention the
+ * nudge controls follow — a name that replaced the visible text would leave the
+ * button unaddressable by the words on it.
+ *
+ * The leading group — marks before the first movement — has no movement and so
+ * nothing to name or jump to; it keeps the plain label it has always had.
+ */
+function MovementHeader({ movement, duration, onSeek, authoring }: MovementHeaderProps) {
+  if (movement === null) {
+    return (
+      <div className="player-movement-header" aria-hidden="true">
+        <span className="player-movement-name">Before the first movement</span>
+      </div>
+    );
+  }
+
+  const time = formatWholeSeconds(movement.start, duration);
+
+  if (authoring === undefined) {
+    return (
+      <button
+        type="button"
+        className="player-movement-header"
+        onClick={() => onSeek(movement)}
+        title={`Jump to ${movement.name}`}
+      >
+        <span className="player-movement-name">{movement.name}</span>
+        <span className="player-marker-time">{time}</span>
+      </button>
+    );
+  }
+
+  const nameError =
+    authoring.movementNameError?.movementId === movement.id
+      ? authoring.movementNameError.message
+      : null;
+
+  return (
+    <>
+      <div className="player-movement-header markings-movement-header">
+        <input
+          type="text"
+          className="markings-movement-name"
+          defaultValue={movement.name}
+          placeholder="movement name"
+          aria-label={`Name for the movement ${movement.name}`}
+          onBlur={(event) => {
+            const field = event.currentTarget;
+            // Nothing typed is nothing to commit — and re-committing the stored
+            // name would only re-validate text already accepted.
+            if (field.value === movement.name) return;
+            // The panel writes the honest value back: the normalized name when
+            // the domain took it, the unchanged stored one when it did not — so
+            // the field never shows a name the record does not hold.
+            field.value = authoring.onMovementName(movement, field.value);
+          }}
+          onKeyDown={(event) => {
+            // Enter commits by leaving the field — one commit path, not two.
+            if (event.key === 'Enter') event.currentTarget.blur();
+          }}
+        />
+        <button
+          type="button"
+          className="markings-movement-jump"
+          onClick={() => onSeek(movement)}
+          title={`Jump to ${movement.name}`}
+        >
+          <span className="player-marker-time">{time}</span>
+        </button>
+      </div>
+      {nameError !== null && (
+        <p role="alert" className="markings-row-error">
+          {nameError}
+        </p>
+      )}
+    </>
   );
 }
 
