@@ -9,9 +9,11 @@ import {
   errorMessage,
   formatTime,
   moveMarker,
+  moveMovement,
   nudgedTime,
   parseTime,
   removeMarker,
+  removeMovement,
   renameMovement,
   setAliases,
 } from '../domain';
@@ -242,6 +244,17 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     message: string;
   } | null>(null);
   /**
+   * The movement time the domain refused, and which boundary it was refused on
+   * (T59) — the movement twin of `timeError`, and held the same way: a time
+   * refused on one boundary says nothing about the next. Unlike a mark's, this
+   * refusal is not about a nonsense time but about a real one that would put
+   * the boundary on or past a neighbour.
+   */
+  const [movementTimeError, setMovementTimeError] = useState<{
+    movementId: string;
+    message: string;
+  } | null>(null);
+  /**
    * The mark being corrected (T57), by id. Selection is the page's own state
    * and deliberately does not follow the playhead: the row holding the playhead
    * moves on its own as the recording plays, and a correction aimed at whatever
@@ -357,12 +370,110 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   );
 
   /**
-   * Picks a mark out as the one being corrected (T57). A pointer clicks its row
-   * and the keyboard walks to it with ↑/↓; both arrive here, so the two ways of
-   * choosing are one piece of state.
+   * Forgets the movement time the domain refused (T59). Called wherever that
+   * boundary is re-timed, nudged or removed: the complaint was about a boundary
+   * as it stood, and a correction left standing over a boundary that has since
+   * moved would be an error about nothing.
+   *
+   * Only the movement named: a refusal belongs to the boundary that earned it,
+   * and another boundary's acceptance says nothing of it.
    */
-  const select = useCallback((marker: LabeledMarker): void => {
-    setSelectedId(marker.id);
+  const forgetMovementTimeError = useCallback((id: string): void => {
+    setMovementTimeError((current) => (current?.movementId === id ? null : current));
+  }, []);
+
+  /**
+   * Re-time a movement to a time typed into its correction field (T59). The
+   * domain parses the text and is the one that decides, exactly as it does for
+   * a mark's time — and it is a decision with a second edge here: a time can be
+   * perfectly real and still be one this boundary cannot take, because it lands
+   * on or past a neighbour. That refusal throws with its own guidance naming
+   * the movement in the way, and this boundary does not move.
+   */
+  const setMovementTime = useCallback(
+    (movement: Movement, text: string): string => {
+      try {
+        const time = parseTime(text);
+        mutate((current) => ({
+          ...current,
+          movements: moveMovement(current.movements, movement.id, time),
+        }));
+        forgetMovementTimeError(movement.id);
+        return formatTime(time, duration);
+      } catch (error) {
+        setMovementTimeError({ movementId: movement.id, message: errorMessage(error) });
+        // The refused text is not where the boundary is; the field goes back to
+        // the exact start the movement does hold.
+        return formatTime(movement.start, duration);
+      }
+    },
+    [duration, forgetMovementTimeError, mutate],
+  );
+
+  /**
+   * Moves a boundary by `delta` seconds — the one correction the block's two
+   * controls make, and the movement twin of a mark's nudge. Unlike a mark's it
+   * can be refused: the boundary is bounded by its neighbours where a mark is
+   * bounded by nothing, so a nudge into the movement next door is a domain
+   * refusal rather than a move, and it is reported the way a refused typed time
+   * is. A nudge that lands re-seeds the field (it is keyed on the start), which
+   * is why the complaint goes with the success.
+   */
+  const nudgeMovement = useCallback(
+    (movement: Movement, delta: number): void => {
+      try {
+        mutate((current) => {
+          // Read from the record being written, not from the render this
+          // gesture started in, so a nudge always moves from where the boundary
+          // actually is. One that is no longer there moves nothing rather than
+          // throwing — its selection went with it.
+          const held = current.movements.find((m) => m.id === movement.id);
+          if (held === undefined) return current;
+          return {
+            ...current,
+            movements: moveMovement(current.movements, movement.id, nudgedTime(held.start, delta)),
+          };
+        });
+        forgetMovementTimeError(movement.id);
+      } catch (error) {
+        setMovementTimeError({ movementId: movement.id, message: errorMessage(error) });
+      }
+    },
+    [forgetMovementTimeError, mutate],
+  );
+
+  /**
+   * Removes a movement boundary (T59). Nothing is done to the markers: they are
+   * never attached to a movement, so they stay exactly where they are and
+   * simply fall into whichever movement now runs over their time — the one
+   * before it, or the leading group if it was the first — with their labels
+   * drawn again from their new group. The panel asked first, and said so.
+   */
+  const deleteMovement = useCallback(
+    (movement: Movement): void => {
+      // The boundary's complaints go with it, and so does its selection: a
+      // correction left aimed at a movement that no longer exists is a
+      // correction aimed at nothing.
+      forgetMovementTimeError(movement.id);
+      setMovementNameError((current) => (current?.movementId === movement.id ? null : current));
+      setSelectedId((current) => (current === movement.id ? null : current));
+      mutate((current) => ({
+        ...current,
+        movements: removeMovement(current.movements, movement.id),
+      }));
+    },
+    [forgetMovementTimeError, mutate],
+  );
+
+  /**
+   * Picks a row out as the one being corrected (T57, T59). A pointer clicks a
+   * mark's row or a movement's header, and the keyboard walks to a mark with
+   * ↑/↓; all of them arrive here, so the ways of choosing are one piece of
+   * state — and one row is chosen at a time, because a page has one thing being
+   * worked on at a time.
+   */
+  const select = useCallback((id: string): void => {
+    setSelectedId(id);
   }, []);
 
   /**
@@ -447,7 +558,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     },
     // A walk picks out the mark it lands on: without this the nudge keys could
     // never reach a mark, since rows are pointer targets and not tab stops.
-    onWalk: select,
+    onWalk: (marker) => select(marker.id),
   });
 
   const authoring: MarkersAuthoring = {
@@ -456,6 +567,10 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     movementAddError,
     onMovementName: setMovementName,
     movementNameError,
+    onMovementTime: setMovementTime,
+    movementTimeError,
+    onNudgeMovement: nudgeMovement,
+    onDeleteMovement: deleteMovement,
     addDisabled: !session.settled,
     onAlias(marker: LabeledMarker, alias: string): string {
       const text = alias.trim();

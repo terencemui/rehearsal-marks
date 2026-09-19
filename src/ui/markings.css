@@ -342,3 +342,66 @@
 .markings-movement-jump:hover {
   background: #e2e8f0;
 }
+
+/* The movement's Delete (T59), in the header beside the jump. The rows' own
+   danger ink, and no fill until the pointer is on it — it is the same act on a
+   larger thing, and a filled control inside the header band would shout across
+   the whole list it is pinned above. */
+.markings-movement-delete {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: #b91c1c;
+  cursor: pointer;
+  font: 600 12px/18px system-ui, sans-serif;
+}
+
+.markings-movement-delete:hover {
+  background: #fef2f2;
+}
+
+/* The movement's delete question, under the header that raised it and inside
+   the same band. It takes the width the header's controls leave rather than a
+   column of its own: the sentence is longer than they are, and a question about
+   a movement belongs to that movement's band and no other. */
+.markings-movement-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f1f5f9;
+  font: 400 13px/19px system-ui, sans-serif;
+  color: #334155;
+}
+
+/* Width and style only, never the `border` shorthand: this selector is more
+   specific than either answer's own rule below, so a shorthand here would set
+   border-color too and win — flattening the two answers to one colour. */
+.markings-movement-confirm button {
+  padding: 3px 10px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font: 600 12px/18px system-ui, sans-serif;
+}
+
+/* The answer that carries the deletion, in the app's danger colour — the same
+   pairing the account control and the workspace rows use for the same act. */
+.markings-movement-confirm .markings-movement-confirm-delete {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.markings-movement-confirm .markings-movement-confirm-delete:hover {
+  background: #b91c1c;
+  color: #fff;
+}

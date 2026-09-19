@@ -68,6 +68,11 @@ function movementNameFields(container: HTMLElement): HTMLInputElement[] {
   return Array.from(container.querySelectorAll<HTMLInputElement>('.markings-movement-name'));
 }
 
+/** The movement headers' jump controls, in DOM order — one per header. */
+function movementJumps(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('.markings-movement-jump'));
+}
+
 /** Waits past the autosave debounce, so a write that was going to happen has. */
 async function pastDebounce(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 700));
@@ -1004,6 +1009,219 @@ describe('movements exist, so the letters restart (T58)', () => {
     expect(container.querySelectorAll('.player-marker-row')).toHaveLength(0);
     // The prompt gave way to the boundary: the column holds something now.
     expect(screen.queryByText(/nothing marked yet/i)).toBeNull();
+  });
+});
+
+describe('a movement can be re-timed and deleted (T59)', () => {
+  /** Two movements with marks inside them — a symphony, roughly placed. */
+  function multiMovement(overrides = {}) {
+    return project({
+      visibility: 'private',
+      duration: 1800,
+      markers: [marker('m1', 10), marker('m2', 20), marker('m3', 900)],
+      movements: [
+        { id: 'mv1', name: 'I. Allegro', start: 15 },
+        { id: 'mv2', name: 'II. Adagio', start: 831 },
+      ],
+      ...overrides,
+    });
+  }
+
+  it('re-times a movement by typing an exact time, and the server ends up holding it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Nothing is being corrected until the student picks a boundary out.
+    expect(container.querySelector('.markings-correct')).toBeNull();
+
+    // Clicking a movement's header parks the playhead at its start — and that
+    // is the click that marks it as the boundary being corrected, exactly as
+    // clicking a mark's row both jumps to it and picks it out (T57).
+    act(() => controller.emitPlayback({ duration: 1800 }));
+    await user.click(movementJumps(container)[1]);
+    expect(controller.getCurrentTime()).toBe(831);
+    const block = screen.getByRole('group', { name: 'Re-time movement II. Adagio' });
+    // The block reads the boundary's exact time, where the header's own clock
+    // stays the whole-second reading a music stand wants.
+    expect(within(block).getByLabelText('Time for movement II. Adagio')).toHaveValue('13:51.000');
+
+    const field = timeField(container);
+    await user.clear(field);
+    await user.type(field, '14:05');
+    await user.keyboard('{Enter}');
+
+    await pastDebounce();
+    // The boundary moved and every other one stayed exactly where it was.
+    expect(api.get('p1')?.movements.map((m) => [m.name, m.start])).toEqual([
+      ['I. Allegro', 15],
+      ['II. Adagio', 845],
+    ]);
+  });
+
+  it('refuses a re-time that would cross a neighbour, naming it, and moves nothing', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    act(() => controller.emitPlayback({ duration: 1800 }));
+    await user.click(movementJumps(container)[0]);
+
+    // A real time, typed wrong: 15:00 is past where movement II begins, and a
+    // boundary that moved there would stand on the wrong side of it, with the
+    // two extents overlapping. The domain refuses rather than rearranging the
+    // movements behind the student's back.
+    const field = timeField(container);
+    await user.clear(field);
+    await user.type(field, '15:00');
+    await user.keyboard('{Enter}');
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent).toContain('II. Adagio');
+    expect(refusal.textContent).toMatch(/strictly after .* strictly before/);
+    // The refused text is not where the boundary is: the field goes back to the
+    // start the movement holds, and the record is untouched.
+    expect(field).toHaveValue('00:15.000');
+    await pastDebounce();
+    expect(api.get('p1')?.movements.map((m) => m.start)).toEqual([15, 831]);
+    expect(api.saveProject).not.toHaveBeenCalled();
+  });
+
+  it('nudges a boundary a tenth of a second either way, and refuses one nudged onto its neighbour', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    act(() => controller.emitPlayback({ duration: 1800 }));
+    await user.click(movementJumps(container)[0]);
+    expect(timeField(container)).toHaveValue('00:15.000');
+
+    // The same step, and the same two controls, a mark's correction carries: a
+    // boundary placed by ear lands late by reaction time just as a mark does.
+    await user.click(nudgeControl('later'));
+    expect(await screen.findByDisplayValue('00:15.100')).toBeInTheDocument();
+    await user.keyboard('{Shift>}');
+    await user.click(nudgeControl('earlier'));
+    await user.keyboard('{/Shift}');
+    expect(await screen.findByDisplayValue('00:14.100')).toBeInTheDocument();
+    await pastDebounce();
+    expect(api.get('p1')?.movements[0].start).toBeCloseTo(14.1);
+
+    // Nudged up against movement II, a step lands on a boundary that is already
+    // there: the domain says so where the controls are, and the boundary stays
+    // where it was rather than taking the movement next door's place.
+    await user.clear(timeField(container));
+    await user.type(timeField(container), '13:50.9');
+    await user.keyboard('{Enter}');
+    await pastDebounce();
+    await user.click(nudgeControl('later'));
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent).toContain('II. Adagio');
+    // The boundary is one step short of the neighbour and stays there: a nudge
+    // that cannot be taken is refused, not clamped onto a start that is taken.
+    const starts = api.get('p1')?.movements.map((m) => m.start) ?? [];
+    expect(starts[0]).toBeCloseTo(830.9);
+    expect(starts[1]).toBe(831);
+  });
+
+  it('asks before deleting a movement, saying how many marks it holds and what becomes of them', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Nothing is asked until the student asks to delete something.
+    expect(screen.queryByText(/^Delete “/)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Delete movement II. Adagio' }));
+
+    // The whole decision, before it is taken: the boundary holds one mark, the
+    // mark stays, and the letter it carries does not — it drops into the
+    // movement before, where its rank is drawn again. A student who is told
+    // this is choosing; one who is not has a mark at a different letter to
+    // discover afterwards.
+    expect(
+      screen.getByText(
+        'Delete “II. Adagio”? Its marker stays — it falls to “I. Allegro”, and its label renumbers.',
+      ),
+    ).toBeInTheDocument();
+
+    // And a question is not the act. Cancelling leaves the record alone.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText(/^Delete “/)).toBeNull();
+    expect(movementNameFields(container)).toHaveLength(2);
+    await pastDebounce();
+    expect(api.saveProject).not.toHaveBeenCalled();
+  });
+
+  it('asks a shorter question of a movement holding nothing, because nothing is at stake', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [], movements: [{ id: 'mv1', name: 'I. Allegro', start: 15 }] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Laying a symphony's boundaries out before marking inside them is an
+    // ordinary way to work (T58), so this is a state the page really meets —
+    // and a movement with no marks has no marks to fall anywhere or to renumber.
+    await user.click(screen.getByRole('button', { name: 'Delete movement I. Allegro' }));
+    expect(screen.getByText('Delete “I. Allegro”? It holds no markers.')).toBeInTheDocument();
+  });
+
+  it('deletes the movement and keeps its marks, regrouped and relabelled by the rule that remains', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // Before: the mark at 00:10 leads on its own, and the two movements hold
+    // one mark each, so each opens its letters at A.
+    expect(container.querySelectorAll('.player-marker-row')).toHaveLength(3);
+    expect(markerTitles(container)).toEqual(['A', 'A', 'A']);
+
+    // Deleting the first movement says the other thing a movement can cost:
+    // there is no movement before it, so its marks fall to the leading group.
+    await user.click(screen.getByRole('button', { name: 'Delete movement I. Allegro' }));
+    expect(
+      screen.getByText(
+        'Delete “I. Allegro”? Its marker stays — it joins the markers before the first movement, ' +
+          'and its label renumbers.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    // The boundary has gone from the list and from the record.
+    expect(movementNameFields(container)).toHaveLength(1);
+    await pastDebounce();
+    expect(api.get('p1')?.movements.map((m) => m.name)).toEqual(['II. Adagio']);
+
+    // And the marks are all still here — deleting a movement never deletes
+    // them. They are re-derived rather than rewritten: the 00:20 mark that was
+    // movement I's A is now the second mark of the leading group, and the
+    // 15:00 mark is still movement II's A, because its own boundary never moved.
+    expect(container.querySelectorAll('.player-marker-row')).toHaveLength(3);
+    expect(markerTitles(container)).toEqual(['A', 'B', 'A']);
+    // Read off the rows rather than by class alone: the movement headers carry
+    // the same clock class, since a header's jump shows a time too.
+    expect(
+      markerRows(container).map((row) => row.querySelector('.player-marker-time')?.textContent),
+    ).toEqual(['00:10', '00:20', '15:00']);
+    expect(api.get('p1')?.markers.map((m) => m.time)).toEqual([10, 20, 900]);
   });
 });
 

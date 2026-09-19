@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { LabeledMarker } from '../domain';
@@ -15,10 +15,11 @@ import { revealDelay, revealScroll } from './revealScroll';
 const MANUAL_SCROLL_GRACE_MS = 3000;
 
 /**
- * The panel's editing surface (T56, T57, T58). Supplied only by the markings
- * page, where a mark can be placed, named, corrected and removed and a movement
- * boundary can be set and named; absent on the practice surface and the
- * read-only public view, which then carry no control that could change either.
+ * The panel's editing surface (T56, T57, T58, T59). Supplied only by the
+ * markings page, where a mark can be placed, named, corrected and removed and a
+ * movement boundary can be set, named, re-timed and deleted; absent on the
+ * practice surface and the read-only public view, which then carry no control
+ * that could change either.
  *
  * Naming and deleting act on the row they are in, so neither needs anything
  * selected first — and a movement is named in its own header, the same way.
@@ -56,6 +57,32 @@ export interface MarkersAuthoring {
    * header is quiet.
    */
   movementNameError: { movementId: string; message: string } | null;
+  /**
+   * Re-times the movement to a typed time (T59). Returns the time it holds once
+   * the attempt is over — the exact time on success, the unchanged stored start
+   * when the domain refused the text or the boundary it named — so the field
+   * can be put back to the truth without the panel re-reading a record it has
+   * not seen yet, as the alias and correction fields are.
+   */
+  onMovementTime(movement: Movement, text: string): string;
+  /**
+   * The movement time the domain refused and the guidance it gave, for the
+   * field that caused it. The block it names shows the message; every other
+   * movement's is quiet.
+   */
+  movementTimeError: { movementId: string; message: string } | null;
+  /**
+   * Nudges the movement's boundary by `delta` seconds, negative for earlier.
+   * The movement twin of a mark's nudge, and the same steps: a boundary set at
+   * the playhead lands late by reaction time, exactly as a mark does.
+   */
+  onNudgeMovement(movement: Movement, delta: number): void;
+  /**
+   * Removes the movement. The markers inside it are not removed with it — they
+   * fall into whatever movement now runs over their time, and their labels are
+   * redrawn (T59, ADR-0007). The panel says so before the control is used.
+   */
+  onDeleteMovement(movement: Movement): void;
   /** Whether the recording's load has settled — the Add controls are inert until it has. */
   addDisabled: boolean;
   /**
@@ -74,17 +101,23 @@ export interface MarkersAuthoring {
   /** Removes the marker. */
   onDelete(marker: LabeledMarker): void;
   /**
-   * The mark being corrected, by id, or null while none is (T57). The row it
-   * names carries the correction block: the exact time and the two nudge
-   * controls, which are the mark's, not the position's — a corrected mark keeps
-   * its selection across the re-sort its correction causes.
+   * The row being corrected, by id, or null while none is (T57, T59). One
+   * selection serves both kinds of row, because a page has one thing being
+   * worked on at a time: correcting a mark and re-timing a movement are never
+   * both underway, and picking one out is what lets the other go.
+   *
+   * The row it names carries the correction block — the exact time and the two
+   * nudge controls, which are the row's, not the position's: a corrected mark
+   * keeps its selection across the re-sort its correction causes, and a
+   * re-timed movement keeps its boundary's place in the list.
    */
   selectedId: string | null;
   /**
-   * A mark was picked out — its row was clicked, or a walk landed on it. The
-   * mark named becomes the one being corrected.
+   * A row was picked out — a mark's row was clicked or a walk landed on it, or
+   * a movement's header was clicked to jump to it. The row named becomes the
+   * one being corrected.
    */
-  onSelect(marker: LabeledMarker): void;
+  onSelect(id: string): void;
   /**
    * Nudges the marker by `delta` seconds, negative for earlier. The one action
    * `[`, `]` and the block's own two controls all take, so a correction is the
@@ -328,14 +361,16 @@ function pinnedHeaderInset(row: HTMLElement): number {
  * group scrolls into place; clicking a header seeks to the movement's start.
  * Without them the panel is the flat list it always was.
  *
- * Given an `authoring` surface (T56, T57) the panel becomes the markings page's
- * own column: the head carries Add marker, the rows carry the alias field and
- * the delete control, and the selected row carries the correction block. The
- * list itself is untouched — the same grouping, the same derived labels, the
- * same reveal — because the marks a student edits are the marks they were
- * reading a moment ago. The reveal follows the selected row rather than the
- * active one, since on this surface a correction can take the active row away
- * from the mark being corrected (see `reveal`).
+ * Given an `authoring` surface (T56, T57, T58, T59) the panel becomes the
+ * markings page's own column: the head carries Add marker and Add movement, the
+ * rows carry the alias field and the delete control, a movement's header
+ * carries its name, its jump and its own delete, and whichever row is picked
+ * out carries the correction block — a mark's exact time and nudges, or a
+ * boundary's. The list itself is untouched — the same grouping, the same
+ * derived labels, the same reveal — because the marks a student edits are the
+ * marks they were reading a moment ago. The reveal follows the selected row
+ * rather than the active one, since on this surface a correction can take the
+ * active row away from the mark being corrected (see `reveal`).
  */
 export function MarkersPanel({
   markers,
@@ -495,31 +530,56 @@ export function MarkersPanel({
         className="player-marker-list"
         style={maxHeight !== undefined ? { maxHeight } : undefined}
       >
-        {groups.flatMap(({ movement, markers: groupMarkers }) => [
-          hasMovements && (
-            <li
-              key={movement ? `movement-${movement.id}` : 'before-first-movement'}
-              className="player-marker-movement"
-            >
-              <MovementHeader
-                movement={movement}
+        {groups.flatMap(({ movement, markers: groupMarkers }) => {
+          // Where this group's movement sits among the recording's movements —
+          // -1 for the leading group, which has no movement at all. The list is
+          // what knows it, and what deleting a boundary costs depends on it: a
+          // movement's marks fall to the one before it (T59).
+          const at = movement === null ? -1 : movements.findIndex((m) => m.id === movement.id);
+          return [
+            hasMovements && (
+              <li
+                key={movement ? `movement-${movement.id}` : 'before-first-movement'}
+                className="player-marker-movement"
+              >
+                <MovementHeader
+                  movement={movement}
+                  duration={duration}
+                  // What deleting this boundary costs, which only the list can
+                  // say: how many marks it holds, and which movement now runs
+                  // over their time (T59).
+                  markCount={groupMarkers.length}
+                  fallsTo={at > 0 ? movements[at - 1] : null}
+                  onSeek={onSeekMovement}
+                  authoring={authoring}
+                />
+              </li>
+            ),
+            // The movement being re-timed (T59), directly under its header and
+            // outside it: the header's `<li>` is the list's sticky band, and a
+            // correction block inside it would grow that band over the group it
+            // is pinned above. As a row of its own it scrolls with the marks,
+            // and the reveal follows it for the same reason it follows a
+            // corrected mark's row — it is what the student is working on. The
+            // delete question is the exception, and stays in the band; the
+            // header says why.
+            movement !== null && authoring?.selectedId === movement.id && (
+              <li key={`correct-${movement.id}`} className="selected" aria-current="true">
+                <MovementCorrection movement={movement} duration={duration} authoring={authoring} />
+              </li>
+            ),
+            ...groupMarkers.map((marker) => (
+              <MarkerRow
+                key={marker.id}
+                marker={marker}
+                active={marker.id === activeId}
                 duration={duration}
-                onSeek={onSeekMovement}
+                onSeek={onSeek}
                 authoring={authoring}
               />
-            </li>
-          ),
-          ...groupMarkers.map((marker) => (
-            <MarkerRow
-              key={marker.id}
-              marker={marker}
-              active={marker.id === activeId}
-              duration={duration}
-              onSeek={onSeek}
-              authoring={authoring}
-            />
-          )),
-        ])}
+            )),
+          ];
+        })}
       </ol>
     </section>
   );
@@ -530,6 +590,13 @@ interface MovementHeaderProps {
   movement: Movement | null;
   /** The recording's length — the header's clock divides by it. */
   duration: number;
+  /** How many marks the movement holds — what deleting it would move (T59). */
+  markCount: number;
+  /**
+   * The movement a deleted movement's marks would fall to — the one before it,
+   * or null when it is the first and they join the leading group instead (T59).
+   */
+  fallsTo: Movement | null;
   onSeek(movement: Movement): void;
   /** What the panel may do to its movements, when the markings page supplies it. */
   authoring?: MarkersAuthoring;
@@ -551,8 +618,42 @@ interface MovementHeaderProps {
  *
  * The leading group — marks before the first movement — has no movement and so
  * nothing to name or jump to; it keeps the plain label it has always had.
+ *
+ * The header is also where the movement is deleted (T59), and that is a
+ * question rather than an act: a boundary can be put back in a moment, but the
+ * marks standing inside it cannot be un-fallen once they have dropped into the
+ * movement before — so the delete asks first, where the movement is, the way the
+ * workspace's rows and the account control ask. What it asks is spelled out
+ * from what this movement actually holds (`movementDeleteQuestion`), because
+ * the answer differs by movement.
+ *
+ * The question is drawn *inside* this header, unlike the correction block, and
+ * the difference is deliberate. The correction block is a surface the student
+ * works in while the list scrolls under it, so it has to be a row of its own,
+ * scrolling with the marks it belongs to; and the reveal follows it, so picking
+ * a movement out brings it into view. The question is neither: it is raised by a
+ * control in this header and answered in the next breath, and it has to be
+ * visible the moment it is raised — including when this header is pinned, which
+ * is where the control that raised it is. A row of its own would be laid out at
+ * this header's *flow* position, which a pinned header paints over and leaves
+ * scrolled away above; the band growing for the moment the question stands is
+ * the price of the question always being where the reader is looking.
  */
-function MovementHeader({ movement, duration, onSeek, authoring }: MovementHeaderProps) {
+function MovementHeader({
+  movement,
+  duration,
+  markCount,
+  fallsTo,
+  onSeek,
+  authoring,
+}: MovementHeaderProps) {
+  /**
+   * Whether this movement's delete is being asked about. Held here rather than
+   * on the page: the question belongs to the row that raised it, and it is
+   * answered or abandoned long before any record changes.
+   */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
   if (movement === null) {
     return (
       <div className="player-movement-header" aria-hidden="true">
@@ -609,18 +710,241 @@ function MovementHeader({ movement, duration, onSeek, authoring }: MovementHeade
         <button
           type="button"
           className="markings-movement-jump"
-          onClick={() => onSeek(movement)}
+          onClick={() => {
+            onSeek(movement);
+            // The jump is also how the boundary is picked out to be re-timed
+            // (T59): seeking to a movement and correcting its start are the same
+            // intent — this is where the boundary is, make it exact — and it is
+            // the gesture the marks already answer to, where clicking a row both
+            // jumps to the mark and selects it (T57).
+            authoring.onSelect(movement.id);
+          }}
           title={`Jump to ${movement.name}`}
         >
           <span className="player-marker-time">{time}</span>
         </button>
+        {!confirmingDelete && (
+          <button
+            type="button"
+            className="markings-movement-delete"
+            aria-label={`Delete movement ${movement.name}`}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Delete
+          </button>
+        )}
       </div>
       {nameError !== null && (
         <p role="alert" className="markings-row-error">
           {nameError}
         </p>
       )}
+      {confirmingDelete && (
+        // The question stands where the movement does and names what this one
+        // actually holds, so the answer is informed: the marks stay, and the
+        // labels they carry are not the labels they will keep. The control that
+        // raised it gives way to it, as the workspace's Delete does.
+        <p className="markings-movement-confirm">
+          {movementDeleteQuestion(movement, markCount, fallsTo)}
+          {/* Cancel first, as the workspace's own delete question has it: a
+              keyboard reaching into the question lands on the answer that keeps
+              the movement, not on the one that does not. */}
+          <button type="button" onClick={() => setConfirmingDelete(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="markings-movement-confirm-delete"
+            onClick={() => {
+              setConfirmingDelete(false);
+              authoring.onDeleteMovement(movement);
+            }}
+          >
+            Delete
+          </button>
+        </p>
+      )}
     </>
+  );
+}
+
+/**
+ * What deleting a movement costs, in the terms it actually costs (T59): the
+ * marks inside it are the movement's only by derivation — membership is
+ * whichever movement's extent the mark's time falls in (ADR-0005), and a label
+ * is a rank within that movement — so removing the boundary does not remove
+ * them. They drop into whatever movement now runs over their time, and the
+ * letters they carry are drawn again from their new group.
+ *
+ * The owner is told both before the boundary goes. Discovering afterwards that
+ * a mark they placed inside movement II now reads as movement I's D, with
+ * nothing having said it would, is exactly the surprise this sentence exists to
+ * prevent — and the sentence is built from the movement's own numbers, because
+ * a movement holding nothing and one holding twelve are not the same decision.
+ */
+function movementDeleteQuestion(
+  movement: Movement,
+  markCount: number,
+  fallsTo: Movement | null,
+): string {
+  if (markCount === 0) {
+    return `Delete “${movement.name}”? It holds no markers.`;
+  }
+
+  const one = markCount === 1;
+  const held = one ? 'Its marker' : `Its ${markCount} markers`;
+  const landing =
+    fallsTo === null
+      ? `${one ? 'joins' : 'join'} the markers before the first movement`
+      : `${one ? 'falls' : 'fall'} to “${fallsTo.name}”`;
+
+  return (
+    `Delete “${movement.name}”? ${held} ${one ? 'stays' : 'stay'} — ` +
+    `${one ? 'it' : 'they'} ${landing}, and ${one ? 'its label renumbers' : 'their labels renumber'}.`
+  );
+}
+
+interface CorrectionBlockProps {
+  /**
+   * The block's own name, as a reader hears it — which row it corrects and what
+   * kind of row that is. "Correct marker A" and "Re-time movement II" are both
+   * this one field, because the blocks differ only in what they say.
+   */
+  groupLabel: string;
+  /** The time field's name, on the field it names. */
+  fieldLabel: string;
+  /** The time the row holds, in the exactness a correction is made at. */
+  time: string;
+  /**
+   * The row's time in seconds. The field is keyed on it, so a nudge re-seeds
+   * what is typed: the refused text of a moment ago is a complaint about text
+   * that is no longer in the field, and goes with it.
+   */
+  seed: number;
+  /** The domain's refusal of the last commit on this row, if it refused one. */
+  error: string | null;
+  /** Commits typed text; returns the honest time to put back in the field. */
+  onTime(text: string): string;
+  /** Nudges the row by `delta` seconds, negative for earlier. */
+  onNudge(delta: number): void;
+}
+
+/**
+ * The correction block a picked-out row carries (T57, T59): the row's exact
+ * time, editable, and the two nudge controls. One block for both kinds of row,
+ * because it is one correction — a boundary placed by ear at the playhead lands
+ * late by human reaction time exactly as a mark does, so the two are made exact
+ * by the same gesture, in the same steps, and then a tenth of a second apart
+ * whether or not they say so the same way.
+ *
+ * The field is the row's own time rather than its clock, because the clock is
+ * the music-stand reading — whole seconds, which a tenth of a second never
+ * moves — while a correction is exact by nature.
+ *
+ * It is presentational: which row, what the commit means, and what the domain
+ * said of it are all the caller's. A mark's row and a movement's header differ
+ * in every one of those and in nothing else.
+ */
+function CorrectionBlock({
+  groupLabel,
+  fieldLabel,
+  time,
+  seed,
+  error,
+  onTime,
+  onNudge,
+}: CorrectionBlockProps) {
+  return (
+    // The group is named for the row it corrects, so the block is not a set of
+    // loose controls in a long list — a reader hears which row they have picked
+    // out, and what they may do to it.
+    <div className="markings-correct" role="group" aria-label={groupLabel}>
+      <label className="markings-correct-time">
+        <span className="markings-correct-label">Time</span>
+        <input
+          key={seed}
+          type="text"
+          className="markings-row-time"
+          defaultValue={time}
+          aria-label={fieldLabel}
+          onBlur={(event) => {
+            const field = event.currentTarget;
+            // Nothing typed is nothing to commit — and re-committing the time
+            // the row holds would only re-validate a time already accepted.
+            if (field.value === time) return;
+            // The panel writes the honest value back: the exact time when the
+            // domain took it, the unchanged stored one when it did not — so the
+            // field never shows a time the record does not hold.
+            field.value = onTime(field.value);
+          }}
+          onKeyDown={(event) => {
+            // Enter commits by leaving the field — one commit path, not two.
+            if (event.key === 'Enter') event.currentTarget.blur();
+          }}
+        />
+      </label>
+      {/* The controls are named by what they show, not by a label of their own:
+          the row they correct is already the name of the group around them, and
+          a name that replaced the visible text would leave the button
+          unaddressable by the words on it. */}
+      <button
+        type="button"
+        className="markings-nudge"
+        title="Shift-click to nudge a whole second"
+        onClick={(event) =>
+          onNudge(event.shiftKey ? -NUDGE_COARSE_STEP_SECONDS : -NUDGE_STEP_SECONDS)
+        }
+      >
+        −0.1s
+      </button>
+      <button
+        type="button"
+        className="markings-nudge"
+        title="Shift-click to nudge a whole second"
+        onClick={(event) => onNudge(event.shiftKey ? NUDGE_COARSE_STEP_SECONDS : NUDGE_STEP_SECONDS)}
+      >
+        +0.1s
+      </button>
+      {error !== null && (
+        // The domain's own sentence, inside the block that holds the field that
+        // caused it.
+        <p role="alert" className="markings-row-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface MovementCorrectionProps {
+  movement: Movement;
+  duration: number;
+  authoring: MarkersAuthoring;
+}
+
+/**
+ * The movement being re-timed (T59): its own correction block, over its start.
+ *
+ * What the domain refuses here is not a nonsense time, as it is for a mark, but
+ * a real one that lands on or past a neighbour — and its guidance says which
+ * movement is in the way. The block shows it, because that is where the field
+ * that caused it is.
+ */
+function MovementCorrection({ movement, duration, authoring }: MovementCorrectionProps) {
+  return (
+    <CorrectionBlock
+      groupLabel={`Re-time movement ${movement.name}`}
+      fieldLabel={`Time for movement ${movement.name}`}
+      time={formatTime(movement.start, duration)}
+      seed={movement.start}
+      error={
+        authoring.movementTimeError?.movementId === movement.id
+          ? authoring.movementTimeError.message
+          : null
+      }
+      onTime={(text) => authoring.onMovementTime(movement, text)}
+      onNudge={(delta) => authoring.onNudgeMovement(movement, delta)}
+    />
   );
 }
 
@@ -648,13 +972,11 @@ interface MarkerRowProps {
  * which is the same thing): the marker's stored alias is what the field is
  * seeded with, and what it is put back to when the domain refuses the text.
  *
- * The selected row (T57) grows the correction block under it: the mark's exact
- * time, editable, and the two nudge controls. It is the row's own time rather
- * than the whole row that is editable because the row's clock is the
- * music-stand reading — whole seconds, which a tenth of a second never moves —
- * while a correction is exact by nature. Everything else about the row is
- * unchanged, so the mark being corrected is still read, and still jumped to, as
- * the mark it was a moment ago.
+ * The selected row (T57) grows its correction block under it — the mark's exact
+ * time, editable, and the two nudge controls, all of it `CorrectionBlock`, which
+ * also serves a movement's header. Everything else about the row is unchanged,
+ * so the mark being corrected is still read, and still jumped to, as the mark it
+ * was a moment ago.
  */
 function MarkerRow({ marker, active, duration, onSeek, authoring }: MarkerRowProps) {
   const storedAlias = marker.aliases[0] ?? '';
@@ -683,7 +1005,7 @@ function MarkerRow({ marker, active, duration, onSeek, authoring }: MarkerRowPro
         // Clicking a mark picks it out as the one being corrected (T57), on the
         // page where correcting exists. The click has always meant "this one";
         // here it says so, and a correction has somewhere to land.
-        authoring?.onSelect(marker);
+        authoring?.onSelect(marker.id);
         // The row is a pointer target, not a focus stop: leaving focus on it
         // would make the next Space re-activate the row (jump back to it)
         // instead of meaning play/pause.
@@ -749,81 +1071,15 @@ function MarkerRow({ marker, active, duration, onSeek, authoring }: MarkerRowPro
         </p>
       )}
       {selected && authoring !== undefined && (
-        // The group is named for the mark it corrects, so the block is not a
-        // set of loose controls in a long list — a reader hears which mark they
-        // have picked out, and what they may do to it.
-        <div
-          className="markings-correct"
-          role="group"
-          aria-label={`Correct marker ${marker.label}`}
-        >
-          <label className="markings-correct-time">
-            <span className="markings-correct-label">Time</span>
-            <input
-              // Keyed on the time so a nudge re-seeds the field: it always shows
-              // the time the mark holds, and the correction is legible at the
-              // precision a tenth of a second needs — the row's own clock reads
-              // whole seconds and would not move.
-              key={marker.time}
-              type="text"
-              className="markings-row-time"
-              defaultValue={exactTime}
-              aria-label={`Time for marker ${marker.label}`}
-              onBlur={(event) => {
-                const field = event.currentTarget;
-                // Nothing typed is nothing to commit — and re-committing the
-                // time the mark holds would only re-validate a time already
-                // accepted.
-                if (field.value === exactTime) return;
-                // The panel writes the honest value back: the exact time when
-                // the domain took it, the unchanged stored one when it did not
-                // — so the field never shows a time the record does not hold.
-                field.value = authoring.onTime(marker, field.value);
-              }}
-              onKeyDown={(event) => {
-                // Enter commits by leaving the field — one commit path, not two.
-                if (event.key === 'Enter') event.currentTarget.blur();
-              }}
-            />
-          </label>
-          {/* The controls are named by what they show, not by a label of their
-              own: the mark they correct is already the name of the group around
-              them, and a name that replaced the visible text would leave the
-              button unaddressable by the words on it. */}
-          <button
-            type="button"
-            className="markings-nudge"
-            title="Shift-click to nudge a whole second"
-            onClick={(event) =>
-              authoring.onNudge(
-                marker,
-                event.shiftKey ? -NUDGE_COARSE_STEP_SECONDS : -NUDGE_STEP_SECONDS,
-              )
-            }
-          >
-            −0.1s
-          </button>
-          <button
-            type="button"
-            className="markings-nudge"
-            title="Shift-click to nudge a whole second"
-            onClick={(event) =>
-              authoring.onNudge(
-                marker,
-                event.shiftKey ? NUDGE_COARSE_STEP_SECONDS : NUDGE_STEP_SECONDS,
-              )
-            }
-          >
-            +0.1s
-          </button>
-          {timeError !== null && (
-            // The domain's own sentence, inside the block that holds the field
-            // that caused it.
-            <p role="alert" className="markings-row-error">
-              {timeError}
-            </p>
-          )}
-        </div>
+        <CorrectionBlock
+          groupLabel={`Correct marker ${marker.label}`}
+          fieldLabel={`Time for marker ${marker.label}`}
+          time={exactTime}
+          seed={marker.time}
+          error={timeError}
+          onTime={(text) => authoring.onTime(marker, text)}
+          onNudge={(delta) => authoring.onNudge(marker, delta)}
+        />
       )}
     </li>
   );
