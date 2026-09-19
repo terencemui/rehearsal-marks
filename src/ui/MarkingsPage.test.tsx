@@ -5,6 +5,7 @@ import type { LoadOptions } from '../audio';
 import { canonicalYouTubeUrl } from '../domain';
 import type { ServerProject } from '../projects/types';
 import { renderApp } from '../test/app-fixture';
+import { mockAuth } from '../test/auth-fixture';
 import { mockController } from '../test/controller-fixture';
 import { marker } from '../test/marker-fixture';
 import { fakeProjectsApi } from '../test/projects-fixture';
@@ -1381,6 +1382,40 @@ describe('the way into the markings page (T55)', () => {
     await waitFor(() => expect(currentPath()).toBe('/projects/p1/markings'));
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     await waitForPlayerSettled();
+  });
+
+  it('opens from a workspace list row — the same page reached without the player (T61)', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    // The workspace list belongs to a signed-in owner, so a session is
+    // published before the app mounts: `setUser` fires the backend's session
+    // event, which is how the app learns the user (it beats the controller's
+    // own restore read — controller.ts's `sessionEventSeen`). Signing in
+    // through the navbar would exercise the same state by a longer road this
+    // test is not about.
+    const auth = mockAuth();
+    auth.backend.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' });
+    const { currentPath } = renderApp({ api, controller, auth });
+    expect(currentPath()).toBe('/projects');
+
+    // The list itself, before the door is touched: `currentPath` above only
+    // echoes the fixture's own entry, so the row on screen is what proves the
+    // shell painted the workspace rather than the landing.
+    expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
+
+    // The row is reached from the list itself — no player was opened first,
+    // which is the whole point: a project can be filled without hearing it.
+    await user.click(screen.getByRole('button', { name: 'Markings for Brahms Op. 118 No. 2' }));
+
+    await waitFor(() => expect(currentPath()).toBe('/projects/p1/markings'));
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    await waitForPlayerSettled();
+    // The same page the panel's door opens, and not a lookalike: this is the
+    // authoring surface, which the practice surface never shows (T55). One
+    // page, one name, two ways in.
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
   });
 
   it('offers no way in from the read-only public view — reading stays reading', async () => {

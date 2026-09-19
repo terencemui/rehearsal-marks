@@ -212,6 +212,9 @@ export function WorkspaceScreen({
         notice={notice}
         busy={creatingFromLink}
         onOpen={(id) => navigate(`/projects/${id}`)}
+        // The marks panel's own address (T61): the panel builds this same
+        // path, so the row and the panel open one page by two ways in.
+        onOpenMarkings={(id) => navigate(`/projects/${id}/markings`)}
         onRename={(id, name) => void renameProject(id, name)}
         onDelete={(id) => void deleteProject(id)}
         onToggleVisibility={(id) => void toggleVisibility(id)}

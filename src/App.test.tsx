@@ -245,7 +245,7 @@ describe('App Projects workspace', () => {
     const { auth } = renderApp({ api, controller });
     await signIn(user, auth);
 
-    await user.click(await screen.findByRole('button', { name: /Brahms/ }));
+    await user.click(await screen.findByRole('button', { name: /^Brahms/ }));
 
     // The player opened on the stored record: no decode (there is no audio),
     // the load is the YouTube arm's canonical URL, and the stored markers
@@ -422,7 +422,7 @@ describe('App Projects workspace', () => {
     await screen.findByText('Brahms Op. 118 No. 2');
 
     // The row click navigates to the project page; its record read is slow.
-    await user.click(screen.getByRole('button', { name: /Brahms/ }));
+    await user.click(screen.getByRole('button', { name: /^Brahms/ }));
     await user.click(screen.getByRole('link', { name: 'Help' }));
     await act(async () => {
       releaseRead();
@@ -852,7 +852,7 @@ describe('App route-as-session project page (T45)', () => {
     const { auth, currentPath } = renderApp({ api, controller });
     await signIn(user, auth);
 
-    await user.click(await screen.findByRole('button', { name: /Brahms/ }));
+    await user.click(await screen.findByRole('button', { name: /^Brahms/ }));
 
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     // The open is a navigation — the project's page is the address bar's.
@@ -874,7 +874,7 @@ describe('App route-as-session project page (T45)', () => {
     const { auth, go } = renderApp({ api, controller });
     await signIn(user, auth);
 
-    await user.click(await screen.findByRole('button', { name: /Brahms/ }));
+    await user.click(await screen.findByRole('button', { name: /^Brahms/ }));
     await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
     await waitForPlayerSettled();
 
@@ -899,7 +899,7 @@ describe('App route-as-session project page (T45)', () => {
     const { auth, navigateTo } = renderApp({ api, controller });
     await signIn(user, auth);
 
-    await user.click(await screen.findByRole('button', { name: /Brahms/ }));
+    await user.click(await screen.findByRole('button', { name: /^Brahms/ }));
     await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
 
     // Straight to another project's page — the swap tears the first session
