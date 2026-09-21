@@ -200,7 +200,7 @@ function WiredApp({
 
   /**
    * The navigation token (T45): a link create captures it before its slow title
-   * lookup and navigates to the new project's page only if the user hasn't
+   * lookup and navigates to the new project's markings page only if the user hasn't
    * already moved on. Bumped on every pathname change — an in-flight create
    * that lands behind a navigation the user made must save the project and let
    * them find it in the list, never yank them off the page they chose.
