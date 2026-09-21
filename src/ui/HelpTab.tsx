@@ -12,7 +12,10 @@ import './help.css';
  *
  * Keep the facts here in sync with their sources of truth: the keyboard
  * reference mirrors docs/keyboard-reference.md, the marker rules live in
- * src/domain, and the legal documents live in src/ui/Legal.tsx.
+ * src/domain, and the legal documents live in src/ui/Legal.tsx. The keyboard
+ * tables' mirroring is not left to discipline — keyboardReference.test.tsx
+ * holds them to the document's, and the document to the keys the player
+ * actually answers to.
  */
 export function HelpTab() {
   // Which document is showing: null is the reference content itself.
@@ -48,8 +51,23 @@ export function HelpTab() {
 
       <section aria-labelledby="help-keyboard">
         <h3 id="help-keyboard">Keyboard reference</h3>
-        <p>The player is fully keyboard-operable.</p>
-        <table>
+        <p>
+          Two surfaces play a recording, and both are keyboard-operable: the{' '}
+          <strong>practice surface</strong> — a recording played back, from the public
+          gallery or from a project's own page — and the <strong>Markings page</strong>,
+          where a project's owner authors what it carries. Playback is the same on both, and
+          read-only on both: a student practising never changes the recording. The keys that
+          place and correct a marker exist only on the page where a marker may be changed.
+        </p>
+
+        <h4 id="help-keyboard-practice">The practice surface</h4>
+        <table aria-labelledby="help-keyboard-practice">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Action</th>
+            </tr>
+          </thead>
           <tbody>
             <tr>
               <td>
@@ -73,6 +91,10 @@ export function HelpTab() {
               <td>Click a marker row</td>
               <td>Jump to it</td>
             </tr>
+            <tr>
+              <td>Click a movement header</td>
+              <td>Jump to that movement's start</td>
+            </tr>
           </tbody>
         </table>
         <p>
@@ -80,16 +102,100 @@ export function HelpTab() {
           Jumping never selects a marker and never interrupts playback. Labels continue past{' '}
           <kbd>Z</kbd> (<kbd>AA</kbd>, <kbd>AB</kbd>, …), and the arrow keys reach every marker.
         </p>
+
+        <h4 id="help-keyboard-markings">The Markings page</h4>
+        <table aria-labelledby="help-keyboard-markings">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <kbd>Space</kbd>
+              </td>
+              <td>Play / pause</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>←</kbd> / <kbd>→</kbd>
+              </td>
+              <td>Seek ∓5 seconds</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd>
+              </td>
+              <td>
+                Jump to the previous / next marker, wrapping at the ends, and pick out the marker
+                it lands on
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>M</kbd>
+              </td>
+              <td>Place a marker at the playhead</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>[</kbd> / <kbd>]</kbd>
+              </td>
+              <td>Nudge the marker being corrected a tenth of a second earlier / later</td>
+            </tr>
+            <tr>
+              <td>Click a marker row</td>
+              <td>Jump to it, and pick it out to be corrected</td>
+            </tr>
+            <tr>
+              <td>Click the time in a movement header</td>
+              <td>Jump to that movement's start, and pick it out to be re-timed</td>
+            </tr>
+          </tbody>
+        </table>
         <p>
-          Play, pause, and volume come from the recording's own controls. The player no longer
-          intercepts <kbd>Alt</kbd>+arrows — the marker nudge that used to claim them is gone,
-          so <kbd>Alt</kbd>+arrows are the browser's again.
+          <kbd>M</kbd> places a marker where the recording is and touches nothing else: the marker
+          falls at the playhead, and the recording plays on. The same act has a control beside the
+          markers heading, <strong>Add marker</strong>, for a pointer. A movement boundary is
+          placed by ear the same way — <strong>Add movement</strong> — and has no key of its own.
+        </p>
+        <p>
+          <kbd>[</kbd> and <kbd>]</kbd> move the marker being corrected a tenth of a second earlier
+          or later; hold <kbd>Shift</kbd> for a whole second. A correction moves the marker and
+          nothing else, so the recording keeps playing, or stays paused, exactly as it was — the
+          same division the <strong>−0.1s</strong> and <strong>+0.1s</strong> controls make.
+        </p>
+        <p>
+          This page's <kbd>↑</kbd> and <kbd>↓</kbd> do one thing the practice surface's do not:
+          the marker they land on is picked out as the one being corrected, which is how a marker is
+          reached for nudging without a pointer. No marker picked out means <kbd>[</kbd> and{' '}
+          <kbd>]</kbd> do nothing. The walk is over markers only — a movement's boundary is
+          picked out by clicking the time in its header — and a typed alias or time is
+          committed when the field is left, which <kbd>Enter</kbd> does.
+        </p>
+
+        <h4 id="help-keyboard-browser">Keys the browser keeps</h4>
+        <p>
+          Play, pause, and volume come from the recording's own controls on both surfaces.{' '}
+          <kbd>Alt</kbd>+arrows are the browser's again — the marker nudge that used to claim them
+          is gone — and <kbd>Shift</kbd>+arrows stay the browser's too (scroll, selection).{' '}
+          <kbd>M</kbd> is a plain chord for the same reason: <kbd>⌘M</kbd> minimises the window.
         </p>
       </section>
 
       <section aria-labelledby="help-markers">
         <h3 id="help-markers">Markers and limits</h3>
         <ul>
+          <li>
+            A marker is placed on the project's <strong>Markings page</strong> — the{' '}
+            <strong>Markings</strong> button on the project's row in your projects list opens
+            it, as does the <strong>Markings →</strong> link beside a project's markers. Play
+            the recording and press <kbd>M</kbd> where a landmark goes by: the marker falls at
+            the playhead, and you name it afterwards. A marker that landed early or late is
+            corrected there too, by nudging it or typing the time.
+          </li>
           <li>
             The readout shows marker times in whole seconds — easy to read from a music stand —
             while each marker keeps its full precision for seeking.
@@ -125,8 +231,10 @@ export function HelpTab() {
           <li>
             Your projects live on the server, in your account — <strong>not in this browser</strong>.
             Sign in with Google to create one from a YouTube link, and everything you do is saved{' '}
-            <strong>automatically</strong> as you work: a status line in the player shows{' '}
-            <strong>Saving…</strong> turning to <strong>Saved</strong>. There is no save button.
+            <strong>automatically</strong> as you work: a status line shows <strong>Saving…</strong>{' '}
+            turning to <strong>Saved</strong>. There is no save button — except on a project
+            already out in the world, where saving is a decision you make (see{' '}
+            <strong>Public projects and review</strong>).
           </li>
           <li>
             Reading and playing never requires an account; creating and editing do. Anonymous
@@ -161,8 +269,16 @@ export function HelpTab() {
             anyone who opens this video gets your project's markers.
           </li>
           <li>
-            A row that shows <strong>Rejected</strong> was never public; editing the project and
-            saving returns it to review.
+            Editing a <strong>Published</strong> or <strong>Rejected</strong> project is a save
+            you make yourself: its Markings page carries a <strong>Save changes</strong> control
+            instead of writing as you work, because saving returns a published project to review
+            and takes it off the public gallery until a maintainer approves it again. A{' '}
+            <strong>trusted user</strong>'s edits publish immediately, and every other project —
+            private, or still pending — saves itself as you work.
+          </li>
+          <li>
+            A row that shows <strong>Rejected</strong> was never public. Editing it and saving
+            returns it to review.
           </li>
           <li>
             Make a project <strong>private</strong> and only you can see it. Making it public

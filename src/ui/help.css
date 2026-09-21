@@ -43,8 +43,11 @@
   margin-top: 28px;
 }
 
+/* The keyboard reference's own sub-headings (the two surfaces, and the keys the
+   browser keeps): enough air above to part them from the paragraph they follow,
+   since they are not the section break an h3 is. */
 .help h4 {
-  margin-bottom: 6px;
+  margin: 20px 0 6px;
 }
 
 .help table {
@@ -52,10 +55,19 @@
   margin: 8px 0 16px;
 }
 
+/* Cells and their headers are drawn alike — a keyboard table's header row sits
+   in the same grid as the keys — with the header tinted so the two do not read
+   as one more row of keys. */
+.help th,
 .help td {
   border: 1px solid #ddd;
   padding: 4px 10px;
   vertical-align: top;
+}
+
+.help th {
+  background: #f6f6f6;
+  text-align: left;
 }
 
 .help kbd {
