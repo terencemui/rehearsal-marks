@@ -68,6 +68,10 @@ describe('HelpTab', () => {
     // drops the marker at the playhead.
     expect(markers).toHaveTextContent(/Markings page/);
     expect(markers).toHaveTextContent(/Markings →/);
+    // Two ways in, because the link beside the markers is only there once the
+    // project has a marker or a movement to show — the row's button is the one
+    // that works on a project still to be filled.
+    expect(markers).toHaveTextContent(/in your projects list/);
     expect(markers).toHaveTextContent(/press M where a landmark goes by/);
     // And what a marker that landed wrong can do about it — placement is only
     // half the pass (ADR-0007).

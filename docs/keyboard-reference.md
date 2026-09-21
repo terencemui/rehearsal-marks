@@ -1,10 +1,11 @@
 # Keyboard reference
 
 Two surfaces play a recording, and both are keyboard-operable: the **practice
-surface** — a project played from the workspace or from the public gallery — and
-the **Markings page**, where a project's owner authors what it carries. Playback
-is the same on both. The keys that place and correct a marker exist only on the
-page where a marker may be changed.
+surface** — a recording played back, from the public gallery or from a project's
+own page — and the **Markings page**, where a project's owner authors what it
+carries. Playback is the same on both, and read-only on both: a student
+practising never changes the recording. The keys that place and correct a marker
+exist only on the page where a marker may be changed.
 
 ## The practice surface
 
