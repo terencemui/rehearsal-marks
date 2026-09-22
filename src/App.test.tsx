@@ -106,11 +106,12 @@ function youtubeLoad(options: LoadOptions): Extract<LoadOptions, { source: 'yout
 }
 
 describe('App create from a YouTube link', () => {
-  it('opens a freshly pasted link on the new project’s page — a bare server project, read-only', async () => {
+  it('opens a freshly pasted link on the new project’s markings page — a bare project, ready to fill', async () => {
     // End to end: a pasted link creates a bare server project (T51) — nothing
-    // decodes, nothing is copied in — and the T39 player is read-only over
-    // markers whatever the record: no transport, no posture toggle, no Add
-    // marker.
+    // decodes, nothing is copied in — and lands on its markings page (T63),
+    // because filling the project is what creating it was for. That the
+    // practice surface stays playback-only is Player.test.tsx's to hold; what
+    // is asked here is whether the arrival can do the job it was chosen for.
     const user = userEvent.setup();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
@@ -121,10 +122,11 @@ describe('App create from a YouTube link', () => {
     await pasteLink(user, YOUTUBE_CANONICAL);
 
     await screen.findByRole('heading', { name: VIDEO_TITLE });
-    expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
+    // Where it landed — the markings page's empty first paint (T55): the one
+    // thing that fills a project, and both controls that do it.
+    expect(screen.getByRole('button', { name: 'Add marker' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add movement' })).toBeInTheDocument();
+    expect(screen.getByText(/Nothing marked yet/)).toBeInTheDocument();
 
     // The created row is bare: the client wrote name, recording title, video
     // ID, an empty timeline, and a zero duration — the server owns the rest.
@@ -140,6 +142,29 @@ describe('App create from a YouTube link', () => {
       }),
     );
     await waitForPlayerSettled();
+
+    // The recording is playable where it landed, not merely drawn: the
+    // playback keys answer on this page too.
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalled();
+
+    // And it can be filled from here, which is the whole point of the
+    // destination — by the key the empty paint names, and by the control
+    // beside it. Each mark lands at the playhead it was placed from, and the
+    // project's own save path writes both, with no second gesture and no
+    // other page visited first.
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(42));
+    await user.keyboard('m');
+    act(() => controller.seek(60));
+    await user.click(screen.getByRole('button', { name: 'Add marker' }));
+
+    // Both marks are persisted — the page's autosave writes them, ~500ms
+    // after the last one, so the wait is the debounce's and says so.
+    await waitFor(
+      () => expect(api.get(created.id)!.markers.map((marker) => marker.time)).toEqual([42, 60]),
+      { timeout: 2000 },
+    );
   });
 
   it('records the video ID as identity whatever form was pasted', async () => {
@@ -1061,8 +1086,8 @@ describe('App route-as-session project page (T45)', () => {
   });
 });
 
-describe('App create-from-link navigates to the project page (T46)', () => {
-  it('lands a link create on the new project’s page — its own URL, the player under the navbar', async () => {
+describe('App create-from-link lands on the markings page (T63, amending T46)', () => {
+  it('lands a link create where the marking starts — the new project’s own markings URL, under the navbar', async () => {
     const user = userEvent.setup();
     const controller = mockController({
       load: vi.fn(async () => ({ duration: 372 })),
@@ -1072,12 +1097,15 @@ describe('App create-from-link navigates to the project page (T46)', () => {
 
     await pasteLink(user, YOUTUBE_CANONICAL);
 
-    // The player renders on the new project's page.
+    // The page arrived knowing which recording it is: the shared surface
+    // paints the new row's name in its title band. (That the recording also
+    // plays here is the sibling test's assertion, not this heading's.)
     expect(await screen.findByRole('heading', { name: VIDEO_TITLE })).toBeInTheDocument();
-    // The URL is the new project's own address — the created row's id, not a
-    // hardcoded path — so the page is refreshable and shareable.
+    // The URL is the new project's own markings address — the created row's
+    // id, not a hardcoded path — so the page is refreshable and shareable. It
+    // is the page that can fill the project, which is what creating it meant.
     const [created] = await api.listMyProjects();
-    await waitFor(() => expect(currentPath()).toBe(`/projects/${created.id}`));
+    await waitFor(() => expect(currentPath()).toBe(`/projects/${created.id}/markings`));
     // The persistent navbar still frames the player page.
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
     // The load settles before the test finishes, so the page's autosave is not

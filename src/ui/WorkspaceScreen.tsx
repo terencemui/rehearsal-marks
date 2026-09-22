@@ -4,6 +4,7 @@ import type { SaveStatus } from '../projects/autosave';
 import { returnsToReview } from '../projects/types';
 import type { ProjectSummary } from '../projects/types';
 import type { ProjectsApi } from '../projects/api';
+import { markingsPath } from '../routes';
 import { createProjectFromYouTubeLink } from '../youtube';
 import { CreateProject } from './CreateProject';
 import { ProjectsScreen } from './ProjectsScreen';
@@ -28,8 +29,8 @@ export interface WorkspaceScreenProps {
   fetchTitle: (canonicalUrl: string) => Promise<string | null>;
   /**
    * The navigation token — a link create captures it before its slow title
-   * lookup and navigates to the new project's page only if the user hasn't
-   * already moved on (the shell bumps it on every navigation).
+   * lookup and navigates to the new project's markings page only if the user
+   * hasn't already moved on (the shell bumps it on every navigation).
    */
   getNavigateToken: () => number;
   /** The serialization lock shared with the workspace's pipelines. */
@@ -56,8 +57,9 @@ export interface WorkspaceScreenProps {
  * the shell supplies the durable list/save-state/notice/create-busy state
  * (everything that must survive this screen's unmounts) and the seams. Opening
  * a project is navigation now (T45): the row's open affordance and a landed
- * link create both navigate to the project's page, whose player is its own
- * session.
+ * link create both navigate to a page of the project's own, each a session in
+ * its own right — the row to the player, and a create to the markings page,
+ * where the project it just made can be filled (T63).
  */
 export function WorkspaceScreen({
   projectsApi,
@@ -80,9 +82,9 @@ export function WorkspaceScreen({
 
   /**
    * The create surface's one input: a pasted YouTube link becomes a bare
-   * server project and navigates to its page. Nothing decodes and nothing is
-   * hashed — there is no audio here — so the whole path is the link rules
-   * plus one title lookup.
+   * server project and navigates to its markings page, where the marking
+   * starts (T63). Nothing decodes and nothing is hashed — there is no audio
+   * here — so the whole path is the link rules plus one title lookup.
    */
   async function handleLink(url: string): Promise<void> {
     if (workingRef.current) return;
@@ -109,7 +111,14 @@ export function WorkspaceScreen({
       // The list must show the new project when the user returns — refresh
       // it before the navigation leaves this surface.
       await refreshProjects();
-      navigate(`/projects/${outcome.project.id}`);
+      // The markings page, not the player (T63). A project is created to be
+      // filled, and this is the only surface that can fill it — the player is
+      // playback-only by design (ADR-0003), and its one way through to the
+      // authoring page lives in the markers column, which paints nothing at
+      // all on a project with no markers and no movements. That is exactly
+      // what this navigation is about to open, so a create landing there
+      // would arrive somewhere with no door in it.
+      navigate(markingsPath(outcome.project.id));
     } catch {
       onLinkError('Something went wrong creating the project. Please try again.');
     } finally {
@@ -212,9 +221,10 @@ export function WorkspaceScreen({
         notice={notice}
         busy={creatingFromLink}
         onOpen={(id) => navigate(`/projects/${id}`)}
-        // The marks panel's own address (T61): the panel builds this same
-        // path, so the row and the panel open one page by two ways in.
-        onOpenMarkings={(id) => navigate(`/projects/${id}/markings`)}
+        // The marks panel's own address (T61): the panel shows this same
+        // path as its link, so the row and the panel open one page by two
+        // ways in.
+        onOpenMarkings={(id) => navigate(markingsPath(id))}
         onRename={(id, name) => void renameProject(id, name)}
         onDelete={(id) => void deleteProject(id)}
         onToggleVisibility={(id) => void toggleVisibility(id)}

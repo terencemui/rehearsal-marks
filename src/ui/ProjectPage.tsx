@@ -5,6 +5,7 @@ import { createAutosave, createProjectSave } from '../projects/autosave';
 import type { Autosave } from '../projects/autosave';
 import type { ProjectsApi } from '../projects/api';
 import type { SaveStatus } from '../projects/autosave';
+import { markingsPath } from '../routes';
 import { NotFoundPage } from './NotFoundPage';
 import { Player } from './Player';
 import { SaveStatusLine } from './SaveStatusLine';
@@ -159,7 +160,7 @@ export function ProjectPage({ projectsApi, controllerFactory, onExitStatus, onNo
         // The markings page's address (T55): the practice surface's one way
         // through to where the marks are authored. It navigates — this surface
         // itself stays playback-only (ADR-0003).
-        markingsHref={`/projects/${session.projectId}/markings`}
+        markingsHref={markingsPath(session.projectId)}
       />
     </>
   );

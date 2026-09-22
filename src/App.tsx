@@ -8,6 +8,7 @@ import { createDefaultProjectsApi } from './projects/api';
 import type { ProjectsApi } from './projects/api';
 import type { SaveStatus } from './projects/autosave';
 import type { ProjectSummary } from './projects/types';
+import { MARKINGS_ROUTE } from './routes';
 import { fetchYouTubeTitle } from './youtube';
 import { GalleryScreen } from './ui/GalleryScreen';
 import { HelpTab } from './ui/HelpTab';
@@ -200,7 +201,7 @@ function WiredApp({
 
   /**
    * The navigation token (T45): a link create captures it before its slow title
-   * lookup and navigates to the new project's page only if the user hasn't
+   * lookup and navigates to the new project's markings page only if the user hasn't
    * already moved on. Bumped on every pathname change — an in-flight create
    * that lands behind a navigation the user made must save the project and let
    * them find it in the list, never yank them off the page they chose.
@@ -257,7 +258,7 @@ function WiredApp({
    */
   const isPlayerPage =
     matchPath('/projects/:id', location.pathname) !== null ||
-    matchPath('/projects/:id/markings', location.pathname) !== null ||
+    matchPath(MARKINGS_ROUTE, location.pathname) !== null ||
     matchPath('/gallery/:id', location.pathname) !== null;
 
   return (
@@ -330,7 +331,7 @@ function WiredApp({
               URL. It reads the project through the same owner-scoped read the
               project page uses; the server refuses it to anyone else. */}
           <Route
-            path="/projects/:id/markings"
+            path={MARKINGS_ROUTE}
             element={
               projectsApiRef.current === null ? null : (
                 <MarkingsPage
