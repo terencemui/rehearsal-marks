@@ -4,6 +4,7 @@ import type { SaveStatus } from '../projects/autosave';
 import { returnsToReview } from '../projects/types';
 import type { ProjectSummary } from '../projects/types';
 import type { ProjectsApi } from '../projects/api';
+import { markingsPath } from '../routes';
 import { createProjectFromYouTubeLink } from '../youtube';
 import { CreateProject } from './CreateProject';
 import { ProjectsScreen } from './ProjectsScreen';
@@ -110,12 +111,14 @@ export function WorkspaceScreen({
       // The list must show the new project when the user returns — refresh
       // it before the navigation leaves this surface.
       await refreshProjects();
-      // The markings page, not the player (T63): a project is created to be
-      // filled, and this is the only surface that can fill it. The player
-      // reaches it back with one click; the reverse is not true — a project
-      // with nothing on it paints no markers column, so the player's way
-      // through is not there to be found on the page a create used to land on.
-      navigate(`/projects/${outcome.project.id}/markings`);
+      // The markings page, not the player (T63). A project is created to be
+      // filled, and this is the only surface that can fill it — the player is
+      // playback-only by design (ADR-0003), and its one way through to the
+      // authoring page lives in the markers column, which paints nothing at
+      // all on a project with no markers and no movements. That is exactly
+      // what this navigation is about to open, so a create landing there
+      // would arrive somewhere with no door in it.
+      navigate(markingsPath(outcome.project.id));
     } catch {
       onLinkError('Something went wrong creating the project. Please try again.');
     } finally {
@@ -218,9 +221,10 @@ export function WorkspaceScreen({
         notice={notice}
         busy={creatingFromLink}
         onOpen={(id) => navigate(`/projects/${id}`)}
-        // The marks panel's own address (T61): the panel builds this same
-        // path, so the row and the panel open one page by two ways in.
-        onOpenMarkings={(id) => navigate(`/projects/${id}/markings`)}
+        // The marks panel's own address (T61): the panel shows this same
+        // path as its link, so the row and the panel open one page by two
+        // ways in.
+        onOpenMarkings={(id) => navigate(markingsPath(id))}
         onRename={(id, name) => void renameProject(id, name)}
         onDelete={(id) => void deleteProject(id)}
         onToggleVisibility={(id) => void toggleVisibility(id)}
