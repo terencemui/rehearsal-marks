@@ -6,3 +6,8 @@
 .env.keys
 .env.local
 .env.*.local
+
+# config.toml env() substitution (supabase start), e.g. the Google OAuth
+# client secret. Never committed: see the "Google sign-in setup" section of
+# supabase/README.md.
+.env
