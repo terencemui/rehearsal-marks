@@ -53,7 +53,13 @@ The consumers of that wiring:
 
 ## Google sign-in setup
 
-One dashboard configuration, per ADR-0006 — no password login, Google only:
+No password login, Google only (ADR-0006). The `auth.users` id that Google
+signs in becomes the `owner_id` behind every `projects` row; the client never
+sends it — the schema defaults it to `auth.uid()`.
+
+### Hosted
+
+One dashboard configuration:
 
 1. **Authentication → Providers → Google**: enable and fill in the Google
    Cloud OAuth client (client ID and secret) from a Google Cloud project's
@@ -61,6 +67,48 @@ One dashboard configuration, per ADR-0006 — no password login, Google only:
 2. **Authentication → URL Configuration**: add the app's origin to the
    allowed redirect URLs (e.g. `http://localhost:5173` for dev, the deployed
    origin for production) — supabase-js appends the auth callback path.
-3. The `auth.users` id that Google signs in becomes the `owner_id` behind
-   every `projects` row; the client never sends it (the schema defaults it to
-   `auth.uid()`).
+
+### Local (`supabase start`)
+
+The local stack runs its own GoTrue, configured by `config.toml` rather than
+by the dashboard, so it needs the same wiring done again by hand. The
+provider block is already there; the credentials are the part it cannot
+carry, and three things have to line up before a local sign-in completes.
+
+1. **Google Cloud → APIs & Services → Credentials**: add the local auth
+   server's callback as an authorized redirect URI on the OAuth client. The
+   hosted client is fine — a client takes more than one redirect URI.
+
+   ```
+   http://127.0.0.1:54321/auth/v1/callback
+   ```
+
+   That is the Google → GoTrue hop, not where the browser ends up. GoTrue
+   sends it on to `site_url` once it holds the code, so the two are
+   different URLs for different legs and it is worth not conflating them.
+
+2. **`supabase/.env`** — gitignored, and read by the CLI from `supabase/` or
+   the repo root — supplies what `config.toml` reads through `env()`:
+
+   ```
+   SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=…
+   SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=…
+   ```
+
+3. **`supabase stop && supabase start`.** `config.toml` is read when the
+   containers are created, so reloading the app is not enough — and neither
+   is `supabase start` against a stack that is already up.
+
+`env()` substitutes only for a **non-empty** value, and an empty one leaves
+the literal `env(NAME)` sitting in the variable rather than failing loudly,
+so a stack can look configured and not be:
+
+```bash
+docker exec supabase_auth_rehearsal-marks printenv GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID
+```
+
+A value starting with `env(` means it never resolved. `site_url` is
+`http://localhost:5173`: vite's dev port, and the origin the browser has to
+be on, because `signInWithOAuth` is called without a `redirectTo` and GoTrue
+falls back to `SITE_URL`. `skip_nonce_check` is on for the local provider,
+which local Google sign-in requires.
