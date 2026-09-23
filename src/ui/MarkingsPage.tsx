@@ -31,7 +31,7 @@ import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
-import { useUnsavedChanges } from './useUnsavedChanges';
+import { useNavigationBlocker, useTabCloseGuard } from './exitGuards';
 import './markings.css';
 
 /** One markings page session: the autosave over the loaded project and its controller. */
@@ -276,7 +276,8 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * refused) alike. The failure counts because the record is still pending;
    * the in-flight write counts because the commit has been *asked for*, not
    * made, and a rejection arriving after the page is gone would come back to a
-   * disposed autosave with nothing left to retry it.
+   * disposed autosave with nothing left to retry it. This is the tab's own
+   * exit's question, in every mode (#136).
    */
   const uncommitted = status === 'dirty' || status === 'saving' || status === 'error';
   /**
@@ -287,19 +288,22 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    */
   const canCommit = status === 'dirty' || status === 'error';
   /**
-   * Whether the page has work only its owner can settle (T60) — a `manual`
-   * record with something the server has not confirmed. An `auto` record never
-   * blocks, because a write is already scheduled for it: the page is not what
-   * settles that work, so leaving is not a decision to put to its owner. (An
-   * in-app exit does settle it — the session's teardown flushes — but closing
-   * the tab runs no teardown at all, and the debounce window is the autosave's
-   * own exposure rather than something this question reaches.) Only a `manual`
-   * record has nothing that will write it, which is why this is narrower than
-   * `uncommitted` and is named for what leaving would cost rather than for
-   * what the record holds.
+   * Whether an in-app exit would cost work only the owner can settle (T60) —
+   * a `manual` record with something the server has not confirmed. An `auto`
+   * record never blocks here, because a write is already scheduled for it and
+   * an in-app exit runs the session's teardown, which flushes: the page is not
+   * what settles that work, so leaving is not a decision to put to its owner.
+   * Only a `manual` record has nothing that will write it, which is why this is
+   * narrower than `uncommitted` and is named for what leaving would cost rather
+   * than for what the record holds.
+   *
+   * It is the router's question and not the tab's (#136): the teardown that
+   * answers it for an `auto` record runs on an in-app exit and never on a tab
+   * close, which is why the tab's own exit takes `uncommitted` instead.
    */
   const hasWorkToLose = needsCommit && uncommitted;
-  const blocker = useUnsavedChanges(hasWorkToLose);
+  const blocker = useNavigationBlocker(hasWorkToLose);
+  useTabCloseGuard(uncommitted);
 
   /**
    * Places a mark where the recording is — the playhead the student is hearing,

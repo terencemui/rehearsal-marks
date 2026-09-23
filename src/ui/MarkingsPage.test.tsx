@@ -1755,6 +1755,67 @@ describe('leaving with unsaved changes (T60)', () => {
     // left to stand in the tab's way.
     expect(closeTheTab()).toBe(false);
   });
+
+  it('asks the browser before the tab is closed on a project that saves itself, while an edit is in hand', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    // Private: the project that writes itself, and so asks nothing of its
+    // owner before an in-app exit. The tab's own exit is the other question.
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    expect(closeTheTab()).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+
+    // The edit is in memory and the debounce is a timer in this page: closing
+    // the tab now kills both together, and a write never sent is not a write.
+    // No teardown runs on a tab close either, so nothing else will settle it —
+    // the browser's own confirm is the only thing that can ask.
+    expect(closeTheTab()).toBe(true);
+  });
+
+  it('asks the browser before the tab is closed on a project that saves itself, when its last write failed', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    api.failNext('saveProject');
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+
+    // The debounce fires and the write is refused. A parked failure retries on
+    // the next mutation and not on a clock, so nothing writes this record
+    // again however long the page is left — the edit is still only in memory,
+    // and closing the tab hours later still loses it.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/save failed/i);
+    await pastDebounce();
+    expect(api.saveProject).toHaveBeenCalledTimes(1);
+    expect(closeTheTab()).toBe(true);
+  });
+
+  it('leaves a project that saves itself without a word when there is nothing pending', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    expect(closeTheTab()).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+
+    // The write landed, so the server holds what the record holds and the tab
+    // is free again: the guard is what the record still owes the server, not
+    // the fact that it was ever edited.
+    await waitFor(() => expect(closeTheTab()).toBe(false));
+  });
 });
 
 describe('the way into the markings page (T55)', () => {
