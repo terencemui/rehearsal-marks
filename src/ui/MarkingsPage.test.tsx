@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { LoadOptions } from '../audio';
+import { YouTubePlaybackError } from '../audio';
 import { canonicalYouTubeUrl } from '../domain';
 import type { ServerProject } from '../projects/types';
 import { renderApp } from '../test/app-fixture';
@@ -92,22 +93,22 @@ function closeTheTab(): boolean {
 }
 
 /**
- * The row the page is showing as selected (T57) — the one carrying the
- * correction block, found by the attribute rather than the class so the test
- * asserts what a reader is told, not only what is coloured.
+ * The row carrying the correction block (T57, T64) — the row the playhead is
+ * on, found by the attribute rather than the class so the test asserts what a
+ * reader is told, not only what is coloured.
  */
-function selectedRow(container: HTMLElement): HTMLElement | null {
+function correctingRow(container: HTMLElement): HTMLElement | null {
   return container.querySelector('li[aria-current="true"]');
 }
 
-/** The selected mark's time field — the exact place a correction is read and typed. */
+/** The corrected row's time field — the exact place a correction is read and typed. */
 function timeField(container: HTMLElement): HTMLInputElement {
   const field = container.querySelector<HTMLInputElement>('.markings-row-time');
-  if (field === null) throw new Error('No time field — no mark is selected.');
+  if (field === null) throw new Error('No time field — no row is carrying the block.');
   return field;
 }
 
-/** One of the selected row's nudge controls, by the words it shows. */
+/** One of the corrected row's nudge controls, by the words it shows. */
 function nudgeControl(direction: 'earlier' | 'later'): HTMLElement {
   return screen.getByRole('button', { name: direction === 'earlier' ? '−0.1s' : '+0.1s' });
 }
@@ -305,6 +306,12 @@ describe('a mark can be placed, named and removed (T56)', () => {
     expect(controller.getPlaybackState().playing).toBe(true);
     expect(controller.togglePlay).not.toHaveBeenCalled();
     expect(controller.seek).toHaveBeenLastCalledWith(42);
+
+    // And the mark is the row the playhead has just passed, so it lands under
+    // the correction block the instant it exists (T64) — a mark placed by ear
+    // is a mark about to be made exact, with nothing to click to begin.
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
   });
 
   it('lands the marks in time order with their derived labels, however they were placed', async () => {
@@ -458,7 +465,7 @@ describe('a mark can be placed, named and removed (T56)', () => {
 });
 
 describe('a mark can be corrected: nudge and typed time (T57)', () => {
-  it('selects a mark by clicking it, and says which one is selected', async () => {
+  it('puts the correction controls on the row the playhead is on, and nowhere before the first mark', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
@@ -466,26 +473,30 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
     await waitForPlayerSettled();
 
-    // Nothing is selected until the student picks a mark: the column opens as
-    // the list it is.
-    expect(selectedRow(container)).toBeNull();
+    // The recording's Start is not a row: nothing is being corrected while the
+    // playhead sits before the first mark, and there is no block to show.
+    expect(correctingRow(container)).toBeNull();
     expect(container.querySelector('.markings-correct')).toBeNull();
 
     await user.click(markerRows(container)[0]);
 
-    // The row holding the playhead and the row being corrected are different
-    // facts — the first moves on its own, the second is a choice — so the
-    // selection is the row that was clicked, and it is named for a reader
-    // rather than only coloured.
-    const selected = selectedRow(container);
-    expect(selected).not.toBeNull();
-    expect(within(selected!).getByText('A')).toBeInTheDocument();
+    // The click is the jump and only the jump. The seek parks the playhead on
+    // the mark, and the row the playhead is on is the row carrying the block —
+    // one gesture, with no separate act of picking a row out to correct. It is
+    // named for a reader rather than only coloured.
+    const carrying = correctingRow(container);
+    expect(carrying).not.toBeNull();
+    expect(within(carrying!).getByText('A')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
-    // Clicking still jumps: selecting a mark is how it gets heard.
     expect(controller.getCurrentTime()).toBe(10);
+
+    // And the block is the playhead's, so it goes where the playhead goes:
+    // jumping on to B carries it there.
+    await user.click(markerRows(container)[1]);
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
   });
 
-  it('nudges the selected mark a tenth of a second either way from the bracket keys', async () => {
+  it('nudges the mark the playhead is on a tenth of a second either way from the bracket keys', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
@@ -506,6 +517,10 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
 
     await waitFor(() => expect(api.get('p1')?.markers[0].time).toBeCloseTo(10.1));
+    // A correction moves the recording with it (T64): the playhead is on the
+    // time just written, which is what the student hears next and what keeps
+    // the block on the row they corrected.
+    expect(controller.getCurrentTime()).toBeCloseTo(10.1);
   });
 
   it('nudges a whole second with Shift, and both controls carry the same step', async () => {
@@ -559,6 +574,10 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     // exact time it means.
     expect(await screen.findByDisplayValue('05:10.500')).toBeInTheDocument();
     await waitFor(() => expect(api.get('p1')?.markers[0].time).toBe(310.5));
+    // Committing a time commits the recording too (T64): the playhead goes to
+    // the exact moment just written, so the student hears the landmark they
+    // have just placed rather than the one it was.
+    expect(controller.getCurrentTime()).toBeCloseTo(310.5);
   });
 
   it('refuses a time that makes no sense, with the domain’s guidance beside the field', async () => {
@@ -583,10 +602,12 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     expect(guidance).toHaveTextContent(/use seconds like/i);
     expect(guidance.closest('.markings-correct')).not.toBeNull();
     // The refused text is not what the mark holds: the field goes back to the
-    // time it does hold, and nothing was written.
+    // time it does hold, and nothing was written — and nothing was sought
+    // either, since the mark did not move to seek to.
     expect(field).toHaveValue('00:10.000');
     await pastDebounce();
     expect(api.get('p1')?.markers[0].time).toBe(10);
+    expect(controller.getCurrentTime()).toBe(10);
   });
 
   it('drops a refused time when the mark is nudged instead', async () => {
@@ -609,12 +630,12 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     // A nudge puts the mark's own time back in the field, so the refusal is a
     // complaint about text that is nowhere any more: it goes when the text
     // does. Left standing it would sit under a valid time contradicting it, and
-    // be announced a second time when the mark was next selected.
+    // be announced a second time when the block came back to this row.
     expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('holds the row being corrected still when a correction takes the playhead from it', async () => {
+  it('holds the row being typed into while the caret is in its field, and hands it back after', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
@@ -622,15 +643,17 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
     await waitForPlayerSettled();
 
-    // The playhead sits past the second mark, so the second mark holds it.
-    await user.click(markerRows(container)[1]);
-    act(() => controller.emitPlayback({ currentTime: 22, duration: 372 }));
+    await user.click(markerRows(container)[0]);
+    const field = timeField(container);
+    // The caret is in A's field: the student is telling this row what time it
+    // holds, and it is the row they are working on (T64).
+    await user.click(field);
 
     const list = container.querySelector('.player-marker-list') as HTMLElement;
     const rows = markerRows(container).map((button) => button.closest('li') as HTMLElement);
-    // B is at the band's top and A is far below it, so a reveal aimed at either
+    // A is at the band's top and B is far below it, so a reveal aimed at either
     // lands somewhere unmistakable.
-    stubRevealGeometry(list, rows[1], {
+    stubRevealGeometry(list, rows[0], {
       scrollTop: 200,
       clientHeight: 320,
       scrollHeight: 2000,
@@ -639,7 +662,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
       rowTop: 300,
       rowBottom: 330,
     });
-    stubRevealGeometry(list, rows[0], {
+    stubRevealGeometry(list, rows[1], {
       scrollTop: 200,
       clientHeight: 320,
       scrollHeight: 2000,
@@ -649,27 +672,80 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
       rowBottom: 930,
     });
 
-    // B moves past the playhead, so A takes it — and following the active row
-    // would carry B's correction block out of the band with it, just as the
-    // student was reading the time they had given it. The row being corrected
-    // is the row they are working on, and it stays where they put it.
-    const field = timeField(container);
-    await user.clear(field);
-    await user.type(field, '0:25');
-    await user.keyboard('{Enter}');
+    // One row can be both at once — the row the playhead is on, with the caret
+    // in the field it is giving a time to — and it reads as both.
+    expect(rows[0]).toHaveClass('active');
+    expect(rows[0]).toHaveClass('correcting');
 
-    expect(await screen.findByDisplayValue('00:25.000')).toBeInTheDocument();
+    // The playhead runs on past both marks while the time is being typed. Left
+    // to the playhead the block would slide down to B, taking the field out
+    // from under the typist and re-seeding it mid-word; the caret holds it
+    // where it is, and the panel holds the list with it.
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(timeField(container)).toBe(field);
     expect(list.scrollTop).toBe(200);
 
-    // Not a panel that has stopped revealing: picking another mark out hands
-    // the list back, and the mark picked — A, far below the band — comes to its
-    // top. The playhead is still audible throughout; the list is the student's
-    // while they are working on a mark, and the playhead's again after.
-    await user.click(markerRows(container)[0]);
+    // Two different rows, and a reader can tell them apart: A carries the block
+    // — the ring, and the word `aria-current` gives it — while B holds the
+    // playhead the block has been held off. Both are marked, each as itself.
+    expect(correctingRow(container)).toBe(rows[0]);
+    expect(rows[0]).toHaveClass('correcting');
+    expect(rows[0]).not.toHaveClass('active');
+    expect(rows[1]).toHaveClass('active');
+    expect(rows[1]).not.toHaveClass('correcting');
+    expect(rows[1]).not.toHaveAttribute('aria-current');
+
+    // Leaving the field hands both back: the block is the playhead's again, and
+    // the row it names — B, far below the band — comes to the top.
+    await user.tab();
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
     expect(list.scrollTop).toBe(1000);
   });
 
-  it('changes nothing about playback: the recording keeps playing as it was', async () => {
+  it('lets go of the pin on a nudge, which replaces the field the caret was in', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    await user.click(timeField(container));
+
+    // A nudge pressed without the browser having moved the focus — which is
+    // Safari, where a click does not focus a button. No blur ever arrives, and
+    // the nudge re-seeds the field the caret was in, so that field is gone: the
+    // pin has nothing left to hold, and the block is the playhead's again.
+    fireEvent.click(nudgeControl('later'));
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
+  });
+
+  it('holds the block on the caret’s row and never on a nudge button’s', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    await user.click(nudgeControl('later'));
+
+    // The button has the focus, and still does not hold the block: a button
+    // held down is not a row being given a time. Only the caret in the time
+    // field pins — a pin armed by any interaction would arm here in Chrome and
+    // not in Safari, which does not focus a button on click, and it has nothing
+    // to buy now that a nudge takes the playhead with it. So the playhead
+    // moving on takes the block with it, as it always would.
+    expect(document.activeElement).toBe(nudgeControl('later'));
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
+  });
+
+  it('moves the recording to the time it writes, and nothing else about playback', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
@@ -679,9 +755,6 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     act(() => controller.emitPlayback({ playing: true, duration: 372 }));
 
     await user.click(markerRows(container)[0]);
-    // The click's own jump is the selection's; from here on nothing moves the
-    // playhead.
-    const jumps = vi.mocked(controller.seek).mock.calls.length;
 
     pressNudge(']');
     pressNudge(']', true);
@@ -690,11 +763,13 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     await user.type(field, '12');
     await user.keyboard('{Enter}');
 
-    // Correcting a mark is a correction, not a transport: the student is still
-    // hearing what they were hearing, from where they were hearing it.
+    // A correction is a correction, not a transport: it moves the playhead to
+    // the time it wrote (T64) and leaves everything else about playback alone —
+    // a recording being played is still being played, from the moment the
+    // student just named.
     expect(controller.getPlaybackState().playing).toBe(true);
     expect(controller.togglePlay).not.toHaveBeenCalled();
-    expect(vi.mocked(controller.seek).mock.calls.length).toBe(jumps);
+    expect(controller.getCurrentTime()).toBe(12);
     expect(await screen.findByDisplayValue('00:12.000')).toBeInTheDocument();
     await waitFor(() => expect(api.get('p1')?.markers[0].time).toBe(12));
   });
@@ -717,8 +792,11 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 
     expect(markerTimes(container)).toEqual(['00:20', '00:25']);
     expect(markerTitles(container)).toEqual(['A', 'B']);
-    // The selection follows the mark it was on, not the position it held.
-    expect(within(selectedRow(container)!).getByText('B')).toBeInTheDocument();
+    // The block is still on the mark it was on, not on the position it held —
+    // because the correction took the playhead with it, and the row the
+    // playhead is on is the row it re-sorted into. The label it reads is B now:
+    // a label is a rank, and the rank moved with the mark.
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
     await waitFor(() =>
       expect(api.get('p1')?.markers).toEqual([
         expect.objectContaining({ id: 'm1', time: 25 }),
@@ -727,7 +805,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     );
   });
 
-  it('selects the mark the arrow keys land on, so the nudge is reachable by keyboard', async () => {
+  it('walks to a mark with the arrow keys, and puts the block on the row the walk lands on', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
@@ -737,18 +815,18 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 
     await user.keyboard('{ArrowDown}');
 
-    // ↑/↓ are how this panel is walked, so on this page the mark a walk lands
-    // on is the mark being worked on — otherwise the nudge keys could never
-    // reach a mark without a pointer.
+    // ↑/↓ are how this panel is walked, and a walk is a jump: the playhead
+    // lands on the mark it reached, which is the whole of what makes that row
+    // the one being corrected — otherwise the nudge keys could never reach a
+    // mark without a pointer.
     expect(controller.getCurrentTime()).toBe(10);
-    expect(within(selectedRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
 
     pressNudge(']');
     expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
   });
 
-  it('corrects a mark while the recording is still loading — a correction is not playback', async () => {
-    const user = userEvent.setup();
+  it('waits for the recording, as every other key does — a correction is a seek', async () => {
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
     // A load that never settles: the page is up and the marks are there, and
@@ -757,17 +835,44 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
     await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' });
 
+    pressNudge(']');
+    pressNudge(']', true);
+    await pastDebounce();
+
+    // A correction asks the recording for a seek now (T64), so it waits with
+    // every other playhead gesture until there is a recording to move — and
+    // there is nothing to move yet, the playhead being nowhere but the
+    // recording's Start. Nothing was written, and nothing was sought.
+    expect(correctingRow(container)).toBeNull();
+    expect(api.get('p1')?.markers.map((m) => m.time)).toEqual([10]);
+    expect(vi.mocked(controller.seek)).not.toHaveBeenCalled();
+  });
+
+  it('corrects a mark whose recording cannot play at all', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    // A dead embed: the load settles on its failure path, and the length the
+    // record remembers is what the timeline and the list are drawn from.
+    const controller = mockController({
+      load: vi.fn(async () => ({ duration: 0, error: new YouTubePlaybackError(150) })),
+    });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    // The length the record holds, as the player's own load hands it over.
+    act(() => controller.emitPlayback({ duration: 372 }));
+
     await user.click(markerRows(container)[0]);
     pressNudge(']');
 
-    // `M` waits for the recording, because it marks a playhead that means
-    // nothing yet. A correction moves a mark the record already holds and asks
-    // the recording for nothing — so it is not held back, and the keys agree
-    // with the block's own controls rather than lagging them.
+    // A settled load is a settled load, whether it settled well or badly: the
+    // marks are all there is to correct, and the block and its keys work on
+    // them exactly as they do over a recording that plays.
     expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
+    await waitFor(() => expect(api.get('p1')?.markers[0].time).toBeCloseTo(10.1));
   });
 
-  it('moves the selection with the click, and drops it when the mark goes', async () => {
+  it('follows the playhead from row to row, and finds the row behind when one goes', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
@@ -776,20 +881,22 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     await waitForPlayerSettled();
 
     await user.click(markerRows(container)[0]);
-    expect(within(selectedRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
 
     await user.click(markerRows(container)[1]);
-    expect(within(selectedRow(container)!).getByText('B')).toBeInTheDocument();
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Correct marker B' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Delete marker B' }));
 
-    // A selection that outlived its mark would be a correction aimed at nothing.
-    expect(selectedRow(container)).toBeNull();
-    expect(container.querySelector('.markings-correct')).toBeNull();
+    // Nothing is held, so nothing can be left aimed at a mark that has gone:
+    // the block is re-derived, and the playhead standing where B was is now on
+    // the mark it has last passed — A, which is the row that takes it.
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
   });
 
-  it('corrects nothing with no mark selected — the keys are inert until one is', async () => {
+  it('corrects nothing before the first mark — the keys have no row to act on', async () => {
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
     const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
@@ -800,7 +907,9 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     pressNudge(']', true);
     await pastDebounce();
 
-    expect(selectedRow(container)).toBeNull();
+    // The recording's Start is not a row, so there is no row for a correction
+    // and nothing for the keys to move.
+    expect(correctingRow(container)).toBeNull();
     expect(container.querySelector('.markings-row-time')).toBeNull();
     expect(api.get('p1')?.markers.map((m) => m.time)).toEqual([10, 20]);
     expect(api.saveProject).not.toHaveBeenCalled();
@@ -826,7 +935,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     expect(api.get('p1')?.markers[0].time).toBe(10);
   });
 
-  it('offers no selection or correction on the practice surface, and the keys do nothing there', async () => {
+  it('offers no correction on the practice surface, and the keys do nothing there', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private' }));
@@ -836,9 +945,10 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     act(() => controller.emitPlayback({ duration: 372 }));
 
     // The practice surface stays playback-only (ADR-0003): clicking a row still
-    // jumps and still does not select, and there is nothing to correct with.
+    // jumps, and there is nothing to correct with — the surface carries no
+    // block at all, so there is no row for one to be on.
     await user.click(markerRows(container)[0]);
-    expect(selectedRow(container)).toBeNull();
+    expect(correctingRow(container)).toBeNull();
     expect(container.querySelector('.markings-correct')).toBeNull();
     expect(container.querySelector('.markings-row-time')).toBeNull();
 
@@ -883,7 +993,10 @@ describe('movements exist, so the letters restart (T58)', () => {
     // The 00:20 mark is *under* the boundary rather than merely second in the
     // letters. A header and the rows beneath it are the movement — membership is
     // what the list's own order says it is — so the shape has to be the leading
-    // group and its mark, then the boundary and its own.
+    // group and its mark, then the boundary and its own. The boundary carries
+    // the correction block, having been placed where the playhead stands (T64):
+    // the block is on the row the playhead is on, and a boundary set by ear is
+    // the row the student has most obviously just made.
     expect(
       [...container.querySelectorAll('.player-marker-list > li')].map((item) => {
         const header = item.querySelector('.markings-movement-header');
@@ -891,9 +1004,10 @@ describe('movements exist, so the letters restart (T58)', () => {
           return (header.querySelector('input') as HTMLInputElement).value;
         }
         if (item.classList.contains('player-marker-movement')) return 'before the first movement';
+        if (item.classList.contains('correcting')) return 'the correction block';
         return item.querySelector('.player-marker-title')?.textContent ?? '?';
       }),
-    ).toEqual(['before the first movement', 'A', 'Movement 1', 'A']);
+    ).toEqual(['before the first movement', 'A', 'Movement 1', 'the correction block', 'A']);
 
     // And the boundary is authored in earnest, not merely drawn: it is what the
     // server ends up holding once the project is committed.
@@ -985,6 +1099,39 @@ describe('movements exist, so the letters restart (T58)', () => {
     expect(api.get('p1')?.movements.map((m) => m.name)).toEqual(['Movement 1']);
   });
 
+  it('puts the block on the boundary when the playhead sits on one, mark standing there or not', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    // A mark exactly where a movement begins — the ordinary result of setting a
+    // boundary and marking the downbeat you hear at it.
+    api.seed(
+      project({
+        markers: [marker('m1', 15)],
+        movements: [{ id: 'mv1', name: 'II. Andante', start: 15 }],
+      }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(movementJumps(container)[0]);
+
+    // Movements are markers' peers, not their superiors (ADR-0007): a boundary
+    // is corrected by the same controls a mark is, so the two rows need no rank
+    // between them — only a rule for the one moment both hold the playhead, and
+    // the boundary is what the student is standing on.
+    expect(controller.getCurrentTime()).toBe(15);
+    expect(screen.getByRole('group', { name: 'Re-time movement II. Andante' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Correct marker A' })).toBeNull();
+    expect(timeField(container)).toHaveValue('00:15.000');
+
+    // A step off the boundary, the playhead rests on the mark instead, and the
+    // block is wherever the playhead is.
+    act(() => controller.emitPlayback({ currentTime: 15.5 }));
+    expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Re-time movement II. Andante' })).toBeNull();
+  });
+
   it('keeps a movement visible before anything is marked inside it', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
@@ -1035,12 +1182,13 @@ describe('a movement can be re-timed and deleted (T59)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
     await waitForPlayerSettled();
 
-    // Nothing is being corrected until the student picks a boundary out.
+    // The recording's Start is no row at all, so there is nothing to correct
+    // until the playhead has reached one.
     expect(container.querySelector('.markings-correct')).toBeNull();
 
-    // Clicking a movement's header parks the playhead at its start — and that
-    // is the click that marks it as the boundary being corrected, exactly as
-    // clicking a mark's row both jumps to it and picks it out (T57).
+    // Clicking a movement's header parks the playhead at its start — and a
+    // boundary is a marker's peer (ADR-0007), so that is the whole of what puts
+    // the block on it: the row the playhead is on, exactly as a mark's row is.
     act(() => controller.emitPlayback({ duration: 1800 }));
     await user.click(movementJumps(container)[1]);
     expect(controller.getCurrentTime()).toBe(831);
@@ -1060,6 +1208,10 @@ describe('a movement can be re-timed and deleted (T59)', () => {
       ['I. Allegro', 15],
       ['II. Adagio', 845],
     ]);
+    // And the recording moved with it (T64), exactly as it does for a mark: the
+    // playhead is on the start just written, so the student hears movement II
+    // from where they have just said it begins.
+    expect(controller.getCurrentTime()).toBe(845);
   });
 
   it('refuses a re-time that would cross a neighbour, naming it, and moves nothing', async () => {
@@ -1115,6 +1267,9 @@ describe('a movement can be re-timed and deleted (T59)', () => {
     expect(await screen.findByDisplayValue('00:14.100')).toBeInTheDocument();
     await pastDebounce();
     expect(api.get('p1')?.movements[0].start).toBeCloseTo(14.1);
+    // Every nudge took the recording with it, as a mark's does (T64): the
+    // playhead is on the start the boundary now holds.
+    expect(controller.getCurrentTime()).toBeCloseTo(14.1);
 
     // Nudged up against movement II, a step lands on a boundary that is already
     // there: the domain says so where the controls are, and the boundary stays
@@ -1128,10 +1283,13 @@ describe('a movement can be re-timed and deleted (T59)', () => {
     const refusal = await screen.findByRole('alert');
     expect(refusal.textContent).toContain('II. Adagio');
     // The boundary is one step short of the neighbour and stays there: a nudge
-    // that cannot be taken is refused, not clamped onto a start that is taken.
+    // that cannot be taken is refused, not clamped onto a start that is taken —
+    // and a refused nudge moves the recording nowhere, since there is no new
+    // time to move it to.
     const starts = api.get('p1')?.movements.map((m) => m.start) ?? [];
     expect(starts[0]).toBeCloseTo(830.9);
     expect(starts[1]).toBe(831);
+    expect(controller.getCurrentTime()).toBeCloseTo(830.9);
   });
 
   it('asks before deleting a movement, saying how many marks it holds and what becomes of them', async () => {
@@ -1625,16 +1783,16 @@ describe('leaving with unsaved changes (T60)', () => {
     });
     await waitForPlayerSettled();
 
-    // A mark picked out to correct, then an exit asked for.
+    // The playhead on a mark, then an exit asked for.
     await user.click(markerRows(container)[0]);
     await user.click(screen.getByRole('button', { name: 'Delete marker B' }));
     await navigateTo('/help');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
-    // `[`/`]` are the one pair that sits above the settle gate (T57), because a
-    // correction asks the recording for nothing — so they are the pair a
-    // question about the work can most easily miss. A nudge now would move the
-    // very mark the owner is being asked whether to keep.
+    // The `inert` gate is the one above every key, and the correction keys are
+    // the pair a question about the work could most easily miss: they are the
+    // keys that move a mark without a pointer. A nudge now would move the very
+    // mark the owner is being asked whether to keep.
     pressNudge(']');
     pressNudge('[', true);
     expect(timeField(container)).toHaveValue('00:10.000');

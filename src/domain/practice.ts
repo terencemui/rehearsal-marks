@@ -41,6 +41,29 @@ export interface PracticeReadout {
 }
 
 /**
+ * The index in `markers` of the last marker the playhead has reached, or -1
+ * before the first. Markers must be in time order (as `deriveLabels` returns).
+ *
+ * The one rule behind two readings of the same playhead: the readout's
+ * passed/next split, and the markings page's active row (ADR-0007, amended
+ * 2026-09-24) — so it is written here once rather than restated by each.
+ */
+export function passedIndex(markers: readonly LabeledMarker[], time: number): number {
+  // The most recently reached marker: the last one within a frame of the
+  // playhead, walking forward. The break on the first non-reached marker
+  // keeps a same-time cluster passing as a group.
+  let index = -1;
+  for (let i = 0; i < markers.length; i += 1) {
+    if (markers[i].time <= time + FRAME_EPSILON) {
+      index = i;
+    } else {
+      break;
+    }
+  }
+  return index;
+}
+
+/**
  * Computes the practice readout at `time`. Markers must be in time order
  * (as `deriveLabels` returns). A playhead beyond the recording — a trailing
  * position the store can report after the media has ended — clamps to the
@@ -51,20 +74,10 @@ export function practiceReadout(
   time: number,
   duration: number,
 ): PracticeReadout {
-  // The most recently reached marker: the last one within a frame of the
-  // playhead, walking forward. The break on the first non-reached marker
-  // keeps a same-time cluster passing as a group.
-  let passedIndex = -1;
-  for (let i = 0; i < markers.length; i += 1) {
-    if (markers[i].time <= time + FRAME_EPSILON) {
-      passedIndex = i;
-    } else {
-      break;
-    }
-  }
+  const reached = passedIndex(markers, time);
 
-  const passed = passedIndex >= 0 ? markers[passedIndex] : null;
-  const next = passedIndex + 1 < markers.length ? markers[passedIndex + 1] : null;
+  const passed = reached >= 0 ? markers[reached] : null;
+  const next = reached + 1 < markers.length ? markers[reached + 1] : null;
   const passedTime = passed?.time ?? START_TIME;
   const nextTime = next?.time ?? duration;
 

@@ -10,11 +10,10 @@
  * `revealDelay` is the brake on it.
  *
  * Which row it follows is the panel's to decide and is not here either: on the
- * markings page a student who has picked a mark out to correct (T57) has said
- * which row they are working on, and a correction moves that mark rather than
- * the playhead — so the panel follows the row being corrected while a
- * selection stands, and the active row otherwise. What is left for this module
- * is where the row goes once the reveal has been decided on.
+ * markings page the row carrying the correction block (T57, T64) — the active
+ * row, or the row a caret is holding the block on while a time is typed — and
+ * the active row otherwise. What is left for this module is where the row goes
+ * once the reveal has been decided on.
  *
  * Both functions are pure, and every number in them is a measurement the
  * caller reads off the elements or the clock. That separation is what makes

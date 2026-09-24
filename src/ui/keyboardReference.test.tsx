@@ -126,8 +126,7 @@ interface Surface {
 function markingsPage(): Surface {
   const onAddMarker = vi.fn();
   const onNudge = vi.fn();
-  const onWalk = vi.fn();
-  return { options: { onAddMarker, onNudge, onWalk }, spies: [onAddMarker, onNudge, onWalk] };
+  return { options: { onAddMarker, onNudge }, spies: [onAddMarker, onNudge] };
 }
 
 /** The practice surface's configuration: playback, and no callback that could author. */

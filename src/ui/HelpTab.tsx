@@ -128,10 +128,7 @@ export function HelpTab() {
               <td>
                 <kbd>↑</kbd> / <kbd>↓</kbd>
               </td>
-              <td>
-                Jump to the previous / next marker, wrapping at the ends, and pick out the marker
-                it lands on
-              </td>
+              <td>Jump to the previous / next marker, wrapping at the ends</td>
             </tr>
             <tr>
               <td>
@@ -143,15 +140,15 @@ export function HelpTab() {
               <td>
                 <kbd>[</kbd> / <kbd>]</kbd>
               </td>
-              <td>Nudge the marker being corrected a tenth of a second earlier / later</td>
+              <td>Nudge the row the playhead is on a tenth of a second earlier / later</td>
             </tr>
             <tr>
               <td>Click a marker row</td>
-              <td>Jump to it, and pick it out to be corrected</td>
+              <td>Jump to it</td>
             </tr>
             <tr>
               <td>Click the time in a movement header</td>
-              <td>Jump to that movement's start, and pick it out to be re-timed</td>
+              <td>Jump to that movement's start</td>
             </tr>
           </tbody>
         </table>
@@ -162,17 +159,30 @@ export function HelpTab() {
           placed by ear the same way — <strong>Add movement</strong> — and has no key of its own.
         </p>
         <p>
-          <kbd>[</kbd> and <kbd>]</kbd> move the marker being corrected a tenth of a second earlier
-          or later; hold <kbd>Shift</kbd> for a whole second. A correction moves the marker and
-          nothing else, so the recording keeps playing, or stays paused, exactly as it was — the
-          same division the <strong>−0.1s</strong> and <strong>+0.1s</strong> controls make.
+          <kbd>[</kbd> and <kbd>]</kbd> move the row the recording is on a tenth of a second
+          earlier or later; hold <kbd>Shift</kbd> for a whole second. The row is the playhead's:
+          the marker the recording has last passed, or the boundary it is sitting on — and a
+          boundary wins when one is under the playhead, whether or not a mark stands there too. So
+          the block of controls is wherever the recording is, with nothing to click to begin, and
+          the mark <kbd>M</kbd> has just made is the mark it is on. It holds still while the caret
+          is in its time field, so the recording cannot take the field away mid-entry, and follows
+          the playhead again once the field is left.
         </p>
         <p>
-          This page's <kbd>↑</kbd> and <kbd>↓</kbd> do one thing the practice surface's do not:
-          the marker they land on is picked out as the one being corrected, which is how a marker is
-          reached for nudging without a pointer. No marker picked out means <kbd>[</kbd> and{' '}
-          <kbd>]</kbd> do nothing. The walk is over markers only — a movement's boundary is
-          picked out by clicking the time in its header — and a typed alias or time is
+          A correction moves the recording to the time it writes: a nudge, or a committed typed
+          time, puts the playhead on the new value — mark and boundary alike — so the row stays
+          under the correction that moved it, and the change is heard at once. Nothing else about
+          playback moves, so the recording keeps playing, or stays paused, exactly as it was. The{' '}
+          <strong>−0.1s</strong> and <strong>+0.1s</strong> controls beside the field make the same
+          division.
+        </p>
+        <p>
+          This page's <kbd>↑</kbd> and <kbd>↓</kbd> are the practice surface's, and they reach a
+          marker the same way: the jump moves the playhead to it, and the playhead is what decides
+          the row. The walk is over markers only, so a movement's boundary is reached by clicking
+          the time in its header, by the playhead sitting on it, or by letting the recording play
+          into it. Before the first marker, and with no boundary under the playhead, <kbd>[</kbd>{' '}
+          and <kbd>]</kbd> have no row to act on and do nothing. A typed alias or time is
           committed when the field is left, which <kbd>Enter</kbd> does.
         </p>
 

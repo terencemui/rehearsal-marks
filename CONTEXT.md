@@ -66,6 +66,10 @@ _Avoid_: youtube key, video key
 The full-width click-to-seek progress clock below the split — the recording's own strip, a filled bar tracking playback with the elapsed time under its left end and the total duration under its right. It carries no marks; the markers panel is where they show.
 _Avoid_: ruler, tick bar, scrubber
 
+**Active row**:
+The row the playhead is on: the marker it has last passed, or the movement boundary it is sitting on — a boundary wins when both are true. On the Markings page it carries the correction controls.
+_Avoid_: selected row, picked-out row, current row, highlighted row
+
 ### Gallery and sharing
 
 **Public gallery**:

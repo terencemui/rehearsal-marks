@@ -2,6 +2,7 @@
  * The domain module — the app's single primary test seam. Pure TypeScript:
  * marker model, derived labels, alias rules. Consumers see only this surface.
  */
+export { activeRowId } from './activeRow';
 export { DomainError, errorMessage } from './errors';
 export type { DomainErrorCode } from './errors';
 export { newId } from './id';
