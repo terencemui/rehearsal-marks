@@ -1,19 +1,19 @@
 /**
  * The markers panel's reveal policy: where the list should scroll to put the
- * marker holding the playhead at the top of its band, and — when the reader
- * has just scrolled the list by hand — how long to wait before it does.
+ * row it follows at the top of its band, and — when the reader has just
+ * scrolled the list by hand — how long to wait before it does.
  *
- * The panel follows the playhead: the current marker is kept at the top of the
- * list, both when the playhead is moved deliberately (a bar click, an arrow
- * key, the embedded player's own controls) and as playback crosses each
- * boundary. That is deliberately the one thing the panel does on its own, and
- * `revealDelay` is the brake on it.
+ * The panel keeps the row it follows at the top of the list, both when the
+ * playhead is moved deliberately (a bar click, an arrow key, the embedded
+ * player's own controls) and as playback crosses each boundary. That is
+ * deliberately the one thing the panel does on its own, and `revealDelay` is
+ * the brake on it.
  *
  * Which row it follows is the panel's to decide and is not here either: on the
  * markings page the row carrying the correction block (T57, T64) — the active
  * row, or the row a caret is holding the block on while a time is typed — and
- * the active row otherwise. What is left for this module is where the row goes
- * once the reveal has been decided on.
+ * the passed marker's row otherwise. What is left for this module is where the
+ * row goes once the reveal has been decided on.
  *
  * Both functions are pure, and every number in them is a measurement the
  * caller reads off the elements or the clock. That separation is what makes

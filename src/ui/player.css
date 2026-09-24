@@ -188,9 +188,9 @@ in the side column is where the marks show. */
 }
 
 /* The markers panel: the recording's table of contents, one row per marker —
-timestamp, then `label — alias` — with the row holding the playhead
-highlighted. The list scrolls within its band, so a marker-heavy project never
-towers over the recording. */
+timestamp, then `label — alias` — with the passed marker's row highlighted.
+The list scrolls within its band, so a marker-heavy project never towers over
+the recording. */
 .player-markers-heading {
   margin: 0 0 8px;
   font: 600 11px/16px system-ui, sans-serif;
@@ -267,17 +267,20 @@ towers over the recording. */
   background: #f1f5f9;
 }
 
-/* The active marker — the row holding the playhead. */
-.player-marker-list li.active .player-marker-row {
+/* The passed marker — the mark the playhead has last gone by. A movement
+   boundary under the playhead is not a mark row and takes no tint, so the
+   tinted row is the last mark before the boundary, not the row the playhead
+   is on (T65): the tint is the readout's passed slot, not the playhead. */
+.player-marker-list li.passed .player-marker-row {
   background: #ecfdf5;
   color: #0f172a;
 }
 
-.player-marker-list li.active .player-marker-time {
+.player-marker-list li.passed .player-marker-time {
   color: #0f766e;
 }
 
-.player-marker-list li.active .player-marker-title {
+.player-marker-list li.passed .player-marker-title {
   font-weight: 700;
 }
 

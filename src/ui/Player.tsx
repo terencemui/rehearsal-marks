@@ -58,12 +58,12 @@ export interface PlayerProps {
  * The recording's clock is a single filled bar below the split (T38). It
  * carries no marks: the flags left the strip for the markers panel, a
  * scrollable list in the side column where each marker is a row — timestamp,
- * then `label — alias` — and the row holding the playhead is highlighted. A
+ * then `label — alias` — and the passed marker's row is highlighted. A
  * click on the bar seeks; a marker row click jumps to that marker. When the
  * recording has movements (ADR-0005) the rows group under sticky movement
  * headers that jump to the movement's start, and the rehearsal letters
- * restart at A within each movement. The panel follows the playhead — the
- * active row is kept at the top of the list, whether the playhead moved
+ * restart at A within each movement. The panel follows the playhead — the row
+ * it has last passed is kept at the top of the list, whether the playhead moved
  * because of something here or because of the embedded player's own controls —
  * with a grace period after the reader scrolls the list by hand.
  */
@@ -72,7 +72,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
   const { record } = session;
   // The playback view of the recording — the shared derivation (T55), so the
   // practice surface and the markings page read the same record the same way.
-  const { playback, labeled, duration, activeMarker } = useLabeledPlayback({
+  const { playback, labeled, duration, passedMarker } = useLabeledPlayback({
     controller,
     record,
   });
@@ -124,7 +124,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
             markers={labeled}
             movements={record.movements}
             duration={duration}
-            activeId={activeMarker?.id ?? null}
+            passedId={passedMarker?.id ?? null}
             onSeek={handleMarkerSeek}
             onSeekMovement={handleMovementSeek}
             maxHeight={markersMaxHeight ?? undefined}

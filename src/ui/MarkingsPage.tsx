@@ -214,7 +214,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const { record, mutate } = session;
   // The playback view of the recording — the shared derivation (T55), the same
   // one the practice surface reads.
-  const { labeled, duration, elapsed, activeMarker } = useLabeledPlayback({ controller, record });
+  const { labeled, duration, elapsed, passedMarker } = useLabeledPlayback({ controller, record });
   /**
    * The alias the domain refused, and where it was refused. Held by the row
    * that caused it — an alias rule broken on one mark says nothing about the
@@ -733,7 +733,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
               markers={labeled}
               movements={record.movements}
               duration={duration}
-              activeId={activeMarker?.id ?? null}
+              passedId={passedMarker?.id ?? null}
               // The row the correction block goes on, and so the row the panel
               // follows (T64) — resolved here, where the pin is held, so the row
               // the panel draws the block in is the row this page corrects. The

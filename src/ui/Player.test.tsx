@@ -749,7 +749,7 @@ describe('Player — the timeline bar and markers (T38)', () => {
     expect(markerRows(container)[1]).not.toHaveAttribute('aria-pressed');
   });
 
-  it('lists the markers — label — alias on the left, timestamp on the right — and highlights the active row', async () => {
+  it('lists the markers — label — alias on the left, timestamp on the right — and highlights the passed row', async () => {
     const { container, controller } = await renderLoadedPlayer(
       serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
     );
@@ -762,15 +762,15 @@ describe('Player — the timeline bar and markers (T38)', () => {
     expect(rows[0].querySelector('.player-marker-time')!.textContent).toBe('00:10');
     expect(rows[1].querySelector('.player-marker-title')!.textContent).toBe('B');
     expect(rows[1].querySelector('.player-marker-time')!.textContent).toBe('00:20');
-    expect(rows[0].closest('li')).not.toHaveClass('active');
-    expect(rows[1].closest('li')).not.toHaveClass('active');
+    expect(rows[0].closest('li')).not.toHaveClass('passed');
+    expect(rows[1].closest('li')).not.toHaveClass('passed');
 
     act(() => controller.emitPlayback({ currentTime: 15 }));
-    expect(rows[0].closest('li')).toHaveClass('active');
-    expect(rows[1].closest('li')).not.toHaveClass('active');
+    expect(rows[0].closest('li')).toHaveClass('passed');
+    expect(rows[1].closest('li')).not.toHaveClass('passed');
 
     act(() => controller.emitPlayback({ currentTime: 25 }));
-    expect(rows[1].closest('li')).toHaveClass('active');
+    expect(rows[1].closest('li')).toHaveClass('passed');
   });
 
   it('makes marker rows pointer targets, not tab stops — the letter keys navigate', async () => {
@@ -1122,7 +1122,7 @@ describe('Player — the markers panel follows the playhead', () => {
     // else). The row highlights, and the panel follows it.
     act(() => controller.emitPlayback({ currentTime: 30 }));
 
-    expect(rows[2].className).toBe('active');
+    expect(rows[2].className).toBe('passed');
     expect(list.scrollTop).toBe(400);
   });
 
@@ -1150,7 +1150,7 @@ describe('Player — the markers panel follows the playhead', () => {
       fireEvent.keyDown(window, { key: 'ArrowDown' });
     });
 
-    expect(rows[0].className).toBe('active');
+    expect(rows[0].className).toBe('passed');
     // 500 − (100 + 35): the row, at the top of the band the header leaves.
     expect(list.scrollTop).toBe(365);
   });
@@ -1178,7 +1178,7 @@ describe('Player — the markers panel follows the playhead', () => {
 
     // The click seeks and highlights, and the panel stays where the reader
     // put it: the list is theirs for the next few seconds.
-    expect(rows[2].className).toBe('active');
+    expect(rows[2].className).toBe('passed');
     expect(list.scrollTop).toBe(120);
 
     await vi.advanceTimersByTimeAsync(3000);
