@@ -287,6 +287,65 @@ export function MarkingsAddControls({
   );
 }
 
+/**
+ * The trash glyph the delete control shows (T66) — the first SVG in the
+ * interface, and inline for that reason: the app has no icon library, and this
+ * adds none.
+ *
+ * It is stroked in `currentColor`, so the ink it is drawn in is the control's
+ * own rather than a colour of its own, and it is `aria-hidden`, because the
+ * words that say what it destroys are the control's name: a glyph announced
+ * beside them would say the same thing twice, in a shape no screen reader has a
+ * word for.
+ */
+function TrashGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M3.2 4.6h9.6M6.4 4.6V3.2h3.2v1.4M4.8 4.6l.55 8.1a1 1 0 0 0 1 .95h3.3a1 1 0 0 0 1-.95l.55-8.1"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+interface DeleteControlProps {
+  /** What this control destroys, in words — its accessible name, and its title. */
+  label: string;
+  onDelete(): void;
+}
+
+/**
+ * The delete control both kinds of row carry (T66): one component, so a mark's
+ * trash and a movement's are the same glyph drawn the same way, and neither can
+ * drift from the other.
+ *
+ * The glyph costs no one the word. The accessible name is still `Delete marker
+ * A`, and the control says the same thing to a pointer through its title,
+ * because a picture is not something a pointer can be told to read. The word
+ * also survives where it is an *answer* rather than a control: a movement's
+ * delete still raises its question first, and that question's confirming button
+ * still reads `Delete` — the glyph replaces the control that asks, not the one
+ * that answers.
+ */
+function DeleteControl({ label, onDelete }: DeleteControlProps) {
+  return (
+    <button
+      type="button"
+      className="markings-delete"
+      aria-label={label}
+      title={label}
+      onClick={onDelete}
+    >
+      <TrashGlyph />
+    </button>
+  );
+}
+
 /** Markers grouped under their movement; markers before the first movement (or with no movements) lead. */
 interface MarkerGroup {
   movement: Movement | null;
@@ -754,14 +813,10 @@ function MovementHeader({
           <span className="player-marker-time">{time}</span>
         </button>
         {!confirmingDelete && (
-          <button
-            type="button"
-            className="markings-movement-delete"
-            aria-label={`Delete movement ${movement.name}`}
-            onClick={() => setConfirmingDelete(true)}
-          >
-            Delete
-          </button>
+          <DeleteControl
+            label={`Delete movement ${movement.name}`}
+            onDelete={() => setConfirmingDelete(true)}
+          />
         )}
       </div>
       {nameError !== null && (
@@ -1033,8 +1088,9 @@ interface MarkerRowProps {
  * seek control alone, as it has always been: one button wrapping `label —
  * alias` and the clock. On the markings page (T56, T67) it is a container
  * holding the two things a mark is read by as seek controls of their own —
- * the label and the clock — with the two that change it, the alias field and
- * Delete, beside them.
+ * the label and the clock — with the two that change it beside them: the alias
+ * field, and the delete control, a trash glyph since T66 with the word it
+ * replaced surviving as the control's name.
  *
  * **The container is what makes the rest of this page possible** (T67): an
  * input cannot live inside a button, so an alias and a time field cannot sit
@@ -1124,11 +1180,12 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
         <div
           className="markings-row"
           onClick={(event) => {
-            // A control in the row keeps its own click: the fields take a
-            // caret, the trash deletes. The test is ancestry and not a tag
-            // name, because a click on a control's own artwork lands on the
-            // element inside it — a trash glyph's `<path>`, say — rather than
-            // on the control.
+            // A control in the row keeps its own click: a field takes the
+            // caret, the delete control deletes. The guard walks up from the
+            // click's target rather than reading that target's own tag name,
+            // because a click need not land on the control itself — the delete
+            // control's glyph puts a `<path>` under the pointer (T66), and no
+            // tag name for the control would catch it.
             if (
               (event.target as HTMLElement).closest('input, button, select, textarea') !== null
             ) {
@@ -1171,19 +1228,15 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
             type="button"
             tabIndex={-1}
             className="player-marker-time"
-            title={`Jump to marker ${marker.label}`}
+            title={`Jump to ${marker.label}`}
             onClick={seek}
           >
             {clock}
           </button>
-          <button
-            type="button"
-            className="markings-row-delete"
-            aria-label={`Delete marker ${marker.label}`}
-            onClick={() => authoring.onDelete(marker)}
-          >
-            Delete
-          </button>
+          <DeleteControl
+            label={`Delete marker ${marker.label}`}
+            onDelete={() => authoring.onDelete(marker)}
+          />
         </div>
       )}
       {aliasError !== null && (
