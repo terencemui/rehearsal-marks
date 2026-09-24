@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { matchPath, Navigate, Route, Routes, useLocation } from 'react-router';
 import { createAudioController } from './audio';
 import type { AudioController } from './audio';
@@ -20,6 +20,26 @@ import { ProjectPage } from './ui/ProjectPage';
 import { PublicProjectView } from './ui/PublicProjectView';
 import { WorkspaceScreen } from './ui/WorkspaceScreen';
 import './ui/app.css';
+
+/**
+ * PROTOTYPE — throwaway, dev-only (see `ui/MarkingsRowsPrototype.tsx`).
+ *
+ * The markings page's row layout under trial. Both the route and the code are
+ * absent from a production build: `import.meta.env.PROD` is constant-folded, so
+ * the `null` branch — and the dynamic import inside the branch it does not take
+ * — is dropped rather than merely unlinked. `lazy` keeps it out of the dev
+ * bundle's first paint too; the one `Suspense` boundary below is what it costs.
+ */
+const PROTOTYPE_MARKINGS_ROWS_ROUTE = '/prototype/markings-rows';
+
+const MarkingsRowsPrototype =
+  import.meta.env.PROD
+    ? null
+    : lazy(() =>
+        import('./ui/MarkingsRowsPrototype').then((module) => ({
+          default: module.MarkingsRowsPrototype,
+        })),
+      );
 
 export interface AppProps {
   /** Test seam: overrides the audio controller. */
@@ -259,7 +279,10 @@ function WiredApp({
   const isPlayerPage =
     matchPath('/projects/:id', location.pathname) !== null ||
     matchPath(MARKINGS_ROUTE, location.pathname) !== null ||
-    matchPath('/gallery/:id', location.pathname) !== null;
+    matchPath('/gallery/:id', location.pathname) !== null ||
+    // The prototype hosts the same split, so it takes the same wide rail.
+    (MarkingsRowsPrototype !== null &&
+      matchPath(PROTOTYPE_MARKINGS_ROWS_ROUTE, location.pathname) !== null);
 
   return (
     <main>
@@ -354,6 +377,18 @@ function WiredApp({
               )
             }
           />
+          {/* PROTOTYPE — throwaway, dev-only. Not a page of the app and never
+              built into one (see the guard at the top of this file). */}
+          {MarkingsRowsPrototype !== null && (
+            <Route
+              path={PROTOTYPE_MARKINGS_ROWS_ROUTE}
+              element={
+                <Suspense fallback={null}>
+                  <MarkingsRowsPrototype />
+                </Suspense>
+              }
+            />
+          )}
           {/* A URL nobody recognises lands on the front door, the gallery (T44). */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -1,0 +1,269 @@
+/* PROTOTYPE — throwaway. Styles for the prototype bar and for the marking-row
+   shape under trial. None of this is production design; whatever survives the
+   verdict gets folded into markings.css under its own names. The prototype
+   reuses the real class names wherever they apply (.markings-row-alias,
+   .markings-row-time, .markings-nudge, .player-marker-list,
+   .markings-movement-name), so what is judged is the real metrics, and only the
+   arrangement is new.
+
+   NOTE ON WIDTHS. Nothing in this app sets `box-sizing: border-box` globally —
+   only `.page-rail` does — so every width here is a *content* box: a field
+   declaring `width: 96px` with 6px of padding and a 1px border is 110px on
+   screen. A slot shared between a plain button and a bordered field must set
+   the field's content width to the button's width less 14px, or the row shifts
+   when one replaces the other. That arithmetic is what the two `88px` slots
+   below are. */
+
+/* The floating prototype bar. Deliberately unlike the app — a dark pill, high
+   contrast, nothing like the design being evaluated. */
+.prototype-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #0f172a;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 35%);
+  color: #f8fafc;
+  font: 600 13px/18px system-ui, sans-serif;
+}
+
+.prototype-bar button {
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: 600 14px/18px system-ui, sans-serif;
+}
+
+.prototype-bar button:hover {
+  background: rgb(248 250 252 / 18%);
+}
+
+.prototype-bar-name {
+  min-width: 210px;
+  text-align: center;
+}
+
+.prototype-bar-extra {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 1px solid rgb(248 250 252 / 25%);
+  font-weight: 400;
+}
+
+.prototype-bar-extra select {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  font: 600 12px/18px system-ui, sans-serif;
+}
+
+/* The page's own note: what is being prototyped, above the thing itself. */
+.prototype-note {
+  margin: 0 0 4px;
+  font: 600 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #b45309;
+}
+
+.prototype-intro {
+  margin: 0 0 16px;
+  max-width: 80ch;
+  font: 400 13px/19px system-ui, sans-serif;
+  color: #475569;
+}
+
+/* The recording's stand-in: 16:9, the shape the video column has, so the
+   split's proportions and the panel's height are the real ones. */
+.prototype-video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  background: repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 12px, #eef2f7 12px, #eef2f7 24px);
+  color: #64748b;
+  font: 600 13px/18px system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------- one row ---
+   A marker's row and a movement's header band are the same row, and this is
+   what makes them so. Both are laid out by `.prototype-row`: the same gap, the
+   same right padding, the same growing middle, the same clock slot and the same
+   delete control — so a header's trash and its markers' trash stand in one
+   column, and neither row's timestamp can drift from the other's. The band
+   differs in exactly two ways, both of them the header's own: its left inset is
+   the panel's 10px rather than the rows' 16px (the rows are indented from the
+   header, player.css), and it carries the divider. */
+
+.prototype-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 16px;
+  /* The row is a seek target, so the pointer says so everywhere the click
+     works — the alias text and the empty slot between the letter and the clock
+     included. The controls within it override this with their own cursors. */
+  cursor: pointer;
+}
+
+/* Later in the cascade than player.css's own `.player-marker-movement
+   .player-movement-header`, and as specific, so this is the rule that lays the
+   band out. */
+.player-marker-movement .prototype-row-band {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: #f1f5f9;
+  font: 400 15px/22px system-ui, sans-serif;
+  color: #334155;
+}
+
+/* The clock and the field that replaces it while the row is active: one slot,
+   the same width in both states, so the row does not move when the playhead
+   lands on it. 88px holds the widest either will be — `mm:ss.mmm`. */
+.prototype-clock {
+  flex: 0 0 auto;
+  width: 88px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #64748b;
+  cursor: pointer;
+  font: 400 15px/22px system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.prototype-clock:hover {
+  color: #0f766e;
+}
+
+/* The field, to the button's 88px: 74 + 6px padding either side + a 1px border. */
+.prototype-row .markings-row-time {
+  flex: 0 0 auto;
+  width: 74px;
+}
+
+/* The letter, as its own jump target — the row's one wide button gave this up
+   so the alias could sit beside the label (an input cannot live inside the
+   button the row used to be). */
+.prototype-letter {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #334155;
+  cursor: pointer;
+  font: 400 15px/22px system-ui, sans-serif;
+}
+
+.prototype-letter:hover {
+  color: #0f766e;
+  text-decoration: underline;
+}
+
+/* The alias: a field while the row is active, this text while it is not — the
+   same division the clock makes. Both states are one flex item at the same
+   size, growing to fill everything between the letter and the clock, so the row
+   is laid out identically either way and the controls to its right never move.
+   The empty case still renders the element, because a row with nothing to grow
+   would leave its clock and trash bunched against the letter instead of flush
+   right.
+
+   The field's 60px minimum is its outer size: 46px of content, 6px of padding
+   either side, a 1px border. The text has no padding or border, so its minimum
+   is the whole 60. */
+.prototype-row .markings-row-alias,
+.prototype-alias-text {
+  flex: 1 1 64px;
+  width: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prototype-row .markings-row-alias {
+  min-width: 46px;
+}
+
+.prototype-alias-text {
+  min-width: 60px;
+  color: #334155;
+  font: 400 13px/18px system-ui, sans-serif;
+}
+
+/* The delete control: the trash glyph, inheriting the row's danger ink. */
+.prototype-delete {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.prototype-delete:hover {
+  background: #fef2f2;
+}
+
+/* --------------------------------------------------------------- the decks ---
+   The four nudges under the active row: the minus pair flush left, the plus
+   pair flush right, so the row and its decks together read as minus on one
+   side, plus on the other, with the time between them in the row above.
+
+   `flex-end` with the minus deck's `auto` right margin is what makes both the
+   one-line and the wrapped arrangement come out right: while both decks fit,
+   the auto margin pushes the minus deck left and the plus deck sits at the
+   right edge; once the column is too narrow for both — at the 280px floor it is
+   close — the plus deck wraps to a line of its own and stays right, and the
+   minus deck keeps the left of the first line.
+
+   Its right margin is the row's own 10px, so the decks end where the row's
+   content ends rather than 10px further out. */
+.markings-decks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 2px 10px 4px 16px;
+}
+
+.markings-deck {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.markings-decks .markings-deck:first-child {
+  margin-right: auto;
+}
+
+/* The two half-second nudges change their label while Shift is held, and a
+   control that resizes under the finger is worse than one that does not: the
+   box is pinned to the wider of its two labels, `−0.5s`, and the shorter `−1s`
+   centres in it. Content box, so the pin covers the padding and border too. */
+.prototype-half-nudge {
+  box-sizing: border-box;
+  min-width: 58px;
+  text-align: center;
+}
