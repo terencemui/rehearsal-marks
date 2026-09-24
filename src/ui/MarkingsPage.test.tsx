@@ -55,9 +55,16 @@ function multiMovement(overrides = {}) {
   });
 }
 
-/** The marker rows, in DOM order (which is time order). */
+/**
+ * The marker rows, in DOM order (which is time order) — the element a click
+ * seeks through, in whichever of the row's two shapes this surface shows (T67).
+ * The browsing surfaces' row *is* its one seek control; the markings page's is
+ * the container holding the label and the clock, each a seek control of its
+ * own, and a click anywhere else on that container jumps exactly as the button
+ * did before it.
+ */
 function markerRows(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll('.player-marker-row'));
+  return Array.from(container.querySelectorAll('.markings-row, .player-marker-row'));
 }
 
 /** The rows' derived labels, in DOM order. */
@@ -73,6 +80,17 @@ function markerTimes(container: HTMLElement): (string | null)[] {
 /** The alias fields, in DOM order — one per row, on the authoring rows. */
 function aliasFields(container: HTMLElement): HTMLInputElement[] {
   return Array.from(container.querySelectorAll<HTMLInputElement>('.markings-row-alias'));
+}
+
+/**
+ * The seek control on a marking row that reads `reading` — the row's label, or
+ * the clock beside it (T67). Addressed by what it reads rather than by a class,
+ * because what has to be true of it is that it is a control of its own: while
+ * one button spanned the label and the clock, a click on either was a click on
+ * the button between them, and no field could live inside the row at all.
+ */
+function rowControl(row: HTMLElement, reading: string): HTMLElement {
+  return within(row).getByRole('button', { name: reading });
 }
 
 /**
@@ -975,6 +993,134 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
   });
 });
 
+describe('a marker row is a container with seek controls of its own (T67)', () => {
+  /** The page on a private project with marks at 10s and 20s — every edit writes itself. */
+  function openPage() {
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    return renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+  }
+
+  it('jumps to the mark from the label, from the clock, and from the row itself', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    // The label and the clock are seek controls of their own — the row is a
+    // container holding them rather than one button wrapping them, which is
+    // what makes room for a field inside it.
+    const row = markerRows(container)[0];
+    act(() => controller.seek(50));
+    await user.click(rowControl(row, 'A'));
+    expect(controller.getCurrentTime()).toBe(10);
+
+    act(() => controller.seek(50));
+    await user.click(rowControl(row, '00:10'));
+    expect(controller.getCurrentTime()).toBe(10);
+
+    // And every other pixel of the row — its own padding, and the space
+    // between its controls — moves the playhead there too: a row with controls
+    // in it is still a row a student can click anywhere on.
+    act(() => controller.seek(50));
+    await user.click(row);
+    expect(controller.getCurrentTime()).toBe(10);
+  });
+
+  it('leaves the row’s own controls their clicks — a field and the trash do only their own thing', async () => {
+    const user = userEvent.setup();
+    const { api, container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    // The playhead somewhere that is not a mark, so a jump to one would be
+    // visible as a change rather than as the playhead already standing there.
+    act(() => controller.seek(50));
+
+    // A field inside the row takes the caret, and the recording stays put.
+    const alias = aliasFields(container)[0];
+    await user.click(alias);
+    expect(alias).toHaveFocus();
+    expect(controller.getCurrentTime()).toBe(50);
+
+    // The trash deletes, and does not also jump the recording to the mark it
+    // has just destroyed.
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await waitFor(() => expect(api.get('p1')?.markers.map((m) => m.id)).toEqual(['m2']));
+    expect(controller.getCurrentTime()).toBe(50);
+  });
+
+  it('nudges without a second jump from the row the decks sit under', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    // The block is the playhead's, so a click on the row is what puts it there
+    // — and the decks hang below the row rather than inside it (ADR-0007), so
+    // the click a nudge takes is the nudge's alone.
+    await user.click(markerRows(container)[0]);
+    expect(controller.getCurrentTime()).toBe(10);
+
+    // A nudge moves the mark and takes the recording with it (T64). The
+    // recording lands on the time the nudge wrote: the row under the decks
+    // does not also seek to the mark, which would put the playhead back on the
+    // time the student has just corrected.
+    await user.click(nudgeControl('earlier'));
+    expect(await screen.findByDisplayValue('00:09.900')).toBeInTheDocument();
+    expect(controller.getCurrentTime()).toBeCloseTo(9.9);
+  });
+
+  it('gives up the keyboard focus after a seek from the row, so Space still means play/pause', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    const row = markerRows(container)[0];
+    await user.click(rowControl(row, 'A'));
+    expect(controller.getCurrentTime()).toBe(10);
+
+    // The row is a pointer target, not a focus stop: the control gives the
+    // focus up, so the next Space plays and pauses rather than re-activating
+    // the control and jumping back to the row just clicked. (A focused button
+    // owns Space — playerKeys stands down for one — so a control that kept the
+    // focus would leave the toggle unmade here.)
+    expect(row.contains(document.activeElement)).toBe(false);
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(1);
+
+    // The clock is the row's other seek, and it gives the focus up the same
+    // way: the rule belongs to the seek, not to one of the two controls.
+    await user.click(rowControl(row, '00:10'));
+    expect(controller.getCurrentTime()).toBe(10);
+    expect(row.contains(document.activeElement)).toBe(false);
+    await user.keyboard(' ');
+    expect(controller.togglePlay).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the browsing row its single seek control', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    // The row *is* the control where markings are only read (ADR-0003): no
+    // control of its own appears inside it, so the practice surface's panel —
+    // and the read-only public view's, which is the same panel — reads as it
+    // always has.
+    const row = markerRows(container)[0];
+    expect(within(row).queryAllByRole('button')).toHaveLength(0);
+
+    act(() => controller.seek(50));
+    await user.click(row);
+    expect(controller.getCurrentTime()).toBe(10);
+  });
+});
+
 describe('movements exist, so the letters restart (T58)', () => {
   it('adds a movement at the playhead, and the marks group under it with the letters starting over', async () => {
     const user = userEvent.setup();
@@ -1167,7 +1313,7 @@ describe('movements exist, so the letters restart (T58)', () => {
     await user.click(screen.getByRole('button', { name: 'Add movement' }));
 
     expect(movementNameFields(container)).toHaveLength(1);
-    expect(container.querySelectorAll('.player-marker-row')).toHaveLength(0);
+    expect(markerRows(container)).toHaveLength(0);
     // The prompt gave way to the boundary: the column holds something now.
     expect(screen.queryByText(/nothing marked yet/i)).toBeNull();
   });
@@ -1349,7 +1495,7 @@ describe('a movement can be re-timed and deleted (T59)', () => {
 
     // Before: the mark at 00:10 leads on its own, and the two movements hold
     // one mark each, so each opens its letters at A.
-    expect(container.querySelectorAll('.player-marker-row')).toHaveLength(3);
+    expect(markerRows(container)).toHaveLength(3);
     expect(markerTitles(container)).toEqual(['A', 'A', 'A']);
 
     // Deleting the first movement says the other thing a movement can cost:
@@ -1372,7 +1518,7 @@ describe('a movement can be re-timed and deleted (T59)', () => {
     // them. They are re-derived rather than rewritten: the 00:20 mark that was
     // movement I's A is now the second mark of the leading group, and the
     // 15:00 mark is still movement II's A, because its own boundary never moved.
-    expect(container.querySelectorAll('.player-marker-row')).toHaveLength(3);
+    expect(markerRows(container)).toHaveLength(3);
     expect(markerTitles(container)).toEqual(['A', 'B', 'A']);
     // Read off the rows rather than by class alone: the movement headers carry
     // the same clock class, since a header's jump shows a time too.
