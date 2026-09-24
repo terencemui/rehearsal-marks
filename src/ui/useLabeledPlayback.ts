@@ -32,7 +32,7 @@ export interface LabeledPlayback {
   /** The playhead, clamped to the end — what a readout reads and divides by. */
   elapsed: number;
   /** The most recently passed mark (none before the first). */
-  activeMarker: LabeledMarker | null;
+  passedMarker: LabeledMarker | null;
 }
 
 /**
@@ -67,6 +67,6 @@ export function useLabeledPlayback({
     labeled,
     duration,
     elapsed,
-    activeMarker: practiceReadout(labeled, elapsed, duration).passed,
+    passedMarker: practiceReadout(labeled, elapsed, duration).passed,
   };
 }

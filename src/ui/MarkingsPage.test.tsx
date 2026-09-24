@@ -674,7 +674,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 
     // One row can be both at once — the row the playhead is on, with the caret
     // in the field it is giving a time to — and it reads as both.
-    expect(rows[0]).toHaveClass('active');
+    expect(rows[0]).toHaveClass('passed');
     expect(rows[0]).toHaveClass('correcting');
 
     // The playhead runs on past both marks while the time is being typed. Left
@@ -691,8 +691,8 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     // playhead the block has been held off. Both are marked, each as itself.
     expect(correctingRow(container)).toBe(rows[0]);
     expect(rows[0]).toHaveClass('correcting');
-    expect(rows[0]).not.toHaveClass('active');
-    expect(rows[1]).toHaveClass('active');
+    expect(rows[0]).not.toHaveClass('passed');
+    expect(rows[1]).toHaveClass('passed');
     expect(rows[1]).not.toHaveClass('correcting');
     expect(rows[1]).not.toHaveAttribute('aria-current');
 

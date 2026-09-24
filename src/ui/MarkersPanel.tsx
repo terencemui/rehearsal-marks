@@ -152,12 +152,13 @@ export interface MarkersPanelProps {
   /** The known recording duration, seconds — row times divide by it. */
   duration: number;
   /**
-   * The active marker's id — the most recently passed marker, or null before
-   * the first mark (the recording's Start has no marker of its own). This is
-   * the row the panel tints, and what the reveal follows when it has nothing
-   * better to follow.
+   * The passed marker's id — the most recently passed mark, or null before the
+   * first mark (the recording's Start has no marker of its own). This is the row
+   * the panel tints, and what the reveal follows when it has nothing better to
+   * follow. A boundary holding the playhead does not change it: the tint is the
+   * passed mark's, and a boundary is not a mark.
    */
-  activeId: string | null;
+  passedId: string | null;
   /**
    * The id of the row carrying the correction block (T64) — the **active row**
    * (ADR-0007, amended 2026-09-24), or the row a caret is holding the block on
@@ -340,7 +341,7 @@ function pinnedHeaderInset(row: HTMLElement): number {
  * The markers panel (player side column): one row per marker — `label — alias`
  * (the bare label when there's no alias) and the timestamp right-aligned in a
  * shared column — a click-to-jump surface that replaces the timeline flags
- * (T38). The row holding the playhead is highlighted; the panel scrolls when
+ * (T38). The passed marker's row is highlighted; the panel scrolls when
  * the list outgrows its band — the player measures that band against the
  * video's bottom, so a marker-heavy project never towers past the recording.
  * Rows are click-to-jump surfaces, not tab stops — keyboard users walk the
@@ -350,7 +351,7 @@ function pinnedHeaderInset(row: HTMLElement): number {
  * seeks, the seek puts the playhead on that row, and the row the playhead is on
  * is the one carrying the correction block (T64).
  *
- * The panel follows the playhead: whenever the active row changes, the list
+ * The panel follows the playhead: whenever the row it follows changes, the list
  * scrolls so that row sits at the top of its band. That covers a deliberate
  * jump — a row, a header, a bar click, an arrow key, the embedded player's own
  * controls — and playback simply crossing a boundary, because all of them
@@ -366,8 +367,8 @@ function pinnedHeaderInset(row: HTMLElement): number {
  *
  * A movement header's jump therefore reveals the marker the seek actually
  * landed on, which is the last marker *before* the movement rather than the
- * movement's own first row: that is the row holding the playhead, and the
- * header the reader clicked sits directly under it, both visible together.
+ * movement's own first row: that is the row the playhead has last passed, and
+ * the header the reader clicked sits directly under it, both visible together.
  * Revealing the header itself would put the highlight off-band instead.
  *
  * With movements (ADR-0005) the rows group under sticky, scroll-driven
@@ -392,7 +393,7 @@ export function MarkersPanel({
   // undefined — default it to the empty, ungrouped list the contract describes.
   movements = [],
   duration,
-  activeId,
+  passedId,
   blockRowId,
   onSeek,
   onSeekMovement,
@@ -423,8 +424,8 @@ export function MarkersPanel({
   // grace period are revealScroll's).
   //
   // The row is found by querying the DOM the current commit already produced
-  // rather than through a ref onto the active `<li>`: the query cannot read a
-  // stale row, and it keeps working when the active id moves to a different
+  // rather than through a ref onto the passed `<li>`: the query cannot read a
+  // stale row, and it keeps working when the passed id moves to a different
   // row.
   const reveal = useCallback((): void => {
     const list = listRef.current;
@@ -438,7 +439,7 @@ export function MarkersPanel({
     // playhead's alone, as it has always been.
     const row =
       list.querySelector<HTMLElement>('li.correcting') ??
-      list.querySelector<HTMLElement>('li.active');
+      list.querySelector<HTMLElement>('li.passed');
     if (row === null) return;
     const listRect = list.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
@@ -459,7 +460,7 @@ export function MarkersPanel({
   /**
    * Reveals now, or at the end of whatever is left of the grace period. The
    * delay is read here and the row is read at fire time, so a deferred reveal
-   * lands on the row holding the playhead *then* — which may be several
+   * lands on the row it is following by *then* — which may be several
    * boundaries on from the one that queued it.
    */
   const scheduleReveal = useCallback((): void => {
@@ -498,14 +499,14 @@ export function MarkersPanel({
   }, [scheduleReveal]);
 
   // A layout effect, not a passive one: the reveal has to land in the same
-  // frame the new active row renders, or the panel visibly jumps twice. Keyed
+  // frame the new followed row renders, or the panel visibly jumps twice. Keyed
   // on the row the reveal follows — the block's row where there is one, the
   // passed marker otherwise — which is what makes the panel follow the playhead
   // however the playhead moved, including a seek made in the embedded player's
   // own controls, which nothing in this app sees as a jump. That row moves when
   // a caret takes or gives up the block as well, so taking the caret out of a
   // field hands the list back to the playhead through the same key.
-  const revealId = blockId ?? activeId;
+  const revealId = blockId ?? passedId;
   useLayoutEffect(() => {
     scheduleReveal();
     return () => {
@@ -600,7 +601,7 @@ export function MarkersPanel({
               <MarkerRow
                 key={marker.id}
                 marker={marker}
-                active={marker.id === activeId}
+                passed={marker.id === passedId}
                 carrying={blockId === marker.id}
                 duration={duration}
                 onSeek={onSeek}
@@ -1011,8 +1012,8 @@ function MovementCorrection({ movement, duration, authoring }: MovementCorrectio
 
 interface MarkerRowProps {
   marker: LabeledMarker;
-  /** Whether this row holds the playhead — the tint, which the block does not follow. */
-  active: boolean;
+  /** Whether the playhead has passed this mark — the tint, which the block does not follow. */
+  passed: boolean;
   /**
    * Whether this row carries the correction block (T64) — the active row, or the
    * row a caret is holding it on. The two are told apart because they are two
@@ -1046,7 +1047,7 @@ interface MarkerRowProps {
  * so the mark being corrected is still read, and still jumped to, as the mark it
  * was a moment ago.
  */
-function MarkerRow({ marker, active, carrying, duration, onSeek, authoring }: MarkerRowProps) {
+function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: MarkerRowProps) {
   const storedAlias = marker.aliases[0] ?? '';
   const aliasError =
     authoring !== undefined && authoring.aliasError?.markerId === marker.id
@@ -1062,7 +1063,7 @@ function MarkerRow({ marker, active, carrying, duration, onSeek, authoring }: Ma
     authoring !== undefined && carrying && authoring.timeError?.markerId === marker.id
       ? authoring.timeError.message
       : null;
-  const classes = `${active ? ' active' : ''}${carrying ? ' correcting' : ''}`.trim();
+  const classes = `${passed ? ' passed' : ''}${carrying ? ' correcting' : ''}`.trim();
 
   const seek = (
     <button

@@ -22,7 +22,7 @@ function geometry(overrides: Partial<RevealGeometry> = {}): RevealGeometry {
 describe('revealScroll', () => {
   it('leaves the list alone when the row is already at the top', () => {
     // The common case during playback within one marker: the effect re-runs on
-    // the active row, and that row is already where it belongs.
+    // the passed row, and that row is already where it belongs.
     expect(revealScroll(geometry({ scrollTop: 250, rowTop: 100 }))).toBe(250);
   });
 
