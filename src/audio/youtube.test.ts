@@ -15,8 +15,11 @@ import { YouTubePlaybackError } from './errors';
 const CANONICAL_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
 /** The IFrame API's player-state numbers this backend reads (and the fake emits). */
+const UNSTARTED = -1;
 const PLAYING = 1;
 const PAUSED = 2;
+const BUFFERING = 3;
+const CUED = 5;
 
 interface FakePlayerOptions {
   videoId?: string;
@@ -69,6 +72,11 @@ class FakeYouTubePlayer {
   });
   seekTo = vi.fn((time: number) => {
     this.currentTime = time;
+    // A seek starts the embed fetching — and from any state but PAUSED the API
+    // plays the recording, which is the behaviour every cold-jump test below
+    // turns on. The state moves here; the PLAYING event arrives later, as it
+    // does in the browser, so the tests fire it.
+    if (this.playerState !== PAUSED) this.playerState = BUFFERING;
   });
   setVolume = vi.fn();
   destroy = vi.fn(() => {
@@ -246,6 +254,58 @@ describe('AudioController YouTube playback', () => {
 
     expect(player.seekTo).toHaveBeenCalledWith(21, true);
     expect(controller.getPlaybackState().currentTime).toBe(21);
+  });
+
+  it('pauses a cold jump as soon as there is a video to pause', async () => {
+    // A cold screen opens cued — the player is constructed with the video id —
+    // and unstarted is the instant before that. seekTo plays from either, so
+    // the pause is owed; it waits for PLAYING because pausing an embed that has
+    // never loaded blanks it and leaves every later seek nothing to move.
+    for (const state of [UNSTARTED, CUED]) {
+      const container = document.createElement('div');
+      const { controller, player } = await loadReady(container);
+      player.playerState = state;
+
+      controller.seek(10);
+      expect(player.pauseVideo).not.toHaveBeenCalled();
+
+      player.currentTime = 12; // the load ran on before PLAYING arrived
+      player.dispatch('onStateChange', PLAYING);
+
+      expect(player.pauseVideo).toHaveBeenCalledTimes(1);
+      expect(controller.getPlaybackState().playing).toBe(false);
+      // The mark goes back under the playhead, not wherever the load drifted.
+      expect(player.currentTime).toBe(10);
+      expect(controller.getPlaybackState().currentTime).toBe(10);
+    }
+  });
+
+  it('the play the student asks for outranks the pause a jump owes', async () => {
+    const container = document.createElement('div');
+    const { controller, player } = await loadReady(container);
+    player.playerState = CUED;
+    controller.seek(10); // owes a pause
+    player.playerState = CUED; // still cued: the embed has not started it yet
+
+    controller.togglePlay(); // the student presses Space
+    expect(player.playVideo).toHaveBeenCalledTimes(1);
+
+    player.dispatch('onStateChange', PLAYING);
+
+    expect(player.pauseVideo).not.toHaveBeenCalled();
+    expect(controller.getPlaybackState().playing).toBe(true);
+  });
+
+  it('a jump on a player that has already played only seeks', async () => {
+    const container = document.createElement('div');
+    const { controller, player } = await loadReady(container);
+    player.playVideo();
+
+    controller.seek(10);
+    player.dispatch('onStateChange', PLAYING);
+
+    expect(player.pauseVideo).not.toHaveBeenCalled();
+    expect(controller.getPlaybackState().playing).toBe(true);
   });
 
   it('setVolume maps the 0–1 slider to the API 0–100 scale', async () => {

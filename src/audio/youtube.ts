@@ -14,8 +14,10 @@ import { YouTubePlaybackError } from './errors';
 import './youtube.css';
 
 /** The IFrame API's player-state numbers this backend reads. */
+const PLAYER_STATE_UNSTARTED = -1;
 const PLAYER_STATE_PLAYING = 1;
 const PLAYER_STATE_BUFFERING = 3;
+const PLAYER_STATE_CUED = 5;
 
 /** How often the playhead is read from the embed — the API clock's granularity. */
 const POLL_INTERVAL_MS = 250;
@@ -166,6 +168,14 @@ export function loadYouTubeSource({
   let dead = false;
   let player: YouTubePlayer | null = null;
   let pollId: number | null = null;
+  /**
+   * The mark a cold seek owes the student a pause at, or null when none is
+   * owed. seekTo starts a recording that has never played, and the pause cannot
+   * be issued where the seek is: a pause before the video has loaded blanks the
+   * embed and leaves it with no frame to render. It waits for the embed to
+   * report PLAYING — the first moment there is a video to pause.
+   */
+  let pauseOnPlay: number | null = null;
   /** The metadata wait's poll, armed when ready reports no duration yet. */
   let durationPollId: number | null = null;
   let settle: (result: LoadResult) => void;
@@ -247,6 +257,16 @@ export function loadYouTubeSource({
 
   function seek(time: number): void {
     if (player === null) return;
+    // seekTo plays the video from every state but PAUSED, and a cold screen is
+    // never paused: the player is constructed cued, so it opens unstarted or
+    // cued — and a seek into either starts the recording the student only asked
+    // to jump in. The pause is owed, but it cannot be paid here: pausing an
+    // embed that has never loaded blanks it, so every later seek would have no
+    // frame to move. It lands on the PLAYING event instead.
+    const state = player.getPlayerState();
+    if (state === PLAYER_STATE_UNSTARTED || state === PLAYER_STATE_CUED) {
+      pauseOnPlay = time;
+    }
     // allowSeekAhead=true: exact landings, even beyond the buffered range —
     // a marking tool prefers precision over the API's faster approximation.
     player.seekTo(time, true);
@@ -255,6 +275,9 @@ export function loadYouTubeSource({
 
   function toggle(): void {
     if (player === null) return;
+    // The student's own transport is the later word: a pause still owed to a
+    // cold jump must not cancel the play they asked for.
+    pauseOnPlay = null;
     const state = player.getPlayerState();
     if (state === PLAYER_STATE_PLAYING || state === PLAYER_STATE_BUFFERING) {
       player.pauseVideo();
@@ -333,7 +356,22 @@ export function loadYouTubeSource({
     // "playing" over an embed that is not. After a successful ready, state
     // events are the session's own clock and flow through.
     if (disposed || dead) return;
-    onState({ playing: eventData(payload) === PLAYER_STATE_PLAYING });
+    const state = eventData(payload);
+    onState({ playing: state === PLAYER_STATE_PLAYING });
+    // The pause a cold jump owes, now that there is a video to pause. Playback
+    // ran while the embed was fetching, so the mark is put back under the
+    // playhead rather than left wherever the load drifted to.
+    if (state === PLAYER_STATE_PLAYING && pauseOnPlay !== null) {
+      const mark = pauseOnPlay;
+      pauseOnPlay = null;
+      if (player !== null) {
+        player.pauseVideo();
+        player.seekTo(mark, true);
+        // The store is told at once: the poll would otherwise leave the
+        // readout on wherever the load drifted to until its next tick.
+        onState({ currentTime: mark });
+      }
+    }
   }
 
   function onError(payload: number | YouTubeEvent<number>): void {
