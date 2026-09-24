@@ -80,20 +80,68 @@
   cursor: default;
 }
 
-/* An editable row: the seek control, then the two things that change the
-   mark. The seek control keeps the browsing row's own layout — the label
-   left, the timestamp flush right — and gives up only the width the controls
-   beside it need. */
+/* The row on the markings page (T56, T67): the row the panel shows on the
+   browsing surfaces, laid out by this page's own rules and carrying the
+   controls that change the mark. It keeps the browsing row's metrics — the
+   same padding, and so the same indent under a movement header — because it is
+   the same row, read by the same student a moment earlier.
+
+   It is a container rather than the single button it used to be (T67): the
+   label and the clock are seek controls of their own inside it, which is what
+   makes room for a field between them, an input being unable to live inside a
+   button. Every pixel that is not a control is part of the seek target, and
+   the padding below is what brings the row's own edges into it. */
 .markings-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 7px 10px 7px 16px;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
-.markings-row .player-marker-row {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
+.markings-row:hover {
+  background: #f1f5f9;
+}
+
+/* The passed marker's tint: the browsing row takes it on the button it *is*,
+   and this row takes it on the container it holds, so the row the playhead has
+   last gone by reads the same on both surfaces. It outranks the hover above,
+   as it does there. */
+.player-marker-list li.passed .markings-row {
+  background: #ecfdf5;
+  color: #0f172a;
+}
+
+/* The row's two seek controls are buttons, and a button brings its own chrome:
+   a frame, a fill, the system font, centred text. None of it is wanted — they
+   are the same label and the same reading the browsing row shows as plain
+   text, in the same place and at the same metrics. Only what would change how
+   the row reads is reset; the clock keeps its own colour and its tabular
+   figures from the panel's shared clock rules (player.css). */
+.markings-row .player-marker-title,
+.markings-row .player-marker-time {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* The label leads the row, in the row's own ink — the weight the passed row
+   gives it included. */
+.markings-row .player-marker-title {
+  color: inherit;
+  text-align: left;
+}
+
+/* The clock is pushed to the far end of the row, so the room the controls do
+   not need becomes the space between them: the row's own wide seek target, and
+   where a field is going. */
+.markings-row .player-marker-time {
+  margin-left: auto;
 }
 
 .markings-row-alias {

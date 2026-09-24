@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { LabeledMarker } from '../domain';
 import type { Movement } from '../domain';
@@ -1029,9 +1029,19 @@ interface MarkerRowProps {
 }
 
 /**
- * One marker's row. On the browsing surfaces it is the seek control alone, as
- * it has always been. On the markings page (T56) the same seek control is
- * joined by the two things that change a mark: the alias field, and Delete.
+ * One marker's row, in one of two shapes. On the browsing surfaces it is the
+ * seek control alone, as it has always been: one button wrapping `label —
+ * alias` and the clock. On the markings page (T56, T67) it is a container
+ * holding the two things a mark is read by as seek controls of their own —
+ * the label and the clock — with the two that change it, the alias field and
+ * Delete, beside them.
+ *
+ * **The container is what makes the rest of this page possible** (T67): an
+ * input cannot live inside a button, so an alias and a time field cannot sit
+ * between the label and the clock while one button spans them. For a reader
+ * nothing changes — the row is still clickable anywhere, and a click still
+ * jumps to the mark — but the row is now a row *with* controls in it rather
+ * than a row that *is* a control.
  *
  * An editable row shows its derived label on its own rather than the browsing
  * rows' `label — alias`, because the alias is the field beside it — printing
@@ -1043,9 +1053,11 @@ interface MarkerRowProps {
  *
  * The row the block is on (T57, T64) grows it under the row — the mark's exact
  * time, editable, and the two nudge controls, all of it `CorrectionBlock`, which
- * also serves a movement's boundary. Everything else about the row is unchanged,
- * so the mark being corrected is still read, and still jumped to, as the mark it
- * was a moment ago.
+ * also serves a movement's boundary. It is a sibling of the row container and
+ * not part of it, so the decks are the correction's own surface: a click on one
+ * of their controls is that control's, and never the row's. Everything else
+ * about the row is unchanged, so the mark being corrected is still read, and
+ * still jumped to, as the mark it was a moment ago.
  */
 function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: MarkerRowProps) {
   const storedAlias = marker.aliases[0] ?? '';
@@ -1064,35 +1076,23 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
       ? authoring.timeError.message
       : null;
   const classes = `${passed ? ' passed' : ''}${carrying ? ' correcting' : ''}`.trim();
+  const clock = formatWholeSeconds(marker.time, duration);
 
-  const seek = (
-    <button
-      type="button"
-      tabIndex={-1}
-      className="player-marker-row"
-      onClick={(event) => {
-        // The click is the jump and only the jump: seeking lands the playhead on
-        // this mark, which is the whole of what makes the row the active one,
-        // and the active row is the one carrying the block (T64) — so the click
-        // needs no separate word to say which row is being corrected.
-        onSeek(marker);
-        // The row is a pointer target, not a focus stop: leaving focus on it
-        // would make the next Space re-activate the row (jump back to it)
-        // instead of meaning play/pause.
-        event.currentTarget.blur();
-      }}
-      title={
-        marker.aliases.length > 0 ? `${marker.label} — ${marker.aliases.join(', ')}` : marker.label
-      }
-    >
-      <span className="player-marker-title">
-        {authoring !== undefined || marker.aliases.length === 0
-          ? marker.label
-          : `${marker.label} — ${marker.aliases[0]}`}
-      </span>
-      <span className="player-marker-time">{formatWholeSeconds(marker.time, duration)}</span>
-    </button>
-  );
+  /**
+   * The jump either shape of the row makes when one of its own seek controls is
+   * clicked. The click is the jump and only the jump: seeking lands the playhead
+   * on this mark, which is the whole of what makes the row the active one, and
+   * the active row is the one carrying the block (T64) — so the click needs no
+   * separate word to say which row is being corrected.
+   *
+   * The control gives the focus up afterwards, because it is a pointer target
+   * and not a focus stop: left focused, the next Space would re-activate it —
+   * jumping back to the row just clicked — instead of meaning play/pause.
+   */
+  const seek = (event: MouseEvent<HTMLButtonElement>): void => {
+    onSeek(marker);
+    event.currentTarget.blur();
+  };
 
   return (
     <li
@@ -1100,10 +1100,52 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
       aria-current={carrying ? 'true' : undefined}
     >
       {authoring === undefined ? (
-        seek
+        <button
+          type="button"
+          tabIndex={-1}
+          className="player-marker-row"
+          onClick={seek}
+          title={
+            marker.aliases.length > 0
+              ? `${marker.label} — ${marker.aliases.join(', ')}`
+              : marker.label
+          }
+        >
+          <span className="player-marker-title">
+            {marker.aliases.length === 0 ? marker.label : `${marker.label} — ${marker.aliases[0]}`}
+          </span>
+          <span className="player-marker-time">{clock}</span>
+        </button>
       ) : (
-        <div className="markings-row">
-          {seek}
+        // The markings page's row (T67): the label and the clock are seek
+        // controls of their own, and every other pixel of the row — the space
+        // between its controls and the row's own padding — moves the playhead
+        // to the mark as well, so a student still never has to aim.
+        <div
+          className="markings-row"
+          onClick={(event) => {
+            // A control in the row keeps its own click: the fields take a
+            // caret, the trash deletes. The test is ancestry and not a tag
+            // name, because a click on a control's own artwork lands on the
+            // element inside it — a trash glyph's `<path>`, say — rather than
+            // on the control.
+            if (
+              (event.target as HTMLElement).closest('input, button, select, textarea') !== null
+            ) {
+              return;
+            }
+            onSeek(marker);
+          }}
+        >
+          <button
+            type="button"
+            tabIndex={-1}
+            className="player-marker-title"
+            title={`Jump to ${marker.label}`}
+            onClick={seek}
+          >
+            {marker.label}
+          </button>
           <input
             type="text"
             className="markings-row-alias"
@@ -1125,6 +1167,15 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
               if (event.key === 'Enter') event.currentTarget.blur();
             }}
           />
+          <button
+            type="button"
+            tabIndex={-1}
+            className="player-marker-time"
+            title={`Jump to marker ${marker.label}`}
+            onClick={seek}
+          >
+            {clock}
+          </button>
           <button
             type="button"
             className="markings-row-delete"
