@@ -115,18 +115,27 @@
   outline-offset: -1px;
 }
 
-.markings-row-delete {
+/* The delete control both kinds of row carry (T66) — one rule, one component,
+   so a mark's trash and a movement's are the same glyph at the same size rather
+   than two drawings that happen to agree. The danger ink is the control's, and
+   the glyph is stroked in `currentColor`, so that ink is the icon's too.
+
+   It is a flex box rather than a text button because it no longer has text to
+   take its line box from: the glyph is the whole of what it shows, and the
+   padding below is the whole of the control's size. */
+.markings-delete {
   flex: 0 0 auto;
-  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
   border: 0;
   border-radius: 5px;
   background: none;
   color: #b91c1c;
   cursor: pointer;
-  font: 600 12px/18px system-ui, sans-serif;
 }
 
-.markings-row-delete:hover {
+.markings-delete:hover {
   background: #fef2f2;
 }
 
@@ -345,24 +354,10 @@
   background: #e2e8f0;
 }
 
-/* The movement's Delete (T59), in the header beside the jump. The rows' own
-   danger ink, and no fill until the pointer is on it — it is the same act on a
-   larger thing, and a filled control inside the header band would shout across
-   the whole list it is pinned above. */
-.markings-movement-delete {
-  flex: 0 0 auto;
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: #b91c1c;
-  cursor: pointer;
-  font: 600 12px/18px system-ui, sans-serif;
-}
-
-.markings-movement-delete:hover {
-  background: #fef2f2;
-}
+/* The movement's Delete (T59), in the header beside the jump, is the shared
+   delete control (T66) — see its rule above the movement styles. It stays quiet
+   in the band the word was quiet in: no fill until the pointer is on it, and
+   the same danger ink. */
 
 /* The movement's delete question, under the header that raised it and inside
    the same band. It takes the width the header's controls leave rather than a

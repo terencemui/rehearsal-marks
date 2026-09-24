@@ -71,7 +71,10 @@ describe('PublicProjectView', () => {
     // Read-only means no edit or copy affordance anywhere on the surface.
     expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete marker' })).not.toBeInTheDocument();
+    // Matched loosely on purpose: the control's name carries the marker's own
+    // label (`Delete marker A`), so an exact `Delete marker` matches nothing
+    // however the panel changes — which is no guard at all (T66).
+    expect(screen.queryByRole('button', { name: /Delete marker/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
