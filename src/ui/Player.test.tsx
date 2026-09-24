@@ -173,7 +173,10 @@ describe('Player — playback-only (T39)', () => {
     expect(screen.queryByRole('slider', { name: 'Volume' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: /Marker [A-Z]/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete marker' })).not.toBeInTheDocument();
+    // Matched loosely on purpose: the control's name carries the marker's own
+    // label (`Delete marker A`), so an exact `Delete marker` matches nothing
+    // however the panel changes — which is no guard at all (T66).
+    expect(screen.queryByRole('button', { name: /Delete marker/ })).not.toBeInTheDocument();
     // The marker rows themselves survive — they are the navigable map of the marks.
     expect(markerRows(container)).toHaveLength(2);
   });

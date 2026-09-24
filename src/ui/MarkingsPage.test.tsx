@@ -41,6 +41,20 @@ function project(overrides = {}) {
   });
 }
 
+/** Two movements with marks inside them — a symphony, roughly placed. */
+function multiMovement(overrides = {}) {
+  return project({
+    visibility: 'private',
+    duration: 1800,
+    markers: [marker('m1', 10), marker('m2', 20), marker('m3', 900)],
+    movements: [
+      { id: 'mv1', name: 'I. Allegro', start: 15 },
+      { id: 'mv2', name: 'II. Adagio', start: 831 },
+    ],
+    ...overrides,
+  });
+}
+
 /** The marker rows, in DOM order (which is time order). */
 function markerRows(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll('.player-marker-row'));
@@ -1160,20 +1174,6 @@ describe('movements exist, so the letters restart (T58)', () => {
 });
 
 describe('a movement can be re-timed and deleted (T59)', () => {
-  /** Two movements with marks inside them — a symphony, roughly placed. */
-  function multiMovement(overrides = {}) {
-    return project({
-      visibility: 'private',
-      duration: 1800,
-      markers: [marker('m1', 10), marker('m2', 20), marker('m3', 900)],
-      movements: [
-        { id: 'mv1', name: 'I. Allegro', start: 15 },
-        { id: 'mv2', name: 'II. Adagio', start: 831 },
-      ],
-      ...overrides,
-    });
-  }
-
   it('re-times a movement by typing an exact time, and the server ends up holding it', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
@@ -2036,5 +2036,87 @@ describe('the way into the markings page (T55)', () => {
     expect(
       within(screen.getByRole('region', { name: 'Markers' })).queryByRole('link'),
     ).toBeNull();
+  });
+});
+
+describe('the delete control is a trash glyph (T66)', () => {
+  /** The `<path>` inside a control's glyph — what a pointer actually lands on. */
+  function glyphPath(name: string): SVGPathElement {
+    const path = screen.getByRole('button', { name }).querySelector('path');
+    if (path === null) throw new Error(`The delete control "${name}" shows no glyph.`);
+    return path;
+  }
+
+  it('shows a glyph rather than the word, and keeps what each control destroys as its name', async () => {
+    const api = fakeProjectsApi();
+    api.seed(multiMovement({ markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    const controls = [
+      { name: 'Delete marker A', control: screen.getByRole('button', { name: 'Delete marker A' }) },
+      {
+        name: 'Delete movement I. Allegro',
+        control: screen.getByRole('button', { name: 'Delete movement I. Allegro' }),
+      },
+    ];
+
+    for (const { name, control } of controls) {
+      // The word is gone from the panel, and the control is still found by it —
+      // and says it to a pointer, which has no screen reader to hear it from.
+      expect(control.textContent).toBe('');
+      expect(control).toHaveAttribute('title', name);
+
+      // The glyph is drawn, not read: it says nothing of its own, and it carries
+      // no ink of its own either — the control's is the icon's.
+      const glyph = control.querySelector('svg');
+      expect(glyph).not.toBeNull();
+      expect(glyph).toHaveAttribute('aria-hidden', 'true');
+      expect(glyph?.querySelector('path')).toHaveAttribute('stroke', 'currentColor');
+      expect(glyph?.querySelector('path')).toHaveAttribute('fill', 'none');
+    }
+  });
+
+  it('is the delete and not a row jump when the click lands on the glyph itself', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // The pointer lands on the `<path>` inside the SVG rather than on the button
+    // around it, so the control that deletes is the one the click has to reach.
+    await user.click(glyphPath('Delete marker A'));
+
+    // The delete and *not* a jump: the recording is still where it was, so the
+    // click reached the control and stopped there.
+    expect(controller.getCurrentTime()).toBe(0);
+    expect(markerTimes(container)).toEqual(['00:20']);
+    expect(markerTitles(container)).toEqual(['A']);
+    await waitFor(() => expect(api.get('p1')?.markers.map((m) => m.id)).toEqual(['m2']));
+  });
+
+  it('raises a movement’s question from the glyph, and still answers it with the word', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(glyphPath('Delete movement I. Allegro'));
+
+    // The glyph replaces the control that asks, not the one that answers: the
+    // decision is still put in words, and taken in one.
+    expect(screen.getByText(/^Delete “I\. Allegro”\?/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(movementNameFields(container)).toHaveLength(1);
+    // The marks the boundary held are still there, regrouped by the rule left.
+    expect(markerRows(container)).toHaveLength(3);
+    await pastDebounce();
+    expect(api.get('p1')?.movements.map((m) => m.name)).toEqual(['II. Adagio']);
   });
 });
