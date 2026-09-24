@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { Navigate, useParams } from 'react-router';
 import type { AudioController } from '../audio';
 import {
+  activeRowId,
   addMarker,
   addMovement,
   createMarker,
@@ -213,7 +214,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const { record, mutate } = session;
   // The playback view of the recording — the shared derivation (T55), the same
   // one the practice surface reads.
-  const { labeled, duration, activeMarker } = useLabeledPlayback({ controller, record });
+  const { labeled, duration, elapsed, activeMarker } = useLabeledPlayback({ controller, record });
   /**
    * The alias the domain refused, and where it was refused. Held by the row
    * that caused it — an alias rule broken on one mark says nothing about the
@@ -255,17 +256,48 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     message: string;
   } | null>(null);
   /**
-   * The mark being corrected (T57), by id. Selection is the page's own state
-   * and deliberately does not follow the playhead: the row holding the playhead
-   * moves on its own as the recording plays, and a correction aimed at whatever
-   * a student happened to be passing would be a correction aimed at nothing.
-   * It is held by id, so a mark that a correction re-sorts keeps its selection
-   * — and its label, which is a rank and follows the mark into its new place.
+   * The row the correction block is being held on — the one whose time field
+   * the caret is in, by id, or null while no field has the caret (T64). It is
+   * the page's one piece of held state about correcting, and it is the
+   * exception: the block is on the active row, which is derived and moves with
+   * the playhead, and this only says "not this one, that one, until I am done".
+   *
+   * Nothing else arms it. A nudge-button click is deliberately not a trigger —
+   * Safari on macOS does not focus a button on click, so the same gesture would
+   * pin there and not in Chrome — and it has nothing left to buy now that a
+   * nudge takes the playhead with it.
    */
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  /** The caret entered a row's time field: that row holds the block until `releasePin`. */
+  const pin = useCallback((id: string): void => {
+    setPinnedId(id);
+  }, []);
+
+  /**
+   * The caret left that field, or the field left with it — the block goes back
+   * to following the playhead. Both are the same fact: no caret is in a time
+   * field, so there is nothing holding the block still.
+   */
+  const releasePin = useCallback((): void => {
+    setPinnedId(null);
+  }, []);
+
   const status = useSyncExternalStore(autosave.subscribe, autosave.status);
-  /** The selected mark itself, as the surface is rendering it. */
-  const selected = labeled.find((marker) => marker.id === selectedId) ?? null;
+  /**
+   * The row the correction block is on (T64): the row a caret is holding, else
+   * the row the playhead is on — the boundary it is sitting on, or the mark it
+   * has last passed. Derived from the live playhead every render rather than
+   * held, so a correction can never be left aimed at a row that has gone, and
+   * placing a mark pays for itself: the mark lands active the instant it
+   * exists, with the block already on it and its time ready to be made exact.
+   */
+  const activeRow = activeRowId(labeled, record.movements, elapsed);
+  /** What the block is actually on: the pin where a caret holds one, the active row otherwise. */
+  const blockRow = pinnedId ?? activeRow;
+  /** The row the correction keys correct, as the record holds it now. */
+  const blockMarker = labeled.find((marker) => marker.id === blockRow) ?? null;
+  /** The boundary the correction keys correct, when the block is on a movement's row. */
+  const blockMovement = record.movements.find((movement) => movement.id === blockRow) ?? null;
 
   // The mode the session was built in, read off the autosave that owns it: this
   // page shows a Save control exactly when the project waits for one.
@@ -391,27 +423,37 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * domain parses the text and is the one that decides, exactly as it does for
    * a mark's time — and it is a decision with a second edge here: a time can be
    * perfectly real and still be one this boundary cannot take, because it lands
-   * on or past a neighbour. That refusal throws with its own guidance naming
-   * the movement in the way, and this boundary does not move.
+   * on or past a neighbour. That refusal throws with its own guidance naming the
+   * movement in the way, and this boundary does not move.
+   *
+   * A time it accepts is also a seek (T64): a correction moves the recording
+   * with it, so the boundary the student has just made exact is the boundary
+   * they hear — and the playhead landing back on the written start is what keeps
+   * the block on this row as the caret leaves it. A refusal seeks nothing,
+   * because the boundary did not move to seek to.
    */
   const setMovementTime = useCallback(
     (movement: Movement, text: string): string => {
+      let shown: string;
+      let written: number;
       try {
-        const time = parseTime(text);
+        written = parseTime(text);
         mutate((current) => ({
           ...current,
-          movements: moveMovement(current.movements, movement.id, time),
+          movements: moveMovement(current.movements, movement.id, written),
         }));
-        forgetMovementTimeError(movement.id);
-        return formatTime(time, duration);
+        shown = formatTime(written, duration);
       } catch (error) {
         setMovementTimeError({ movementId: movement.id, message: errorMessage(error) });
         // The refused text is not where the boundary is; the field goes back to
         // the exact start the movement does hold.
         return formatTime(movement.start, duration);
       }
+      forgetMovementTimeError(movement.id);
+      controller.seek(written);
+      return shown;
     },
-    [duration, forgetMovementTimeError, mutate],
+    [controller, duration, forgetMovementTimeError, mutate],
   );
 
   /**
@@ -421,16 +463,20 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * bounded by nothing, so a nudge into the movement next door is a domain
    * refusal rather than a move, and it is reported the way a refused typed time
    * is. A nudge that lands re-seeds the field (it is keyed on the start), which
-   * is why the complaint goes with the success.
+   * is why the complaint goes with the success — and seeks (T64), as a typed
+   * time does: a correction the student cannot hear the result of is a
+   * correction they have to go and find. And it drops the pin (T64), for the
+   * same reason a mark's nudge does: the field it re-seeds is the one the caret
+   * was in, so the caret is not in a field any more.
    */
   const nudgeMovement = useCallback(
     (movement: Movement, delta: number): void => {
       try {
-        mutate((current) => {
+        const next = mutate((current) => {
           // Read from the record being written, not from the render this
           // gesture started in, so a nudge always moves from where the boundary
           // actually is. One that is no longer there moves nothing rather than
-          // throwing — its selection went with it.
+          // throwing — its row is gone.
           const held = current.movements.find((m) => m.id === movement.id);
           if (held === undefined) return current;
           return {
@@ -439,11 +485,18 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
           };
         });
         forgetMovementTimeError(movement.id);
+        // The seek reads the boundary off the record that was just written
+        // rather than off the arithmetic above, so what the recording moves to
+        // is what the boundary is. A boundary that had already gone moved
+        // nothing, and the recording stays where it is.
+        const written = next.movements.find((m) => m.id === movement.id);
+        if (written !== undefined) controller.seek(written.start);
+        releasePin();
       } catch (error) {
         setMovementTimeError({ movementId: movement.id, message: errorMessage(error) });
       }
     },
-    [forgetMovementTimeError, mutate],
+    [controller, forgetMovementTimeError, mutate, releasePin],
   );
 
   /**
@@ -455,12 +508,14 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    */
   const deleteMovement = useCallback(
     (movement: Movement): void => {
-      // The boundary's complaints go with it, and so does its selection: a
-      // correction left aimed at a movement that no longer exists is a
-      // correction aimed at nothing.
+      // The boundary's complaints go with it, and so does its pin: a correction
+      // left aimed at a movement that no longer exists is a correction aimed at
+      // nothing, and a caret cannot be in a field that has gone.
       forgetMovementTimeError(movement.id);
       setMovementNameError((current) => (current?.movementId === movement.id ? null : current));
-      setSelectedId((current) => (current === movement.id ? null : current));
+      // The pin goes with it, for the same reason: a caret cannot be in the time
+      // field of a row that has gone.
+      setPinnedId((current) => (current === movement.id ? null : current));
       mutate((current) => ({
         ...current,
         movements: removeMovement(current.movements, movement.id),
@@ -470,29 +525,26 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   );
 
   /**
-   * Picks a row out as the one being corrected (T57, T59). A pointer clicks a
-   * mark's row or a movement's header, and the keyboard walks to a mark with
-   * ↑/↓; all of them arrive here, so the ways of choosing are one piece of
-   * state — and one row is chosen at a time, because a page has one thing being
-   * worked on at a time.
-   */
-  const select = useCallback((id: string): void => {
-    setSelectedId(id);
-  }, []);
-
-  /**
    * Moves a mark by `delta` seconds — the one correction `[`, `]` and the
-   * block's two controls all make. Nothing here touches the controller: a
-   * correction moves the mark, and the recording the student is hearing carries
-   * on exactly as it was, playing or paused.
+   * block's two controls all make. The correction takes the recording with it
+   * (T64): the playhead goes to the time just written, so the student hears the
+   * mark they have just made exact rather than the one it used to be. Nothing
+   * else about playback is touched — a correction while the recording plays
+   * corrects it and carries on playing, as it always did.
+   *
+   * It also drops the pin, and that is not a detail: the nudge re-seeds the time
+   * field (it is keyed on the time the mark now holds), so the field the caret
+   * was in is gone. In Safari, where a click does not focus a button, nothing
+   * else would ever say so — no blur arrives — and the block would be held on
+   * this row for good.
    */
   const nudge = useCallback(
     (marker: LabeledMarker, delta: number): void => {
-      mutate((current) => {
+      const next = mutate((current) => {
         // The mark's time is read from the record being written, not from the
         // render this gesture started in, so a nudge always moves the mark from
         // where it actually is. A mark that is no longer there corrects nothing
-        // rather than throwing — its selection went with it.
+        // rather than throwing — its row is gone.
         const held = current.markers.find((m) => m.id === marker.id);
         if (held === undefined) return current;
         return {
@@ -500,15 +552,21 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
           markers: moveMarker(current.markers, marker.id, nudgedTime(held.time, delta)),
         };
       });
+      // Read off the record that was just written rather than off the
+      // arithmetic above, so the recording moves to the mark's actual time. A
+      // mark that had already gone moved nothing, and the recording stays put.
+      const written = next.markers.find((m) => m.id === marker.id);
+      if (written !== undefined) controller.seek(written.time);
+      releasePin();
       // A nudge re-seeds the field with the time the mark now holds, so a time
       // refused a moment ago is a complaint about text that is no longer in the
       // field — it goes with the text, exactly as applying a typed time clears
       // it. Left standing, it would sit under a valid time contradicting it, and
-      // be announced again when the mark was next selected. The alias is a
+      // be announced again when the block came back to this row. The alias is a
       // different fact about the mark and keeps its own.
       setTimeError((current) => (current?.markerId === marker.id ? null : current));
     },
-    [mutate],
+    [controller, mutate, releasePin],
   );
 
   /**
@@ -516,36 +574,42 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * the one that decides: a time it refuses throws with its own guidance, and
    * the mark is not moved — the refused text is never stored, and never left in
    * the field as if it were.
+   *
+   * A time it accepts is also a seek (T64), as a nudge is: the mark is now where
+   * the student says the landmark is, so that is where the recording goes — and
+   * the playhead landing back on the written time is what keeps the block on
+   * this row as the caret leaves it. A refusal seeks nothing, because the mark
+   * did not move to seek to.
    */
   const setTime = useCallback(
     (marker: LabeledMarker, text: string): string => {
+      let written: number;
       try {
-        const time = parseTime(text);
+        written = parseTime(text);
         mutate((current) => ({
           ...current,
-          markers: moveMarker(current.markers, marker.id, time),
+          markers: moveMarker(current.markers, marker.id, written),
         }));
-        // Cleared for this mark only: a time refused on one mark is that mark's
-        // complaint, and another's acceptance says nothing about it.
-        setTimeError((current) => (current?.markerId === marker.id ? null : current));
-        return formatTime(time, duration);
       } catch (error) {
         setTimeError({ markerId: marker.id, message: errorMessage(error) });
         // The refused text is not what the mark holds; the field goes back to
         // the exact time it does hold.
         return formatTime(marker.time, duration);
       }
+      // Cleared for this mark only: a time refused on one mark is that mark's
+      // complaint, and another's acceptance says nothing about it.
+      setTimeError((current) => (current?.markerId === marker.id ? null : current));
+      controller.seek(written);
+      return formatTime(written, duration);
     },
-    [duration, mutate],
+    [controller, duration, mutate],
   );
 
   // The playback keys shared with the practice surface — play and pause, seek,
   // and walk the marks — plus this page's own two: `M` places a mark, and `[`/`]`
-  // correct the selected one. The playback keys wait for the load to settle,
-  // since there is nothing to play or seek until it does; `M` waits with them,
-  // being a playhead gesture. The correction keys do not: they move a mark the
-  // record already holds and ask the recording for nothing, which is why the
-  // hook handles them above its own settle gate.
+  // correct the row the playhead is on. Every one of them asks the recording for
+  // something — a correction is a seek now (T64) — so all of them wait for the
+  // load to settle together, which is where the hook's own gate has them.
   usePlayerKeys({
     controller,
     markers: labeled,
@@ -555,14 +619,15 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     // owner is being asked about.
     inert: blocker.state === 'blocked',
     onAddMarker: addAtPlayhead,
-    // The correction keys act on the mark being corrected and on nothing else,
-    // so with none selected they do nothing at all.
+    // The correction keys act on the row the playhead is on and on nothing
+    // else, so before the first mark they do nothing at all. Which kind of row
+    // that is, is the row's own answer: a boundary is corrected as a mark is —
+    // one gesture, two nouns — so the key asks what the block is on rather than
+    // the page holding two keys that do the same thing to different rows.
     onNudge: (delta) => {
-      if (selected !== null) nudge(selected, delta);
+      if (blockMarker !== null) nudge(blockMarker, delta);
+      else if (blockMovement !== null) nudgeMovement(blockMovement, delta);
     },
-    // A walk picks out the mark it lands on: without this the nudge keys could
-    // never reach a mark, since rows are pointer targets and not tab stops.
-    onWalk: (marker) => select(marker.id),
   });
 
   const authoring: MarkersAuthoring = {
@@ -601,16 +666,16 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
       // The mark and its complaints go together.
       setAliasError((current) => (current?.markerId === marker.id ? null : current));
       setTimeError((current) => (current?.markerId === marker.id ? null : current));
-      // And so does its selection: a correction left aimed at a mark that no
-      // longer exists is a correction aimed at nothing.
-      setSelectedId((current) => (current === marker.id ? null : current));
+      // And so does its pin: a caret cannot be in the time field of a row that
+      // has gone, and a pin left naming it would hold the block on nothing.
+      setPinnedId((current) => (current === marker.id ? null : current));
       mutate((current) => ({
         ...current,
         markers: removeMarker(current.markers, marker.id),
       }));
     },
-    selectedId,
-    onSelect: select,
+    onPin: pin,
+    onReleasePin: releasePin,
     onNudge: nudge,
     onTime: setTime,
     timeError,
@@ -669,6 +734,13 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
               movements={record.movements}
               duration={duration}
               activeId={activeMarker?.id ?? null}
+              // The row the correction block goes on, and so the row the panel
+              // follows (T64) — resolved here, where the pin is held, so the row
+              // the panel draws the block in is the row this page corrects. The
+              // active row is derived from the playhead rather than picked out by
+              // a click, so it is never stale: a mark placed a moment ago is the
+              // row the playhead has just passed.
+              blockRowId={blockRow}
               onSeek={(marker) => controller.seek(marker.time)}
               onSeekMovement={(movement) => controller.seek(movement.start)}
               maxHeight={markersMaxHeight ?? undefined}

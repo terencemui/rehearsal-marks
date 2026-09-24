@@ -36,28 +36,23 @@ export interface PlayerKeysOptions {
    */
   onAddMarker?: () => void;
   /**
-   * What `[` and `]` do — nudging the mark being corrected by `delta` seconds,
-   * negative for earlier (T57). Supplied only by the markings page, where a mark
-   * can be corrected; the practice surface and the read-only view pass nothing
-   * and the keys are simply absent, so the surfaces that may not change a mark
-   * carry no key that could.
+   * What `[` and `]` do — nudging the row the playhead is on by `delta`
+   * seconds, negative for earlier (T57, amended by T64). Supplied only by the
+   * markings page, where a row can be corrected; the practice surface and the
+   * read-only view pass nothing and the keys are simply absent, so the surfaces
+   * that may not change a row carry no key that could.
    */
   onNudge?: (delta: number) => void;
-  /**
-   * What a walk with ↑/↓ landed on, beside the jump itself (T57). The markings
-   * page takes the mark it reached as the one being corrected, so a correction
-   * is reachable without a pointer. A surface that passes nothing keeps the walk
-   * bare: jumping never selects (ADR-0003).
-   */
-  onWalk?: (marker: LabeledMarker) => void;
 }
 
 /**
  * The playback shortcuts both player surfaces share (T55): Space to
- * play/pause, ←/→ to seek ∓5s, ↑/↓ to walk the marks (wrapping). They are the
- * keys the practice surface has carried since playback-only (T39), lifted out
- * of it so the markings page plays a recording exactly as the practice surface
- * does without either surface owning a copy of the handler.
+ * play/pause, ←/→ to seek ∓5s, ↑/↓ to walk the marks (wrapping), and — on the
+ * markings page alone — `M` to place a mark and `[`/`]` to correct the row the
+ * playhead is on. They are the keys the practice surface has carried since
+ * playback-only (T39), lifted out of it so the markings page plays a recording
+ * exactly as the practice surface does without either surface owning a copy of
+ * the handler.
  *
  * The handler is registered once at the window and reads the latest values
  * through a ref reassigned every render, so a shortcut always sees the current
@@ -69,9 +64,9 @@ export interface PlayerKeysOptions {
  *
  * The markings page's own keys are the ones this hook binds and no other
  * surface hears, because each arrives as a callback only that page supplies:
- * `M` places a mark at the playhead (T56), and `[`/`]` nudge the mark being
- * corrected (T57). The practice surface's copy carries no adding key and no
- * correcting key, which is the point of both being optional.
+ * `M` places a mark at the playhead (T56), and `[`/`]` nudge the row the
+ * playhead is on (T57, amended by T64). The practice surface's copy carries no
+ * adding key and no correcting key, which is the point of both being optional.
  */
 export function usePlayerKeys({
   controller,
@@ -80,7 +75,6 @@ export function usePlayerKeys({
   inert = false,
   onAddMarker,
   onNudge,
-  onWalk,
 }: PlayerKeysOptions): void {
   const keyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   keyDownRef.current = (event: KeyboardEvent) => {
@@ -100,12 +94,10 @@ export function usePlayerKeys({
     if (inTextInput) return;
 
     // A surface that has stood its shortcuts down hears nothing at all (T60) —
-    // and this is the one gate above every key, the correction keys included.
-    // The two gates below ask different questions and are deliberately not one:
-    // `settled` asks whether there is a recording to act on, which is why the
-    // corrections sit above it, while this asks whether the page should be
-    // acting at all. A nudge behind the leave prompt would move the very mark
-    // its owner is being asked whether to keep.
+    // and this is the one gate above every key. It asks whether the page should
+    // be acting at all, which is not the question `settled` below asks: a nudge
+    // behind the leave prompt would move the very row its owner is being asked
+    // whether to keep.
     if (inert) return;
 
     // Plain chords: no modifier that means something else to the browser or the
@@ -113,16 +105,24 @@ export function usePlayerKeys({
     // own coarse step, and the arrows exclude it separately.
     const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
 
-    // The correction keys, on the one surface that corrects (T57): `[` nudges
-    // the mark being corrected a tenth of a second earlier and `]` the same
-    // later, either by a whole second with Shift. A shifted bracket reaches the
-    // page as `{` or `}` on most layouts, so both spellings are the same key and
-    // Shift is read for the step rather than the key.
+    // Before the recording settles there is nothing to play, seek, or jump to
+    // — the shortcuts are inert until then. The load takes a moment; a Space
+    // pressed into it would otherwise be swallowed against a dead embed.
     //
-    // Deliberately above the settle gate below: a correction moves a mark the
-    // record already holds and asks the recording for nothing, so it is not held
-    // back by a load it does not depend on — and the block's own nudge controls
-    // would otherwise work while their keys did not.
+    // The correction keys sit below this gate with everything else (T64): a
+    // correction now puts the playhead on the value just written, so it asks
+    // the recording for a seek exactly as the rest of these keys do. What a
+    // dead video does not cost it is the block and its buttons — `settled` is
+    // true on the failure path too.
+    if (!settled) return;
+
+    // The correction keys, on the one surface that corrects (T57, T64): `[`
+    // nudges the row the playhead is on a tenth of a second earlier and `]` the
+    // same later, either by a whole second with Shift. A shifted bracket
+    // reaches the page as `{` or `}` on most layouts, so both spellings are the
+    // same key and Shift is read for the step rather than the key. On the row
+    // the playhead is on and on nothing else: the page decides which row that
+    // is, and with none — before the first mark — the keys do nothing at all.
     if (plain && onNudge !== undefined) {
       const direction =
         event.key === '[' || event.key === '{' ? -1 : event.key === ']' || event.key === '}' ? 1 : 0;
@@ -132,11 +132,6 @@ export function usePlayerKeys({
         return;
       }
     }
-
-    // Before the recording settles there is nothing to play, seek, or jump to
-    // — the shortcuts are inert until then. The load takes a moment; a Space
-    // pressed into it would otherwise be swallowed against a dead embed.
-    if (!settled) return;
 
     if (event.key === ' ') {
       // A focused button owns Space through native activation — handling it
@@ -174,16 +169,17 @@ export function usePlayerKeys({
     }
     if (plainArrows && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       // ↑/↓ jump between markers anchored at the live playhead, wrapping at
-      // the ends. Jumping never touches playback state, and it never selects —
-      // except where a caller asks to hear about the landing (T57). A key with
-      // nothing to jump to is left alone, so arrow scrolling still works.
+      // the ends. Jumping never touches playback state, and it never selects
+      // (ADR-0003) — the markings page needs nothing more of it, because the
+      // seek lands the playhead on the mark it reached and the correction
+      // controls follow the playhead (T64). A key with nothing to jump to is
+      // left alone, so arrow scrolling still works.
       const anchor = controller.getCurrentTime();
       const target =
         event.key === 'ArrowDown' ? nextMarker(markers, anchor) : previousMarker(markers, anchor);
       if (target === null) return;
       event.preventDefault();
       controller.seek(target.time);
-      onWalk?.(target);
       return;
     }
   };

@@ -43,8 +43,13 @@ export interface RecordingSession {
    * Applies a mutation to the session's record: the autosave takes it, and
    * React re-renders from the result. The way an editing surface changes what
    * the record holds — whether that reaches the server is the autosave's mode.
+   *
+   * It returns the record it produced, so a caller that has to act on what it
+   * just wrote can read it back rather than work it out a second time — a
+   * correction moves the recording to the time it wrote (T64), and the written
+   * time is whatever the record now holds.
    */
-  mutate(fn: (current: ServerProject) => ServerProject): void;
+  mutate(fn: (current: ServerProject) => ServerProject): ServerProject;
   /** Re-runs the load after a failure — the error card's Retry. */
   retryLoad(): void;
 }
@@ -91,10 +96,15 @@ export function useRecordingSession({
   // render is free.)
   const youtubeUrl = canonicalYouTubeUrl(autosave.get().videoId);
 
-  /** Applies a mutation: the autosave gets it, React mirrors it. */
+  /**
+   * Applies a mutation: the autosave gets it, React mirrors it, and the record
+   * it produced is handed back to the caller that asked for it.
+   */
   const update = useCallback(
-    (fn: (current: ServerProject) => ServerProject): void => {
-      setRecord(autosave.mutate(fn));
+    (fn: (current: ServerProject) => ServerProject): ServerProject => {
+      const next = autosave.mutate(fn);
+      setRecord(next);
+      return next;
     },
     [autosave],
   );

@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { AudioController, PlaybackState } from '../audio';
+import type { AudioController, LoadOptions, PlaybackState } from '../audio';
 
 /** The mock seam plus a way for tests to publish playback state changes. */
 export interface MockController extends AudioController {
@@ -15,6 +15,12 @@ export interface MockController extends AudioController {
  * duration and publishes the new playhead — so a test asserting state after
  * a seek is asserting something the mock could falsify, and chained
  * keypresses land where the playhead actually is.
+ *
+ * A load the caller supplies still publishes the duration it resolves with,
+ * because the real one does: the media element's metadata is what the store's
+ * duration becomes, and a mock that kept its default 10 while reporting 372
+ * would clamp every seek past ten seconds — a seek that lands somewhere else
+ * than the test asked for is the one way this double lies quietly.
  */
 export function mockController(overrides: Partial<AudioController> = {}): MockController {
   let state: PlaybackState = { playing: false, currentTime: 0, duration: 10, volume: 1 };
@@ -25,7 +31,7 @@ export function mockController(overrides: Partial<AudioController> = {}): MockCo
     for (const listener of listeners) listener(state);
   }
 
-  return {
+  const mock: MockController = {
     load: vi.fn(async () => ({ duration: 10 })),
     destroy: vi.fn(),
     togglePlay: vi.fn(),
@@ -46,4 +52,14 @@ export function mockController(overrides: Partial<AudioController> = {}): MockCo
     emitPlayback: publish,
     ...overrides,
   };
+
+  // Wrapped after the overrides, so a load the caller supplied is wrapped too.
+  const callerLoad = mock.load;
+  mock.load = vi.fn(async (options: LoadOptions) => {
+    const result = await callerLoad(options);
+    if (result.duration > 0) publish({ duration: result.duration });
+    return result;
+  });
+
+  return mock;
 }

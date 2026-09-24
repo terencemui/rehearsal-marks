@@ -67,7 +67,7 @@ The full-width click-to-seek progress clock below the split — the recording's 
 _Avoid_: ruler, tick bar, scrubber
 
 **Active row**:
-The row the playhead is on: the marker it has last passed, or the movement boundary it is sitting on. On the Markings page it carries the correction controls.
+The row the playhead is on: the marker it has last passed, or the movement boundary it is sitting on — a boundary wins when both are true. On the Markings page it carries the correction controls.
 _Avoid_: selected row, picked-out row, current row, highlighted row
 
 ### Gallery and sharing

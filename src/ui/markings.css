@@ -137,24 +137,25 @@
   color: #9a3412;
 }
 
-/* The row being corrected (T57). A ring rather than a tint, because the tint is
-   already spoken for: the active row is the one holding the playhead, which
-   moves on its own, while the selection is the one the student made. Both can
-   be true of one row, and each still reads as itself.
+/* The row the correction block is on (T57, T64). A ring rather than a tint,
+   because the tint is already spoken for: the active row is the one holding the
+   playhead, which moves on its own, and the block's row is that row but for the
+   case a caret is holding it still while a time is typed. Both can be true of
+   one row, and each still reads as itself.
 
    The ring wraps the whole item — the mark's row and the correction block under
    it — so the block reads as belonging to the row above it rather than as
    another row of the list. It is an outline, and inset, for two reasons: an
    outline is painted over the row's own background instead of under it, so the
    ring survives the active row's tint, and an inset one cannot be clipped by
-   the list's scroll box when the selected row sits at its edge. */
-.player-marker-list li.selected {
+   the list's scroll box when the row carrying the block sits at its edge. */
+.player-marker-list li.correcting {
   border-radius: 8px;
   outline: 2px solid #0f766e;
   outline-offset: -2px;
 }
 
-/* The correction block under the selected row: the mark's exact time, and the
+/* The correction block on the row carrying it: the row's exact time, and the
    two nudges. Its own inset and tint, so the controls read as a panel that
    belongs to the row above them rather than as two more rows of the list. */
 .markings-correct {
