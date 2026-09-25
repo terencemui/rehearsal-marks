@@ -349,6 +349,54 @@ function DeleteControl({ label, onDelete }: DeleteControlProps) {
   );
 }
 
+interface ClockProps {
+  /** The mark or movement this clock reads the time of — what a click jumps to. */
+  name: string;
+  /** The reading itself, in whole seconds — the music stand's reading. */
+  time: string;
+  /** What the click is: seek the recording to the row this clock is on. */
+  onJump(): void;
+  /**
+   * Whether the clock is a stop for the Tab key (T70). It is one on a movement's
+   * header and not on a mark's row: `↑`/`↓` walk the marks and reach no
+   * movement, so a boundary's clock is the keyboard's only way to that boundary,
+   * while a mark's row is reached by the arrows — and a tab stop on every row of
+   * a long list would be a wall of stops between the page and its own controls.
+   */
+  tabStop?: boolean;
+}
+
+/**
+ * The clock both kinds of row read a time in (T70): one component, so a mark's
+ * reading and a movement's are one control in one slot, in one face, and neither
+ * can drift from the other by being built twice.
+ *
+ * It is a control and not a reading: a click seeks the recording to the row the
+ * clock belongs to, which is what pointing at a time asks for. The control gives
+ * the focus up afterwards, because it is a pointer target and not a focus stop —
+ * left focused, the next Space would re-activate it, jumping back to the row
+ * just clicked, instead of meaning play/pause, which is the key a student
+ * presses most. A caret that activates a band's clock is not left holding
+ * anything either way: the row it jumps to becomes the row being corrected, and
+ * the exact-time field takes the slot the clock was in (T68).
+ */
+function Clock({ name, time, onJump, tabStop = false }: ClockProps) {
+  return (
+    <button
+      type="button"
+      className="player-marker-time"
+      tabIndex={tabStop ? undefined : -1}
+      title={`Jump to ${name}`}
+      onClick={(event) => {
+        onJump();
+        event.currentTarget.blur();
+      }}
+    >
+      {time}
+    </button>
+  );
+}
+
 /** Markers grouped under their movement; markers before the first movement (or with no movements) lead. */
 interface MarkerGroup {
   movement: Movement | null;
@@ -782,6 +830,13 @@ function MovementHeader({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   if (movement === null) {
+    // The leading group's header names no movement, so it carries nothing a row
+    // carries: no name to edit, no boundary to jump to, no time, no delete. It
+    // is a divider over the marks before the first movement (ADR-0005), and it
+    // is the one header on this panel that is not a row (T70) — on every
+    // surface, since the browsing panel draws it too and has no rows of its own
+    // to share. It keeps the header rule player.css gives it rather than the
+    // markings page's row, which is deliberate and not drift.
     return (
       <div className="player-movement-header" aria-hidden="true">
         <span className="player-movement-name">Before the first movement</span>
@@ -813,7 +868,19 @@ function MovementHeader({
   return (
     <>
       <div
-        className="player-movement-header markings-movement-header"
+        // A movement's header *is* a marker's row (T70), in the authoring
+        // panel's own words: the same class, so the same gap, the same right
+        // padding, the same clock slot and the same delete column come from one
+        // rule rather than from two that agree today. What is the band's own —
+        // the step out to the panel's inset, the divider it is, the ink it is
+        // drawn in — is in its own rule beside the row's (markings.css), and
+        // nothing else is.
+        //
+        // It is no longer a `player-movement-header` (T58): that is the rule the
+        // browsing surfaces' header button is laid out by, where the whole band
+        // is one seek control. Here the band is a container of controls, as a
+        // mark's row is (T67), and the two must not be laid out by one rule.
+        className="markings-row markings-movement-header"
         // The boundary's row is the pin's, exactly as a mark's row is (T64,
         // T69): the caret leaving the header's own fields, and not landing in
         // another of them, is what hands the boundary back to the playhead —
@@ -861,21 +928,17 @@ function MovementHeader({
             onPin={() => authoring.onPin(movement.id)}
           />
         ) : (
-          <button
-            type="button"
-            className="markings-movement-jump"
-            // The jump is also how the boundary is reached to be re-timed (T59,
-            // T64): seeking to a movement and correcting its start are the same
-            // intent — this is where the boundary is, make it exact — and the
-            // seek parks the playhead on the boundary, which is the whole of what
-            // puts the block on it. The marks answer to the same gesture: a row
-            // click jumps, and the playhead landing there is what carries the
-            // block.
-            onClick={() => onSeek(movement)}
-            title={`Jump to ${movement.name}`}
-          >
-            <span className="player-marker-time">{time}</span>
-          </button>
+          // The clock a mark's row carries, on the band (T70). The jump is also
+          // how the boundary is reached to be re-timed (T59, T64): seeking to a
+          // movement and correcting its start are the same intent — this is
+          // where the boundary is, make it exact — and the seek parks the
+          // playhead on the boundary, which is the whole of what puts the block
+          // on it. The marks answer to the same gesture: a row click jumps, and
+          // the playhead landing there is what carries the block.
+          //
+          // The band's clock is the tab stop a mark's clock is not, because the
+          // arrows reach no movement — see `Clock`.
+          <Clock name={movement.name} time={time} onJump={() => onSeek(movement)} tabStop />
         )}
         {!confirmingDelete && (
           <DeleteControl
@@ -1247,10 +1310,11 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
   const clock = formatWholeSeconds(marker.time, duration);
 
   /**
-   * The jump either shape of the row makes when one of its own seek controls is
-   * clicked. The click is the jump and only the jump: seeking lands the playhead
-   * on this mark, which is the whole of what makes the row the active one, and
-   * the active row is the one carrying the block (T64) — so the click needs no
+   * The jump the row's own button makes — the browsing row's whole row, and the
+   * label on the markings page, whose clock jumps through `Clock` (T70). The
+   * click is the jump and only the jump: seeking lands the playhead on this
+   * mark, which is the whole of what makes the row the active one, and the
+   * active row is the one carrying the block (T64) — so the click needs no
    * separate word to say which row is being corrected.
    *
    * The control gives the focus up afterwards, because it is a pointer target
@@ -1381,15 +1445,9 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
               onPin={() => authoring.onPin(marker.id)}
             />
           ) : (
-            <button
-              type="button"
-              tabIndex={-1}
-              className="player-marker-time"
-              title={`Jump to ${marker.label}`}
-              onClick={seek}
-            >
-              {clock}
-            </button>
+            // The clock a movement's header carries too (T70) — the same
+            // component, so a mark's reading and a movement's are one control.
+            <Clock name={marker.label} time={clock} onJump={() => onSeek(marker)} />
           )}
           <DeleteControl
             label={`Delete marker ${marker.label}`}
