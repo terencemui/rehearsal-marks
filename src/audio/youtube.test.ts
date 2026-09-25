@@ -15,6 +15,7 @@ import { YouTubePlaybackError } from './errors';
 const CANONICAL_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
 /** The IFrame API's player-state numbers this backend reads (and the fake emits). */
+const ENDED = 0;
 const UNSTARTED = -1;
 const PLAYING = 1;
 const PAUSED = 2;
@@ -258,10 +259,11 @@ describe('AudioController YouTube playback', () => {
 
   it('pauses a cold jump as soon as there is a video to pause', async () => {
     // A cold screen opens cued — the player is constructed with the video id —
-    // and unstarted is the instant before that. seekTo plays from either, so
-    // the pause is owed; it waits for PLAYING because pausing an embed that has
-    // never loaded blanks it and leaves every later seek nothing to move.
-    for (const state of [UNSTARTED, CUED]) {
+    // and unstarted is the instant before that; ended still restarts the
+    // recording from a seek. seekTo plays from all three, so the pause is owed;
+    // it waits for PLAYING because pausing an embed that has never loaded
+    // blanks it and leaves every later seek nothing to move.
+    for (const state of [UNSTARTED, ENDED, CUED]) {
       const container = document.createElement('div');
       const { controller, player } = await loadReady(container);
       player.playerState = state;
@@ -269,15 +271,42 @@ describe('AudioController YouTube playback', () => {
       controller.seek(10);
       expect(player.pauseVideo).not.toHaveBeenCalled();
 
-      player.currentTime = 12; // the load ran on before PLAYING arrived
+      // The real embed's pause event arrives a round trip after the command, so
+      // the store must not be left waiting on it for the truth.
+      player.pauseVideo.mockImplementation(() => {});
       player.dispatch('onStateChange', PLAYING);
 
       expect(player.pauseVideo).toHaveBeenCalledTimes(1);
       expect(controller.getPlaybackState().playing).toBe(false);
-      // The mark goes back under the playhead, not wherever the load drifted.
+      // The jump landed where it asked — the pause stops the recording there
+      // rather than seeking it back, which from the state PLAYING reports would
+      // start it playing again.
+      expect(player.seekTo).toHaveBeenCalledTimes(1);
       expect(player.currentTime).toBe(10);
       expect(controller.getPlaybackState().currentTime).toBe(10);
+
+      // That one pause settles the debt: the next playing is the student's own,
+      // and a jump's pause is not owed on it.
+      player.dispatch('onStateChange', PLAYING);
+      expect(player.pauseVideo).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it('lands the owed pause on the latest jump, not the first', async () => {
+    const container = document.createElement('div');
+    const { controller, player } = await loadReady(container);
+    player.playerState = CUED;
+
+    controller.seek(10); // owes a pause here
+    // The first seek left the embed fetching, so the second jump arrives with
+    // the debt still unpaid — and it is the one the student aimed last.
+    controller.seek(30);
+
+    player.dispatch('onStateChange', PLAYING);
+
+    expect(player.pauseVideo).toHaveBeenCalledTimes(1);
+    expect(player.currentTime).toBe(30);
+    expect(controller.getPlaybackState().currentTime).toBe(30);
   });
 
   it('the play the student asks for outranks the pause a jump owes', async () => {
