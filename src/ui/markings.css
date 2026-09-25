@@ -122,6 +122,14 @@
   color: #0f172a;
 }
 
+/* The same tint's accent, on the reading that row now shows (T68). The clock
+   turns teal as its row is passed (player.css), and the field replaces the
+   clock — so without this the active row, which is usually the passed one,
+   would be the one row whose time stopped saying so. */
+.player-marker-list li.passed .markings-row-time {
+  color: #0f766e;
+}
+
 /* The row's two seek controls are buttons, and a button brings its own chrome:
    a frame, a fill, the system font, centred text. None of it is wanted — they
    are the same label and the same reading the browsing row shows as plain
@@ -146,6 +154,56 @@
   text-align: left;
 }
 
+/* The slot a row's time occupies (T68): the clock a row reads by, or the exact
+   time the active row corrects in. One width for both, so nothing in the row
+   moves when the playhead arrives — the field is the wider of the two, sized
+   for the longest reading a recording can hold (h:mm:ss.mmm), and the clock is
+   given that width too rather than the clock's own.
+
+   Declared in border-box, because a border-box width is the one that means what
+   it says: the app sets no global `box-sizing`, so a declared width is the
+   width the box renders only when this line is on it. Every occupant keeps the
+   field's own right inset — 6px of padding and 1px of border — and pushes the
+   reading to the right end of the slot, which is what keeps the digits from
+   shifting sideways as one replaces the other. */
+.player-markers {
+  --markings-clock-slot: 104px;
+}
+
+.markings-row .player-marker-time,
+.markings-row .markings-row-time,
+.markings-movement-header .markings-movement-jump,
+.markings-movement-header .markings-row-time {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: var(--markings-clock-slot);
+  text-align: right;
+}
+
+/* The clock is not a field and shows no edges: the inset the field takes from
+   its padding and border is taken here by the same measurement in transparent
+   space. And no vertical padding — the row's height belongs to the alias field
+   and the row's own padding, and a clock taller than the text it shows would
+   move the row as the playhead arrives.
+
+   A movement's jump takes the same border in its own rule below, which is where
+   its padding lives: one rule per control, so neither can be overridden by the
+   other's order. */
+.markings-row .player-marker-time {
+  padding: 0 6px;
+  border: 1px solid transparent;
+}
+
+/* The clock is pushed to the far end of the row, so the room the controls do
+   not need becomes the space between them: the row's own wide seek target, and
+   where the field is. The field takes the clock's place in that slot (T68), so
+   it is pushed there the same way. The alias slot is what grows into that room
+   (T69), which is why this rule pushes and sizes nothing. */
+.markings-row .player-marker-time,
+.markings-row .markings-row-time {
+  margin-left: auto;
+}
+
 /* The alias slot (T69): the one place a mark's own name is read, immediately
    after the label, and the row's flex grower — so the room the row's controls
    do not need is the space between the name and the clock rather than a gap
@@ -166,7 +224,9 @@
    Flexible rather than pinned: a fixed slot does not fit the panel's floor
    beside a millisecond clock and a trash. It takes the room the row has and
    shrinks to a floor, ellipsising a long name rather than pushing the clock off
-   the row. */
+   the row. The alias is the only control in the row that may give way at all —
+   the slot the time occupies is fixed at its full reading (T68) and the trash
+   is a glyph, and both are sized for what they have to show. */
 .markings-alias-slot {
   box-sizing: border-box;
   flex: 1 1 64px;
@@ -242,21 +302,27 @@
    caret is in a time field, whichever row the caret is holding it on. Both can
    be true of one row, and each still reads as itself.
 
-   The ring wraps the whole item — the mark's row and the correction block under
+   On a mark it wraps the whole item — the row and the correction block under
    it — so the block reads as belonging to the row above it rather than as
-   another row of the list. It is an outline, and inset, for two reasons: an
-   outline is painted over the row's own background instead of under it, so the
-   ring survives the passed row's tint, and an inset one cannot be clipped by
-   the list's scroll box when the row carrying the block sits at its edge. */
+   another row of the list. On a movement it is the block's own item, under the
+   header: the header's `<li>` is the list's sticky band, and the ring is about
+   the row the correction is on, which the band is not.
+
+   It is an outline, and inset, for two reasons: an outline is painted over the
+   row's own background instead of under it, so the ring survives the passed
+   row's tint, and an inset one cannot be clipped by the list's scroll box when
+   the row carrying the block sits at its edge. */
 .player-marker-list li.correcting {
   border-radius: 8px;
   outline: 2px solid #0f766e;
   outline-offset: -2px;
 }
 
-/* The correction block on the row carrying it: the row's exact time, and the
-   two nudges. Its own inset and tint, so the controls read as a panel that
-   belongs to the row above them rather than as two more rows of the list. */
+/* The correction block on the row carrying it: the two nudges, and the
+   domain's refusal when it makes one. Its own inset and tint, so the controls
+   read as a panel that belongs to the row above them rather than as two more
+   rows of the list — the row the exact time is typed into is the row itself
+   (T68), and this is what is left under it. */
 .markings-correct {
   display: flex;
   flex-wrap: wrap;
@@ -269,20 +335,10 @@
   background: #f0fdfa;
 }
 
-.markings-correct-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.markings-correct-label {
-  font: 600 12px/18px system-ui, sans-serif;
-  color: #0f766e;
-}
-
-/* The exact time, at the millisecond precision a correction is made in. */
+/* The exact time, at the millisecond precision a correction is made in. Its
+   width, its text alignment and its side insets are the slot's (T68), which it
+   shares with the clock it replaces; what is its own is the way it reads. */
 .markings-row-time {
-  width: 96px;
   padding: 4px 6px;
   border: 1px solid #cbd5e1;
   border-radius: 5px;
@@ -429,11 +485,21 @@
 }
 
 /* The movement's start, and now the header's one control: the name is a field,
-   so the jump lives on the time it jumps to. */
+   so the jump lives on the time it jumps to. When the playhead is standing on
+   the boundary the slot holds the exact-time field instead (T68) — same slot,
+   same size, and the jump gives way to it, because the playhead is already
+   where the jump would take it.
+
+   The border is transparent rather than absent: it is the field's own 1px, and
+   taking it here is what puts the reading where the field's goes. The two
+   pixels of vertical padding are the hover fill's, where a mark's clock — which
+   has no fill to keep — takes none; they are also what makes the two states the
+   same height, 2+2+22+1+1 against 4+4+18+1+1, both 28px, so the band does not
+   change height as the playhead arrives on it and the field replaces the jump. */
 .markings-movement-jump {
   flex: 0 0 auto;
   padding: 2px 6px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 5px;
   background: none;
   cursor: pointer;

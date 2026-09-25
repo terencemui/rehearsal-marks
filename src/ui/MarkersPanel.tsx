@@ -619,6 +619,11 @@ export function MarkersPanel({
           // what knows it, and what deleting a boundary costs depends on it: a
           // movement's marks fall to the one before it (T59).
           const at = movement === null ? -1 : movements.findIndex((m) => m.id === movement.id);
+          // The one boundary this group's header carries the block for (T64):
+          // read once, because three things about the header turn on it — the
+          // field it shows in place of its jump, whether the block is drawn
+          // under it, and which row the ring and the reveal are about.
+          const carrying = movement !== null && blockId === movement.id;
           return [
             hasMovements && (
               <li
@@ -628,6 +633,7 @@ export function MarkersPanel({
                 <MovementHeader
                   movement={movement}
                   duration={duration}
+                  carrying={carrying}
                   // What deleting this boundary costs, which only the list can
                   // say: how many marks it holds, and which movement now runs
                   // over their time (T59).
@@ -638,41 +644,38 @@ export function MarkersPanel({
                 />
               </li>
             ),
-            // The movement the block is on (T59, T64), directly under its header
-            // and outside it: the header's `<li>` is the list's sticky band, and
-            // a correction block inside it would grow that band over the group
-            // it is pinned above. As a row of its own it scrolls with the marks,
-            // and the reveal follows it for the same reason it follows a
-            // corrected mark's row — it is a row the playhead can be on, which
-            // is what the student is working on. The delete question is the
-            // exception, and stays in the band; the header says why.
+            // The movement's nudges (T59), directly under its header and outside
+            // it: the header's `<li>` is the list's sticky band, and they would
+            // grow that band over the group it is pinned above. As a row of their
+            // own they scroll with the marks, and they belong under the field
+            // they nudge — which is up in the band (T68), so this is the
+            // correction surface below it rather than the row it is on. The
+            // delete question is the other thing that stays in the band; the
+            // header says why.
             //
-            // It is here, under the header and ahead of the group's own rows,
-            // rather than beside the boundary the block corrects: the header is
-            // the band, and the row that may carry the block is the first thing
-            // under it. The block itself still names its movement either way.
+            // They are here, under the header and ahead of the group's own rows,
+            // rather than beside the boundary they correct: the header is the
+            // band, and the surfaces of the boundary's correction are the first
+            // thing under it.
             //
-            // It is drawn when the playhead sits *on* the boundary (T64), which
-            // is why the panel only ever has one block: the active row is one
+            // They are drawn when the playhead sits *on* the boundary (T64),
+            // which is why the panel only ever has one: the active row is one
             // row, and a movement that holds the playhead holds it alone.
             //
-            // The row is the pin's (T64, T69): the caret leaving the block's own
-            // field, and not landing in another field of this row, is what hands
-            // the block back to the playhead. A row with one field releases as
-            // it always did; the rule is stated once and in one place because a
-            // mark's row has two.
-            movement !== null && blockId === movement.id && authoring !== undefined && (
-              <li
-                key={`correct-${movement.id}`}
-                className="correcting"
-                aria-current="true"
-                onBlur={(event) => {
-                  if (caretLeftTheRow(event.currentTarget, event.relatedTarget)) {
-                    authoring.onReleasePin();
-                  }
-                }}
-              >
-                <MovementCorrection movement={movement} duration={duration} authoring={authoring} />
+            // This `<li>`, not the header's, is the row the ring wraps and the
+            // reveal follows (T64). It stays in flow, so the reveal can measure
+            // it; the band is sticky, and a sticky row's rect is clipped to the
+            // band it is pinned in. The field the correction is about is in that
+            // band either way — the ring is about the row, and the row is the
+            // boundary's.
+            //
+            // The pin's release is the row's, and is stated once per row (T64,
+            // T69). This `<li>` holds no field — the times are in the band above
+            // it (T68) — so the release lives on the header, which is the row
+            // those fields belong to, and this one only wraps the ring.
+            carrying && authoring !== undefined && (
+              <li key={`correct-${movement.id}`} className="correcting" aria-current="true">
+                <MovementCorrection movement={movement} authoring={authoring} />
               </li>
             ),
             ...groupMarkers.map((marker) => (
@@ -701,6 +704,13 @@ interface MovementHeaderProps {
   /** How many marks the movement holds — what deleting it would move (T59). */
   markCount: number;
   /**
+   * Whether this header carries the correction block (T68) — the movement the
+   * playhead is standing on, or the one a caret is holding it on. A boundary is
+   * a marker's peer (ADR-0007), so it is corrected in its own header exactly as
+   * a mark is corrected in its own row.
+   */
+  carrying: boolean;
+  /**
    * The movement a deleted movement's marks would fall to — the one before it,
    * or null when it is the first and they join the leading group instead (T59).
    */
@@ -723,6 +733,13 @@ interface MovementHeaderProps {
  * the time it shows and titled with where it goes, the same convention the
  * nudge controls follow — a name that replaced the visible text would leave the
  * button unaddressable by the words on it.
+ *
+ * The start is also where the movement is re-timed (T68): while the playhead
+ * stands on this boundary the clock slot holds the exact-time field instead, as
+ * it does in a mark's row — one slot, one reading, and the jump gives way to
+ * the field because the playhead is already where the jump would take it. The
+ * nudges stay in the block below, with the movement's refusal when the domain
+ * makes one.
  *
  * The leading group — marks before the first movement — has no movement and so
  * nothing to name or jump to; it keeps the plain label it has always had.
@@ -752,6 +769,7 @@ function MovementHeader({
   movement,
   duration,
   markCount,
+  carrying,
   fallsTo,
   onSeek,
   authoring,
@@ -794,7 +812,20 @@ function MovementHeader({
 
   return (
     <>
-      <div className="player-movement-header markings-movement-header">
+      <div
+        className="player-movement-header markings-movement-header"
+        // The boundary's row is the pin's, exactly as a mark's row is (T64,
+        // T69): the caret leaving the header's own fields, and not landing in
+        // another of them, is what hands the boundary back to the playhead —
+        // so stepping from the name to the time is one edit and not two. The
+        // rule is the row's rather than either field's, and it is here because
+        // the field a correction is made in lives in this band (T68).
+        onBlur={(event) => {
+          if (caretLeftTheRow(event.currentTarget, event.relatedTarget)) {
+            authoring.onReleasePin();
+          }
+        }}
+      >
         <input
           type="text"
           className="markings-movement-name"
@@ -816,21 +847,36 @@ function MovementHeader({
             if (event.key === 'Enter') event.currentTarget.blur();
           }}
         />
-        <button
-          type="button"
-          className="markings-movement-jump"
-          // The jump is also how the boundary is reached to be re-timed (T59,
-          // T64): seeking to a movement and correcting its start are the same
-          // intent — this is where the boundary is, make it exact — and the
-          // seek parks the playhead on the boundary, which is the whole of what
-          // puts the block on it. The marks answer to the same gesture: a row
-          // click jumps, and the playhead landing there is what carries the
-          // block.
-          onClick={() => onSeek(movement)}
-          title={`Jump to ${movement.name}`}
-        >
-          <span className="player-marker-time">{time}</span>
-        </button>
+        {carrying ? (
+          // The boundary being re-timed reads to the millisecond in the slot its
+          // clock occupied (T68), as a mark's row does.
+          <TimeField
+            time={formatTime(movement.start, duration)}
+            seed={movement.start}
+            label={`Time for movement ${movement.name}`}
+            onCommit={(text) => authoring.onMovementTime(movement, text)}
+            // The pin names the row the caret is in, and this row is the
+            // boundary's (T64) — a movement is a marker's peer, so its boundary
+            // is pinned exactly as a mark's row is.
+            onPin={() => authoring.onPin(movement.id)}
+          />
+        ) : (
+          <button
+            type="button"
+            className="markings-movement-jump"
+            // The jump is also how the boundary is reached to be re-timed (T59,
+            // T64): seeking to a movement and correcting its start are the same
+            // intent — this is where the boundary is, make it exact — and the
+            // seek parks the playhead on the boundary, which is the whole of what
+            // puts the block on it. The marks answer to the same gesture: a row
+            // click jumps, and the playhead landing there is what carries the
+            // block.
+            onClick={() => onSeek(movement)}
+            title={`Jump to ${movement.name}`}
+          >
+            <span className="player-marker-time">{time}</span>
+          </button>
+        )}
         {!confirmingDelete && (
           <DeleteControl
             label={`Delete movement ${movement.name}`}
@@ -929,15 +975,7 @@ function caretLeftTheRow(row: HTMLElement, related: EventTarget | null): boolean
 // it, because a node the rule does not recognise reports the row as left and an
 // input unmounted mid-edit takes what was typed with it.
 
-interface CorrectionBlockProps {
-  /**
-   * The block's own name, as a reader hears it — which row it corrects and what
-   * kind of row that is. "Correct marker A" and "Re-time movement II" are both
-   * this one field, because the blocks differ only in what they say.
-   */
-  groupLabel: string;
-  /** The time field's name, on the field it names. */
-  fieldLabel: string;
+interface TimeFieldProps {
   /** The time the row holds, in the exactness a correction is made at. */
   time: string;
   /**
@@ -946,88 +984,121 @@ interface CorrectionBlockProps {
    * that is no longer in the field, and goes with it.
    */
   seed: number;
-  /** The domain's refusal of the last commit on this row, if it refused one. */
-  error: string | null;
+  /** The field's own name, on the field it names. */
+  label: string;
   /** Commits typed text; returns the honest time to put back in the field. */
-  onTime(text: string): string;
-  /** Nudges the row by `delta` seconds, negative for earlier. */
-  onNudge(delta: number): void;
+  onCommit(text: string): string;
   /**
-   * The caret entered the time field, so this row holds the block until the pin
-   * is released (T64). Which row that is the caller's to say — the block knows
-   * only that its own field was entered.
+   * The caret entered the field, so this row holds the block until the pin is
+   * released (T64). Which row that is the caller's to say — the field knows
+   * only that it was entered.
    */
   onPin(): void;
 }
 
 /**
- * The correction block the active row carries (T57, T59, T64): the row's exact
- * time, editable, and the two nudge controls. One block for both kinds of row,
- * because it is one correction — a boundary placed by ear at the playhead lands
- * late by human reaction time exactly as a mark does, so the two are made exact
- * by the same gesture, in the same steps, and then a tenth of a second apart
- * whether or not they say so the same way.
+ * The active row's exact time, editable, in the slot the row's clock occupies
+ * (T68). The row it is drawn in is the row it corrects — a mark's row, or a
+ * movement's header — so the correction is made where the time is read, and the
+ * clock it replaces is standing in for it the rest of the time.
  *
- * The field is the row's own time rather than its clock, because the clock is
- * the music-stand reading — whole seconds, which a tenth of a second never
- * moves — while a correction is exact by nature.
+ * It is the row's own time rather than its clock, because the clock is the
+ * music-stand reading — whole seconds, which a tenth of a second never moves —
+ * while a correction is exact by nature. A row therefore never shows both: one
+ * slot, one reading, and the page carries exactly one millisecond reading, on
+ * the one row that is active.
  *
- * The field is also what arms the pin (T64): the block follows the playhead from
- * row to row, and the one thing that may hold it still is a caret in this field.
- * While the caret is here the student is telling one row what time it holds, and
- * neither a mark going by nor the row itself being nudged may take the field out
- * from under them — so the focus is reported up and the row it names is the one
- * the panel follows.
+ * The field is uncontrolled and commits on leaving it (or on Enter, which is
+ * the same thing): the row's stored time seeds it, and the panel writes the
+ * honest value back — the exact time when the domain took it, the unchanged
+ * stored one when it did not — so the field never shows a time the record does
+ * not hold. The `<input>` below is keyed on that stored time, which is the one
+ * thing that re-seeds it: a mark nudged by a tenth is a new stored time, and the
+ * new key gives the field a fresh default in place of the text being typed.
  *
- * It is presentational: which row, what the commit means, what the domain said
- * of it, and which row the caret's presence pins are all the caller's. A mark's
- * row and a movement's header differ in every one of those and in nothing else.
+ * The field is also what arms the pin (T64): the block follows the playhead
+ * from row to row, and the one thing that may hold it still is a caret in this
+ * field. While the caret is here the student is telling one row what time it
+ * holds, and neither a mark going by nor the row itself being nudged may take
+ * the field out from under them.
+ *
+ * It is presentational: which row, what the commit means, and which row the
+ * caret's presence pins are all the caller's. A mark's row and a movement's
+ * header differ in every one of those and in nothing else.
  */
-function CorrectionBlock({
-  groupLabel,
-  fieldLabel,
-  time,
-  seed,
-  error,
-  onTime,
-  onNudge,
-  onPin,
-}: CorrectionBlockProps) {
+function TimeField({ time, seed, label, onCommit, onPin }: TimeFieldProps) {
+  return (
+    <input
+      key={seed}
+      type="text"
+      className="markings-row-time"
+      defaultValue={time}
+      aria-label={label}
+      // The caret has arrived: this row holds the block, and the panel stops
+      // following the playhead until it leaves (T64). Focus is the whole of
+      // the gesture — a nudge-button click is deliberately not one, because
+      // Safari on macOS does not focus a button on click, and the same
+      // gesture would pin there and not in Chrome.
+      onFocus={onPin}
+      onBlur={(event) => {
+        const field = event.currentTarget;
+        // The caret leaving is the row's business, not this field's (T69): the
+        // row is the only thing that can tell a step from this field to the
+        // name beside it from a real departure, and the pin is released there.
+        // All this field does is commit.
+        //
+        // Nothing typed is nothing to commit — and re-committing the time
+        // the row holds would only re-validate a time already accepted.
+        if (field.value === time) return;
+        // The panel writes the honest value back.
+        field.value = onCommit(field.value);
+      }}
+      onKeyDown={(event) => {
+        // Enter commits by leaving the field — one commit path, not two.
+        if (event.key === 'Enter') event.currentTarget.blur();
+      }}
+    />
+  );
+}
+
+interface CorrectionBlockProps {
+  /**
+   * The block's own name, as a reader hears it — which row it corrects and what
+   * kind of row that is. "Correct marker A" and "Re-time movement II" are both
+   * this one field, because the blocks differ only in what they say.
+   */
+  groupLabel: string;
+  /** The domain's refusal of the last commit on this row, if it refused one. */
+  error: string | null;
+  /** Nudges the row by `delta` seconds, negative for earlier. */
+  onNudge(delta: number): void;
+}
+
+/**
+ * The correction block the active row carries (T57, T59, T64): the two nudge
+ * controls, and the domain's refusal when it refuses one. One block for both
+ * kinds of row, because it is one correction — a boundary placed by ear at the
+ * playhead lands late by human reaction time exactly as a mark does, so the two
+ * are made exact by the same gesture, in the same steps, and then a tenth of a
+ * second apart whether or not they say so the same way.
+ *
+ * The row's time used to be read here too; it lives in the row itself now
+ * (T68), in the slot its clock occupies, because the correction is made where
+ * the time is read. The block is what is left: it stays under the row that
+ * carries the field, so the nudges keep the place a correction has always been
+ * made in, and a refusal is still reported beside the row that caused it rather
+ * than away in a slot the student has already left.
+ *
+ * It is presentational: which row, what the domain said of it, and what a nudge
+ * means are all the caller's. A mark's row and a movement's header differ in
+ * every one of those and in nothing else.
+ */
+function CorrectionBlock({ groupLabel, error, onNudge }: CorrectionBlockProps) {
   return (
     // The group is named for the row it corrects, so the block is not a set of
     // loose controls in a long list — a reader hears which row they have picked
     // out, and what they may do to it.
     <div className="markings-correct" role="group" aria-label={groupLabel}>
-      <label className="markings-correct-time">
-        <span className="markings-correct-label">Time</span>
-        <input
-          key={seed}
-          type="text"
-          className="markings-row-time"
-          defaultValue={time}
-          aria-label={fieldLabel}
-          // The caret has arrived: this row holds the block, and the panel stops
-          // following the playhead until it leaves (T64). Focus is the whole of
-          // the gesture — a nudge-button click is deliberately not one, because
-          // Safari on macOS does not focus a button on click, and the same
-          // gesture would pin there and not in Chrome.
-          onFocus={onPin}
-          onBlur={(event) => {
-            const field = event.currentTarget;
-            // Nothing typed is nothing to commit — and re-committing the time
-            // the row holds would only re-validate a time already accepted.
-            if (field.value === time) return;
-            // The panel writes the honest value back: the exact time when the
-            // domain took it, the unchanged stored one when it did not — so the
-            // field never shows a time the record does not hold.
-            field.value = onTime(field.value);
-          }}
-          onKeyDown={(event) => {
-            // Enter commits by leaving the field — one commit path, not two.
-            if (event.key === 'Enter') event.currentTarget.blur();
-          }}
-        />
-      </label>
       {/* The controls are named by what they show, not by a label of their own:
           the row they correct is already the name of the group around them, and
           a name that replaced the visible text would leave the button
@@ -1063,36 +1134,27 @@ function CorrectionBlock({
 
 interface MovementCorrectionProps {
   movement: Movement;
-  duration: number;
   authoring: MarkersAuthoring;
 }
 
 /**
- * The movement being re-timed (T59): its own correction block, over its start.
+ * The movement being re-timed (T59): its start, and the nudges that follow it.
  *
  * What the domain refuses here is not a nonsense time, as it is for a mark, but
  * a real one that lands on or past a neighbour — and its guidance says which
- * movement is in the way. The block shows it, because that is where the field
- * that caused it is.
+ * movement is in the way. The block shows it, under the header holding the
+ * field that caused it.
  */
-function MovementCorrection({ movement, duration, authoring }: MovementCorrectionProps) {
+function MovementCorrection({ movement, authoring }: MovementCorrectionProps) {
   return (
     <CorrectionBlock
       groupLabel={`Re-time movement ${movement.name}`}
-      fieldLabel={`Time for movement ${movement.name}`}
-      time={formatTime(movement.start, duration)}
-      seed={movement.start}
       error={
         authoring.movementTimeError?.movementId === movement.id
           ? authoring.movementTimeError.message
           : null
       }
-      onTime={(text) => authoring.onMovementTime(movement, text)}
       onNudge={(delta) => authoring.onNudgeMovement(movement, delta)}
-      // The pin names the row the caret is in, and this block is the boundary's
-      // (T64) — a movement is a marker's peer, so its boundary is pinned exactly
-      // as a mark's row is.
-      onPin={() => authoring.onPin(movement.id)}
     />
   );
 }
@@ -1155,13 +1217,15 @@ interface MarkerRowProps {
  * which is the same thing): the marker's stored alias is what the field is
  * seeded with, and what it is put back to when the domain refuses the text.
  *
- * The row the block is on (T57, T64) grows it under the row — the mark's exact
- * time, editable, and the two nudge controls, all of it `CorrectionBlock`, which
- * also serves a movement's boundary. It is a sibling of the row container and
- * not part of it, so the decks are the correction's own surface: a click on one
- * of their controls is that control's, and never the row's. Everything else
- * about the row is unchanged, so the mark being corrected is still read, and
- * still jumped to, as the mark it was a moment ago.
+ * The mark's exact time (T68) is read and typed in the slot the clock occupies,
+ * on the row itself — so the correction is made where the time is read. The row
+ * the block is on (T57, T64) then grows the `CorrectionBlock` under it: the two
+ * nudge controls and the domain's refusal, which it also serves for a movement's
+ * boundary. It is a sibling of the row container and not part of it, so the decks
+ * are the correction's own surface: a click on one of their controls is that
+ * control's, and never the row's. Everything else about the row is unchanged, so
+ * the mark being corrected is still read, and still jumped to, as the mark it was
+ * a moment ago — minus the clock, which the field has taken the place of.
  */
 function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: MarkerRowProps) {
   const storedAlias = marker.aliases[0] ?? '';
@@ -1302,15 +1366,31 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
               {storedAlias}
             </span>
           )}
-          <button
-            type="button"
-            tabIndex={-1}
-            className="player-marker-time"
-            title={`Jump to ${marker.label}`}
-            onClick={seek}
-          >
-            {clock}
-          </button>
+          {carrying ? (
+            // The active row reads to the millisecond where its clock was, and
+            // the clock gives way to it: the row shows one reading at a time and
+            // never both, and the playhead is already where the clock would jump
+            // to (T68). The field sits in the slot the clock occupies — beside
+            // the name and ahead of the trash — so the row the playhead arrives
+            // on is the row it already was, one reading swapped for another.
+            <TimeField
+              time={exactTime}
+              seed={marker.time}
+              label={`Time for marker ${marker.label}`}
+              onCommit={(text) => authoring.onTime(marker, text)}
+              onPin={() => authoring.onPin(marker.id)}
+            />
+          ) : (
+            <button
+              type="button"
+              tabIndex={-1}
+              className="player-marker-time"
+              title={`Jump to ${marker.label}`}
+              onClick={seek}
+            >
+              {clock}
+            </button>
+          )}
           <DeleteControl
             label={`Delete marker ${marker.label}`}
             onDelete={() => authoring.onDelete(marker)}
@@ -1325,13 +1405,8 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
       {carrying && authoring !== undefined && (
         <CorrectionBlock
           groupLabel={`Correct marker ${marker.label}`}
-          fieldLabel={`Time for marker ${marker.label}`}
-          time={exactTime}
-          seed={marker.time}
           error={timeError}
-          onTime={(text) => authoring.onTime(marker, text)}
           onNudge={(delta) => authoring.onNudge(marker, delta)}
-          onPin={() => authoring.onPin(marker.id)}
         />
       )}
     </li>

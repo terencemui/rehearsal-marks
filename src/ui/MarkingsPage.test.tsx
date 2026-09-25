@@ -77,9 +77,26 @@ function markerTitles(container: HTMLElement): (string | null)[] {
   return Array.from(container.querySelectorAll('.player-marker-title')).map((t) => t.textContent);
 }
 
-/** The rows' clocks, in DOM order. */
+/** The rows' clocks, in DOM order — the rows not being corrected (T68). */
 function markerTimes(container: HTMLElement): (string | null)[] {
   return Array.from(container.querySelectorAll('.player-marker-time')).map((t) => t.textContent);
+}
+
+/**
+ * Every mark row's time as the page reads it, in DOM order: the exact time the
+ * row the playhead is on carries in its field, the whole-second clock every
+ * other row carries (T68). The slot holds one reading or the other and never
+ * both, so this is a row's time in whichever state the row is in — which is what
+ * a test asking *where the marks are* wants. A test asking what a row *shows*
+ * reads `markerTimes` (the clocks on the page) or `timeField` (the one field).
+ */
+function rowTimes(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('.markings-row')).map(
+    (row) =>
+      row.querySelector<HTMLInputElement>('.markings-row-time')?.value ??
+      row.querySelector('.player-marker-time')?.textContent ??
+      '',
+  );
 }
 
 /**
@@ -95,9 +112,14 @@ function aliasField(container: HTMLElement): HTMLInputElement {
 
 /**
  * What a row reads, in the order it reads it (T69): its label, the name beside
- * it, and its clock. The middle one is a field on the active row and plain text
+ * it, and its time. The middle one is a field on the active row and plain text
  * on every other row; this reads whichever is there, so the two states are
  * compared as a reader meets them rather than as two markups.
+ *
+ * The third one is a field on the active row too — the exact time took the slot
+ * its clock occupied (T68) — and the clock every other row still carries, so the
+ * time is read the way `rowTimes` reads it for the whole list: whichever of the
+ * two the row is in.
  *
  * Every row reads three things, a row with no name included: the slot is what
  * holds the clock off the label, and it is there whether or not it has anything
@@ -105,10 +127,11 @@ function aliasField(container: HTMLElement): HTMLInputElement {
  * here; that it is there at all is what the row's shape says for itself.
  */
 function rowReading(row: HTMLElement): [string, string, string] {
+  const field = row.querySelector<HTMLInputElement>('.markings-row-time');
   return [
     readPart(row, '.player-marker-title'),
     readPart(row, '.markings-alias-slot'),
-    readPart(row, '.player-marker-time'),
+    field !== null ? field.value : readPart(row, '.player-marker-time'),
   ];
 }
 
@@ -170,6 +193,18 @@ function closeTheTab(): boolean {
   const event = new Event('beforeunload', { cancelable: true });
   window.dispatchEvent(event);
   return event.defaultPrevented;
+}
+
+/**
+ * The page on a private project with marks at 10s and 20s, every edit writing
+ * itself — the two marks the row's own shape (T67) and the exact time moving
+ * into it (T68) are both read against.
+ */
+function openTwoMarkPage() {
+  const api = fakeProjectsApi();
+  api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+  const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+  return renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
 }
 
 /**
@@ -381,7 +416,9 @@ describe('a mark can be placed, named and removed (T56)', () => {
     // The mark fell where the student was hearing, not at zero and not at the
     // last place the playhead was written.
     expect(markerRows(container)).toHaveLength(1);
-    expect(markerTimes(container)).toEqual(['00:42']);
+    // The row it landed on is the row the playhead is on, so it reads to the
+    // millisecond already (T68) — 42 exactly, which is where it fell.
+    expect(rowTimes(container)).toEqual(['00:42.000']);
     // Placing a mark is a listening gesture: the recording kept playing.
     expect(controller.getPlaybackState().playing).toBe(true);
     expect(controller.togglePlay).not.toHaveBeenCalled();
@@ -409,7 +446,10 @@ describe('a mark can be placed, named and removed (T56)', () => {
       await user.keyboard('m');
     }
 
-    expect(markerTimes(container)).toEqual(['00:10', '00:20', '00:30']);
+    // In the order time puts them in, which is not the order they were placed:
+    // the row the playhead ended on reads to the millisecond (T68) and the two
+    // it has gone by read as a music stand does.
+    expect(rowTimes(container)).toEqual(['00:10', '00:20.000', '00:30']);
     expect(markerTitles(container)).toEqual(['A', 'B', 'C']);
   });
 
@@ -425,12 +465,14 @@ describe('a mark can be placed, named and removed (T56)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add marker' }));
 
-    expect(markerTimes(container)).toEqual(['00:15']);
+    // The mark lands active — it is the row the playhead is on — so it reads
+    // through the field its clock gave way to (T68).
+    expect(rowTimes(container)).toEqual(['00:15.000']);
     // The column stays open to a second mark — the control does not disappear
     // with the empty state that carried it.
     act(() => controller.seek(45));
     await user.click(screen.getByRole('button', { name: 'Add marker' }));
-    expect(markerTimes(container)).toEqual(['00:15', '00:45']);
+    expect(rowTimes(container)).toEqual(['00:15', '00:45.000']);
   });
 
   it('names a mark with the student’s own word, and clears it again', async () => {
@@ -450,8 +492,10 @@ describe('a mark can be placed, named and removed (T56)', () => {
     await user.tab();
 
     await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual(['Meno']));
-    // The row reads the name beside its label, where it is read.
-    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10']);
+    // The row reads the name beside its label, where it is read — and it is the
+    // active row, so its time reads to the millisecond in the field the clock
+    // gave way to (T68).
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10.000']);
     // An alias is a name, not a mark: typing into the field placed nothing.
     expect(markerRows(container)).toHaveLength(2);
 
@@ -459,7 +503,7 @@ describe('a mark can be placed, named and removed (T56)', () => {
     await user.tab();
 
     await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual([]));
-    expect(rowReading(markerRows(container)[0])).toEqual(['A', '', '00:10']);
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', '', '00:10.000']);
   });
 
   it('refuses an alias that breaks a rule, with the domain’s own guidance', async () => {
@@ -879,7 +923,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     await user.type(field, '25');
     await user.keyboard('{Enter}');
 
-    expect(markerTimes(container)).toEqual(['00:20', '00:25']);
+    expect(rowTimes(container)).toEqual(['00:20', '00:25.000']);
     expect(markerTitles(container)).toEqual(['A', 'B']);
     // The block is still on the mark it was on, not on the position it held —
     // because the correction took the playhead with it, and the row the
@@ -1051,17 +1095,10 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 });
 
 describe('a marker row is a container with seek controls of its own (T67)', () => {
-  /** The page on a private project with marks at 10s and 20s — every edit writes itself. */
-  function openPage() {
-    const api = fakeProjectsApi();
-    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
-    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
-    return renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
-  }
 
   it('jumps to the mark from the label, from the clock, and from the row itself', async () => {
     const user = userEvent.setup();
-    const { container, controller } = openPage();
+    const { container, controller } = openTwoMarkPage();
     await waitForPlayerSettled();
     act(() => controller.emitPlayback({ duration: 372 }));
 
@@ -1087,7 +1124,7 @@ describe('a marker row is a container with seek controls of its own (T67)', () =
 
   it('leaves the row’s own controls their clicks — the trash does only its own thing', async () => {
     const user = userEvent.setup();
-    const { api, controller } = openPage();
+    const { api, controller } = openTwoMarkPage();
     await waitForPlayerSettled();
     act(() => controller.emitPlayback({ duration: 372 }));
     // The playhead somewhere that is not a mark, so a jump to one would be
@@ -1103,7 +1140,7 @@ describe('a marker row is a container with seek controls of its own (T67)', () =
 
   it('nudges without a second jump from the row the decks sit under', async () => {
     const user = userEvent.setup();
-    const { container, controller } = openPage();
+    const { container, controller } = openTwoMarkPage();
     await waitForPlayerSettled();
     act(() => controller.emitPlayback({ duration: 372 }));
 
@@ -1124,7 +1161,7 @@ describe('a marker row is a container with seek controls of its own (T67)', () =
 
   it('gives up the keyboard focus after a seek from the row, so Space still means play/pause', async () => {
     const user = userEvent.setup();
-    const { container, controller } = openPage();
+    const { container, controller } = openTwoMarkPage();
     await waitForPlayerSettled();
     act(() => controller.emitPlayback({ duration: 372 }));
 
@@ -1142,7 +1179,11 @@ describe('a marker row is a container with seek controls of its own (T67)', () =
     expect(controller.togglePlay).toHaveBeenCalledTimes(1);
 
     // The clock is the row's other seek, and it gives the focus up the same
-    // way: the rule belongs to the seek, not to one of the two controls.
+    // way: the rule belongs to the seek, not to one of the two controls. The
+    // row has to be off the playhead for it to have a clock at all (T68) — the
+    // active row reads through its field, and a field is not a seek — so the
+    // playhead is moved away first, which puts the clock back.
+    act(() => controller.seek(50));
     await user.click(rowControl(row, '00:10'));
     expect(controller.getCurrentTime()).toBe(10);
     expect(row.contains(document.activeElement)).toBe(false);
@@ -1169,6 +1210,242 @@ describe('a marker row is a container with seek controls of its own (T67)', () =
     act(() => controller.seek(50));
     await user.click(row);
     expect(controller.getCurrentTime()).toBe(10);
+  });
+});
+
+describe('the exact time moves into the active row (T68)', () => {
+  it('reads the active row to the millisecond where its clock was, and every other row in seconds', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openTwoMarkPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    // Before: nothing is being corrected — the playhead is on no row at all,
+    // having reached neither mark — so every row reads in whole seconds and no
+    // row offers a field.
+    expect(markerTimes(container)).toEqual(['00:10', '00:20']);
+    expect(container.querySelector('.markings-row-time')).toBeNull();
+
+    await user.click(markerRows(container)[0]);
+
+    // The row the playhead is on reads to the millisecond, in the slot its
+    // clock occupied: the field stands exactly where the clock was — behind the
+    // alias, ahead of the trash — so the row is laid out identically in both
+    // states and nothing moves as the playhead arrives on it.
+    const row = markerRows(container)[0];
+    const field = timeField(container);
+    expect(row.contains(field)).toBe(true);
+    expect(field).toHaveValue('00:10.000');
+    expect(row.querySelector('.player-marker-time')).toBeNull();
+    expect(field.nextElementSibling).toHaveClass('markings-delete');
+
+    // A row shows one reading at a time and never both, and the page carries
+    // exactly one millisecond reading: the one being corrected.
+    expect(markerTimes(container)).toEqual(['00:20']);
+    expect(container.querySelectorAll('.markings-row-time')).toHaveLength(1);
+  });
+
+  it('leaves the block below the row its controls and nothing left to read', async () => {
+    const user = userEvent.setup();
+    const { container } = openTwoMarkPage();
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+
+    // The block is the row's correction surface still — the group a reader
+    // hears named for the row it corrects — but the row's time is not in it any
+    // more. The row above holds the field, and the nudges below keep their
+    // place, which is where a correction is made.
+    const block = screen.getByRole('group', { name: 'Correct marker A' });
+    expect(block.querySelector('.markings-row-time')).toBeNull();
+    expect(within(block).queryByRole('textbox')).toBeNull();
+    expect(within(block).getByRole('button', { name: '−0.1s' })).toBeInTheDocument();
+    expect(within(block).getByRole('button', { name: '+0.1s' })).toBeInTheDocument();
+  });
+
+  it('lands a mark just placed on the row carrying the field', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openTwoMarkPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(120));
+
+    await user.click(screen.getByRole('button', { name: 'Add marker' }));
+
+    // Placing a mark pays for itself: the mark lands active the instant it
+    // exists, so the field is already on the mark just placed rather than on
+    // the one before it.
+    const rows = markerRows(container);
+    expect(rows).toHaveLength(3);
+    const field = timeField(container);
+    expect(rows[2].contains(field)).toBe(true);
+    expect(field).toHaveValue('02:00.000');
+  });
+
+  it('corrects a movement in its own header, the field in the slot its jump had', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 1800 }));
+
+    // Neither boundary is being corrected yet: each header shows its clock, and
+    // the clock is the header's jump.
+    const headers = container.querySelectorAll<HTMLElement>('.markings-movement-header');
+    expect(headers[0].querySelector('.markings-row-time')).toBeNull();
+    expect(movementJumps(container)).toHaveLength(2);
+
+    await user.click(movementJumps(container)[0]);
+
+    // The boundary the playhead is standing on reads to the millisecond in its
+    // own header, in the slot its clock occupied — and the jump gives way to
+    // it, as the clock in a mark's row does: the playhead is already there.
+    const header = container.querySelectorAll<HTMLElement>('.markings-movement-header')[0];
+    expect(within(header).getByLabelText('Time for movement I. Allegro')).toHaveValue('00:15.000');
+    expect(header.querySelector('.markings-movement-jump')).toBeNull();
+    expect(header.querySelector('.player-marker-time')).toBeNull();
+
+    // The movement next door is untouched: still its clock, still its jump,
+    // and still no field — one correction on the page, on one row.
+    const other = container.querySelectorAll<HTMLElement>('.markings-movement-header')[1];
+    expect(within(other).getByRole('button', { name: '13:51' })).toBeInTheDocument();
+    expect(movementJumps(container)).toHaveLength(1);
+    expect(container.querySelectorAll('.markings-row-time')).toHaveLength(1);
+  });
+
+  it('rings the block’s own row under the band, and holds it there for the caret', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 1800 }));
+
+    await user.click(movementJumps(container)[0]);
+
+    // A movement's correction is two rows on the page: the field is up in the
+    // band (T68), and the ring is on the block's own `<li>` under it (T64). The
+    // ring is what the reveal looks for, and the row it rings has to be one in
+    // flow: the band is sticky, and a sticky row's box is clipped to the band it
+    // is pinned in, so a reveal aimed at the band measures nothing and leaves
+    // the list where it is.
+    const list = container.querySelector('.player-marker-list') as HTMLElement;
+    // The first header is movement I's — the leading group has no movement, and
+    // so no band of its own.
+    const bandRow = container.querySelector('.markings-movement-header')!.closest('li') as HTMLElement;
+    const blockRow = container.querySelector('li.correcting') as HTMLElement;
+    expect(bandRow).toHaveClass('player-marker-movement');
+    expect(blockRow).not.toHaveClass('player-marker-movement');
+    expect(blockRow).toBe(bandRow.nextElementSibling);
+
+    // The field the student types into is in the band above it.
+    const field = timeField(container);
+    expect(bandRow.contains(field)).toBe(true);
+
+    // And while the caret is in it the row is held: the playhead running on to
+    // a later mark moves the field, the ring, and the list nowhere. The block's
+    // row is stubbed far down the list, so a reveal that did run would move it.
+    stubRevealGeometry(list, blockRow, {
+      scrollTop: 200,
+      clientHeight: 320,
+      scrollHeight: 2000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 900,
+      rowBottom: 930,
+    });
+    await user.click(field);
+    act(() => controller.emitPlayback({ currentTime: 900 }));
+    expect(timeField(container)).toBe(field);
+    expect(correctingRow(container)).toBe(blockRow);
+    expect(list.scrollTop).toBe(200);
+  });
+
+  it('reveals a row inside a movement below the band that stands over it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 1800 }));
+
+    // The row the reveal follows is a row in flow inside a group — a mark's, or
+    // the block's when the playhead is on a boundary — and the movement's band
+    // stands over it. The reveal aims that row at the top of the list *below*
+    // the band's own height, or the band would cover the row just revealed. The
+    // band is what the inset is measured from, which is the other reason it can
+    // never be the row revealed.
+    const list = container.querySelector('.player-marker-list') as HTMLElement;
+    const bandRow = container.querySelector('.markings-movement-header')!.closest('li') as HTMLElement;
+    const rows = markerRows(container).map((row) => row.closest('li') as HTMLElement);
+    stubRevealGeometry(list, bandRow, {
+      scrollTop: 200,
+      clientHeight: 320,
+      scrollHeight: 2000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 100,
+      rowBottom: 130,
+    });
+    stubRevealGeometry(list, rows[1], {
+      scrollTop: 200,
+      clientHeight: 320,
+      scrollHeight: 2000,
+      listTop: 100,
+      listBottom: 420,
+      rowTop: 900,
+      rowBottom: 930,
+    });
+
+    // The 20s mark, which is the one inside movement I.
+    await user.click(markerRows(container)[1]);
+
+    expect(correctingRow(container)).toBe(rows[1]);
+    // 900 against the list's top at 100 and the band's 30: the row lands at the
+    // top of the band the list can show, not under the band.
+    expect(list.scrollTop).toBe(970);
+  });
+
+  it('gives the clock and the field one slot of one rendered size', () => {
+    // "Nothing in the row moves when the playhead arrives" is a claim about
+    // layout, and jsdom computes none — so it is read off the stylesheet, where
+    // it is made. One rule sizes all four occupants of the slot (a mark's clock
+    // and field, a movement's jump and field), so the two states cannot drift
+    // apart by being sized in two places.
+    expect(markingsCss).toMatch(
+      /\.markings-row \.player-marker-time,\s*\.markings-row \.markings-row-time,\s*\.markings-movement-header \.markings-movement-jump,\s*\.markings-movement-header \.markings-row-time \{[^}]*box-sizing:\s*border-box;[^}]*width:\s*var\(--markings-clock-slot\);[^}]*text-align:\s*right;/,
+    );
+    // And one size for it to be: the widest reading a recording can hold,
+    // h:mm:ss.mmm, declared once.
+    expect(markingsCss).toMatch(/--markings-clock-slot:\s*104px;/);
+
+    // The field declares no width of its own — which is the mistake the ticket
+    // names: 96px of content plus 12px of padding and 2px of border renders
+    // 110px, wider than any clock it is meant to share a slot with. Its own
+    // rule, at the start of a line, so the slot rule above is not what is read.
+    expect(markingsCss).toMatch(/\n\.markings-row-time \{[^}]*padding:\s*4px 6px;/);
+    expect(markingsCss).not.toMatch(/\n\.markings-row-time \{[^}]*width:/);
+
+    // Neither clock is a field, and neither shows an edge, so each takes the
+    // field's right inset — 6px of padding and 1px of border — in transparent
+    // space. Both, because a movement's header shares this slot too: one of
+    // them keeping a bare `border: 0` would put that header's digits 1px left
+    // of its own field's.
+    expect(markingsCss).toMatch(
+      /\.markings-row \.player-marker-time \{[^}]*padding:\s*0 6px;[^}]*border:\s*1px solid transparent;/,
+    );
+    expect(markingsCss).toMatch(
+      /\n\.markings-movement-jump \{[^}]*border:\s*1px solid transparent;/,
+    );
+
+    // The passed row's accent reaches the field as it reached the clock it
+    // replaces — the active row is usually the passed one, and it is the one
+    // row whose reading is not a clock (T68).
+    expect(markingsCss).toMatch(/li\.passed \.markings-row-time \{[^}]*color:\s*#0f766e;/);
   });
 });
 
@@ -1216,10 +1493,13 @@ describe('the alias sits beside the label, text until its row is active (T69)', 
     const field = aliasField(container);
     expect(field).toHaveValue('');
     expect(field).not.toHaveAttribute('placeholder');
-    expect(rowReading(unnamed)).toEqual(['B', '', '00:20']);
+    // The row the playhead is on reads its time to the millisecond, in the slot
+    // its clock occupied (T68): the clock it had as a row of the list is gone.
+    expect(rowReading(unnamed)).toEqual(['B', '', '00:20.000']);
 
-    // And the named row is text still: one field in the list, on the row the
-    // playhead is on, and the row that has one reads it beside its label.
+    // And the named row is text still, and still a clock: one field in the list,
+    // on the row the playhead is on, and the row that has one reads it beside
+    // its label.
     expect(rowReading(named)).toEqual(['A', 'Meno', '00:10']);
   });
 
@@ -1262,7 +1542,9 @@ describe('the alias sits beside the label, text until its row is active (T69)', 
 
     await waitFor(() => expect(api.get('p1')?.markers[1].aliases).toEqual(['Recap']));
     // Leaving the field commits it, and the row reads the name it now holds.
-    expect(rowReading(row)).toEqual(['B', 'Recap', '00:20']);
+    // It is the row the playhead is on — the jump put it there — so its time
+    // reads to the millisecond in the field that took the clock's slot (T68).
+    expect(rowReading(row)).toEqual(['B', 'Recap', '00:20.000']);
   });
 
   it('reports a name the domain refuses beside the row, and puts the row back to the name it holds', async () => {
@@ -1279,8 +1561,9 @@ describe('the alias sits beside the label, text until its row is active (T69)', 
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/at most 16 characters/i);
     // The list never shows a name the record does not have: the row reads the
-    // name the mark holds, not the text that was refused.
-    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10']);
+    // name the mark holds, not the text that was refused — and, still being the
+    // row the playhead is on, it reads its time to the millisecond (T68).
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10.000']);
     expect(api.get('p1')?.markers[0].aliases).toEqual(['Meno']);
   });
 
@@ -1304,9 +1587,13 @@ describe('the alias sits beside the label, text until its row is active (T69)', 
     expect(field).toHaveValue('Recap');
     expect(correctingRow(container)).toBe(markerRows(container)[0].closest('li'));
 
-    // Leaving the field hands the row back to the playhead, which has moved on
-    // to the next mark — and the name was committed on the way out, as it
-    // always is.
+    // Leaving the row's fields hands the row back to the playhead, which has
+    // moved on to the next mark — and the name was committed on the way out, as
+    // it always is. The row's own fields are adjacent: the exact time took the
+    // slot beside the name (T68), so the caret's first step out of the name is
+    // into the row's other field, and only the second leaves the row.
+    await user.tab();
+    expect(correctingRow(container)).toBe(markerRows(container)[0].closest('li'));
     await user.tab();
     expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
     await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual(['Recap']));
@@ -1327,7 +1614,9 @@ describe('the alias sits beside the label, text until its row is active (T69)', 
     act(() => controller.emitPlayback({ currentTime: 25 }));
 
     expect(correctingRow(container)).toBe(markerRows(container)[0].closest('li'));
-    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10']);
+    // The caret is in the row's time field, so the row reads to the millisecond
+    // (T68) as well as holding the name it was made to hold.
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10.000']);
 
     // Leaving both is leaving the row: the block and the field are the
     // playhead's again, and the row they land on is the mark it has passed.
@@ -1455,7 +1744,9 @@ describe('movements exist, so the letters restart (T58)', () => {
     // group and its mark, then the boundary and its own. The boundary carries
     // the correction block, having been placed where the playhead stands (T64):
     // the block is on the row the playhead is on, and a boundary set by ear is
-    // the row the student has most obviously just made.
+    // the row the student has most obviously just made. It is a row of the list
+    // of its own, under the band — and its own row holds only the nudges now
+    // (T68), the boundary's time being typed into the band above it.
     expect(
       [...container.querySelectorAll('.player-marker-list > li')].map((item) => {
         const header = item.querySelector('.markings-movement-header');
@@ -1463,10 +1754,15 @@ describe('movements exist, so the letters restart (T58)', () => {
           return (header.querySelector('input') as HTMLInputElement).value;
         }
         if (item.classList.contains('player-marker-movement')) return 'before the first movement';
-        if (item.classList.contains('correcting')) return 'the correction block';
+        if (item.querySelector('.markings-correct') !== null) return 'the correction block';
         return item.querySelector('.player-marker-title')?.textContent ?? '?';
       }),
     ).toEqual(['before the first movement', 'A', 'Movement 1', 'the correction block', 'A']);
+    // The boundary's own time is where the correction begins (T68): the field
+    // is in the band, in the slot the header's clock occupied, and the block
+    // under it is the nudges.
+    const band = container.querySelector('.markings-movement-header') as HTMLElement;
+    expect(within(band).getByLabelText('Time for movement Movement 1')).toHaveValue('00:15.000');
 
     // And the boundary is authored in earnest, not merely drawn: it is what the
     // server ends up holding once the project is committed.
@@ -1638,9 +1934,12 @@ describe('a movement can be re-timed and deleted (T59)', () => {
     await user.click(movementJumps(container)[1]);
     expect(controller.getCurrentTime()).toBe(831);
     const block = screen.getByRole('group', { name: 'Re-time movement II. Adagio' });
-    // The block reads the boundary's exact time, where the header's own clock
-    // stays the whole-second reading a music stand wants.
-    expect(within(block).getByLabelText('Time for movement II. Adagio')).toHaveValue('13:51.000');
+    // The field reads the boundary's exact time in the header's own clock slot
+    // (T68), where a row that is not being corrected keeps the whole-second
+    // reading a music stand wants. The block below is the nudges alone.
+    expect(block.querySelector('.markings-row-time')).toBeNull();
+    const header = container.querySelectorAll<HTMLElement>('.markings-movement-header')[1];
+    expect(within(header).getByLabelText('Time for movement II. Adagio')).toHaveValue('13:51.000');
 
     const field = timeField(container);
     await user.clear(field);
