@@ -14,6 +14,10 @@ import { fakeProjectsApi } from '../test/projects-fixture';
 import { stubRevealGeometry } from '../test/reveal-fixture';
 import { serverProject } from '../test/server-project-fixture';
 import { waitForPlayerSettled } from '../test/settle-player';
+// jsdom computes no layout, so a fact that is about sizes is a fact about the
+// stylesheet — those tests read it from disk (vitest stubs CSS imports, raw or
+// not, to an empty string), the way Player's narrow-viewport tests do.
+const markingsCss = readFileSync('src/ui/markings.css', 'utf8');
 
 /**
  * The markings page (T55), driven at the app-level seam: `renderApp` serves the
@@ -23,10 +27,6 @@ import { waitForPlayerSettled } from '../test/settle-player';
  * has — the page, its session, and the server surface together — and the one
  * the save-mode split will be observable at (T56).
  */
-
-// jsdom computes no layout, so what the row is *laid out* as is a CSS fact —
-// read the stylesheet from disk, the way the read-only view's width test does.
-const markingsCss = readFileSync('src/ui/markings.css', 'utf8');
 
 /** Narrows a captured `load` call's options to the YouTube arm. */
 function youtubeLoad(options: LoadOptions): Extract<LoadOptions, { source: 'youtube' }> {
@@ -99,9 +99,58 @@ function rowTimes(container: HTMLElement): string[] {
   );
 }
 
-/** The alias fields, in DOM order — one per row, on the authoring rows. */
-function aliasFields(container: HTMLElement): HTMLInputElement[] {
-  return Array.from(container.querySelectorAll<HTMLInputElement>('.markings-row-alias'));
+/**
+ * The alias field the list holds — the one the active row carries (T69). A row
+ * is a form only while the playhead is on it, so there is exactly one at a time
+ * and this is it.
+ */
+function aliasField(container: HTMLElement): HTMLInputElement {
+  const field = container.querySelector<HTMLInputElement>('.markings-row-alias');
+  if (field === null) throw new Error('No alias field — no row is the active one.');
+  return field;
+}
+
+/**
+ * What a row reads, in the order it reads it (T69): its label, the name beside
+ * it, and its time. The middle one is a field on the active row and plain text
+ * on every other row; this reads whichever is there, so the two states are
+ * compared as a reader meets them rather than as two markups.
+ *
+ * The third one is a field on the active row too — the exact time took the slot
+ * its clock occupied (T68) — and the clock every other row still carries, so the
+ * time is read the way `rowTimes` reads it for the whole list: whichever of the
+ * two the row is in.
+ *
+ * Every row reads three things, a row with no name included: the slot is what
+ * holds the clock off the label, and it is there whether or not it has anything
+ * in it. What it *renders* as is the stylesheet's business and is not asserted
+ * here; that it is there at all is what the row's shape says for itself.
+ */
+function rowReading(row: HTMLElement): [string, string, string] {
+  const field = row.querySelector<HTMLInputElement>('.markings-row-time');
+  return [
+    readPart(row, '.player-marker-title'),
+    readPart(row, '.markings-alias-slot'),
+    field !== null ? field.value : readPart(row, '.player-marker-time'),
+  ];
+}
+
+/** The first `selector` in the row, as it reads — a field by its value, anything else by its text. */
+function readPart(row: HTMLElement, selector: string): string {
+  const part = row.querySelector(selector);
+  if (part === null) throw new Error(`The row reads no ${selector}.`);
+  return part instanceof HTMLInputElement ? part.value : (part.textContent ?? '');
+}
+
+/**
+ * One rule's declarations from the markings stylesheet, by its class selector.
+ * For the slot's tests, which assert what a box is *made of* — the one thing
+ * about a size that a test can hold jsdom to.
+ */
+function ruleBody(selector: string): string {
+  const match = markingsCss.match(new RegExp(`${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`));
+  if (match === null) throw new Error(`markings.css has no rule for ${selector}.`);
+  return match[1];
 }
 
 /**
@@ -435,21 +484,26 @@ describe('a mark can be placed, named and removed (T56)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
     await waitForPlayerSettled();
 
-    const fields = aliasFields(container);
-    expect(fields).toHaveLength(2);
-    await user.type(fields[0], 'Meno');
+    // The name is read and written on the row the playhead is on (T69), so the
+    // row is jumped to first: naming a mark is a jump and then an edit.
+    await user.click(markerRows(container)[0]);
+    const field = aliasField(container);
+    await user.type(field, 'Meno');
     await user.tab();
 
     await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual(['Meno']));
-    expect(fields[0]).toHaveValue('Meno');
+    // The row reads the name beside its label, where it is read — and it is the
+    // active row, so its time reads to the millisecond in the field the clock
+    // gave way to (T68).
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10.000']);
     // An alias is a name, not a mark: typing into the field placed nothing.
     expect(markerRows(container)).toHaveLength(2);
 
-    await user.clear(fields[0]);
+    await user.clear(aliasField(container));
     await user.tab();
 
     await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual([]));
-    expect(fields[0]).toHaveValue('');
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', '', '00:10.000']);
   });
 
   it('refuses an alias that breaks a rule, with the domain’s own guidance', async () => {
@@ -460,7 +514,9 @@ describe('a mark can be placed, named and removed (T56)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
     await waitForPlayerSettled();
 
-    const field = aliasFields(container)[0];
+    // The row the playhead is on is the one that carries the field (T69).
+    await user.click(markerRows(container)[0]);
+    const field = aliasField(container);
     // Longer than the domain's 16 characters.
     await user.type(field, 'seventeen chars!!');
     await user.tab();
@@ -481,20 +537,24 @@ describe('a mark can be placed, named and removed (T56)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
     await waitForPlayerSettled();
 
-    const [first, second] = aliasFields(container);
+    await user.click(markerRows(container)[0]);
+    const first = aliasField(container);
     await user.type(first, 'seventeen chars!!');
     await user.tab();
     expect(await screen.findByRole('alert')).toHaveTextContent(/at most 16 characters/i);
 
     // A rule broken on one mark is that mark's complaint. Naming a different
     // one successfully says nothing about it, so the refusal outlives it —
-    // otherwise the refused text sits in its field unexplained.
-    await user.type(second, 'Recap');
+    // otherwise the refused text sits in its field unexplained. Naming another
+    // mark is a jump to its row first (T69), which is also how its field
+    // appears at all.
+    await user.click(markerRows(container)[1]);
+    await user.type(aliasField(container), 'Recap');
     await user.tab();
 
     await waitFor(() => expect(api.get('p1')?.markers[1].aliases).toEqual(['Recap']));
     expect(screen.getByRole('alert')).toHaveTextContent(/at most 16 characters/i);
-    expect(first).toHaveValue('');
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', '', '00:10']);
   });
 
   it('removes a mark that was a mistake', async () => {
@@ -999,7 +1059,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 
     // A bracket aimed at a text field is the field's, not a nudge — the gesture
     // is a shortcut only where there is no field to type into.
-    const alias = aliasFields(container)[0];
+    const alias = aliasField(container);
     alias.focus();
     fireEvent.keyDown(alias, { key: '[' });
     fireEvent.keyDown(timeField(container), { key: ']' });
@@ -1062,20 +1122,14 @@ describe('a marker row is a container with seek controls of its own (T67)', () =
     expect(controller.getCurrentTime()).toBe(10);
   });
 
-  it('leaves the row’s own controls their clicks — a field and the trash do only their own thing', async () => {
+  it('leaves the row’s own controls their clicks — the trash does only its own thing', async () => {
     const user = userEvent.setup();
-    const { api, container, controller } = openTwoMarkPage();
+    const { api, controller } = openTwoMarkPage();
     await waitForPlayerSettled();
     act(() => controller.emitPlayback({ duration: 372 }));
     // The playhead somewhere that is not a mark, so a jump to one would be
     // visible as a change rather than as the playhead already standing there.
     act(() => controller.seek(50));
-
-    // A field inside the row takes the caret, and the recording stays put.
-    const alias = aliasFields(container)[0];
-    await user.click(alias);
-    expect(alias).toHaveFocus();
-    expect(controller.getCurrentTime()).toBe(50);
 
     // The trash deletes, and does not also jump the recording to the mark it
     // has just destroyed.
@@ -1392,6 +1446,266 @@ describe('the exact time moves into the active row (T68)', () => {
     // replaces — the active row is usually the passed one, and it is the one
     // row whose reading is not a clock (T68).
     expect(markingsCss).toMatch(/li\.passed \.markings-row-time \{[^}]*color:\s*#0f766e;/);
+  });
+});
+
+describe('the alias sits beside the label, text until its row is active (T69)', () => {
+  /** The page on a private project with a named mark at 10s and an unnamed one at 20s. */
+  function openPage() {
+    const api = fakeProjectsApi();
+    api.seed(
+      project({ visibility: 'private', markers: [marker('m1', 10, ['Meno']), marker('m2', 20)] }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    return renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+  }
+
+  it('reads the name beside the label on every row, and is text until the playhead is on it', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    // The name is read where the label is — the two things that name a mark,
+    // one after the other, rather than at opposite ends of the row with the
+    // clock wedged between them. A row with no name reads the same three
+    // things with the middle one empty, because the slot is what holds the
+    // clock off the label and is there whether or not it has anything in it.
+    const [named, unnamed] = markerRows(container);
+    expect(rowReading(named)).toEqual(['A', 'Meno', '00:10']);
+    expect(rowReading(unnamed)).toEqual(['B', '', '00:20']);
+
+    // The whole name is still reachable where the slot ellipsises it: the
+    // browsing row's own span carries the whole reading in a title, and making
+    // the row active to read the rest of a name would move the recording.
+    expect(named.querySelector('.markings-alias-slot')).toHaveAttribute('title', 'Meno');
+    // An empty name is an empty slot, and says nothing on hover either.
+    expect(unnamed.querySelector('.markings-alias-slot')).not.toHaveAttribute('title');
+
+    // The playhead is nowhere, so no row is a form: there is nothing in the
+    // list to type into at all.
+    expect(container.querySelector('.markings-row-alias')).toBeNull();
+
+    // The playhead lands on the unnamed row, and that row becomes the field —
+    // seeded empty, and empty means empty: no hint stands in for a name.
+    await user.click(unnamed);
+    expect(controller.getCurrentTime()).toBe(20);
+    const field = aliasField(container);
+    expect(field).toHaveValue('');
+    expect(field).not.toHaveAttribute('placeholder');
+    // The row the playhead is on reads its time to the millisecond, in the slot
+    // its clock occupied (T68): the clock it had as a row of the list is gone.
+    expect(rowReading(unnamed)).toEqual(['B', '', '00:20.000']);
+
+    // And the named row is text still, and still a clock: one field in the list,
+    // on the row the playhead is on, and the row that has one reads it beside
+    // its label.
+    expect(rowReading(named)).toEqual(['A', 'Meno', '00:10']);
+  });
+
+  it('jumps the recording from the name itself, which is text and not a control', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(50));
+
+    // The name on a row the playhead is not on is part of the row's own seek
+    // surface, like the padding around it: a student who has read a name and
+    // wants to hear the mark clicks the name. The field it becomes on the
+    // active row takes the caret instead — that is the row's own suite above.
+    const named = markerRows(container)[0];
+    await user.click(within(named).getByText('Meno'));
+    expect(controller.getCurrentTime()).toBe(10);
+  });
+
+  it('names a mark by jumping to its row and typing, and the mark holds the name afterwards', async () => {
+    const user = userEvent.setup();
+    const { api, container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(50));
+
+    // Naming a mark is a jump and then an edit: the row is a seek target, so
+    // the click that makes it the row being worked on is also the click that
+    // moves the recording to it. That is the price of a row that is a form
+    // only while it is the row being worked on, and it is paid here.
+    const row = markerRows(container)[1];
+    await user.click(row);
+    expect(controller.getCurrentTime()).toBe(20);
+
+    const field = aliasField(container);
+    await user.click(field);
+    expect(field).toHaveFocus();
+    await user.type(field, 'Recap');
+    await user.tab();
+
+    await waitFor(() => expect(api.get('p1')?.markers[1].aliases).toEqual(['Recap']));
+    // Leaving the field commits it, and the row reads the name it now holds.
+    // It is the row the playhead is on — the jump put it there — so its time
+    // reads to the millisecond in the field that took the clock's slot (T68).
+    expect(rowReading(row)).toEqual(['B', 'Recap', '00:20.000']);
+  });
+
+  it('reports a name the domain refuses beside the row, and puts the row back to the name it holds', async () => {
+    const user = userEvent.setup();
+    const { api, container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    await user.click(markerRows(container)[0]);
+    const field = aliasField(container);
+    // Longer than the domain's 16 characters.
+    await user.type(field, 'seventeen chars!!');
+    await user.tab();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at most 16 characters/i);
+    // The list never shows a name the record does not have: the row reads the
+    // name the mark holds, not the text that was refused — and, still being the
+    // row the playhead is on, it reads its time to the millisecond (T68).
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10.000']);
+    expect(api.get('p1')?.markers[0].aliases).toEqual(['Meno']);
+  });
+
+  it('keeps the row while a name is being typed, so the playhead cannot take the typing with it', async () => {
+    const user = userEvent.setup();
+    const { api, container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    await user.click(markerRows(container)[0]);
+    const field = aliasField(container);
+    await user.click(field);
+    await user.clear(field);
+    await user.type(field, 'Recap');
+
+    // Half a name in, and the caret is in the row's own field — so the row is
+    // the one being worked on whatever the playhead does: the mark going by
+    // cannot unmount the field and take what has been typed with it.
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+    expect(aliasField(container)).toBe(field);
+    expect(field).toHaveValue('Recap');
+    expect(correctingRow(container)).toBe(markerRows(container)[0].closest('li'));
+
+    // Leaving the row's fields hands the row back to the playhead, which has
+    // moved on to the next mark — and the name was committed on the way out, as
+    // it always is. The row's own fields are adjacent: the exact time took the
+    // slot beside the name (T68), so the caret's first step out of the name is
+    // into the row's other field, and only the second leaves the row.
+    await user.tab();
+    expect(correctingRow(container)).toBe(markerRows(container)[0].closest('li'));
+    await user.tab();
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
+    await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual(['Recap']));
+  });
+
+  it('keeps the row when the caret moves between its two fields, and lets go when it leaves both', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    await user.click(markerRows(container)[0]);
+    await user.click(aliasField(container));
+    // The caret steps to the row's other field — the one that gives the mark
+    // its time — with the playhead running on. One edit in two fields is one
+    // row being worked on, not two.
+    await user.click(timeField(container));
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+
+    expect(correctingRow(container)).toBe(markerRows(container)[0].closest('li'));
+    // The caret is in the row's time field, so the row reads to the millisecond
+    // (T68) as well as holding the name it was made to hold.
+    expect(rowReading(markerRows(container)[0])).toEqual(['A', 'Meno', '00:10.000']);
+
+    // Leaving both is leaving the row: the block and the field are the
+    // playhead's again, and the row they land on is the mark it has passed.
+    await user.tab();
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
+    expect(aliasField(container)).toHaveValue('');
+  });
+
+  it('leaves a click into the name field to the field — a caret, and not a jump', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(50));
+
+    // The row is a seek target everywhere but in its controls, and on the row
+    // the caret is holding, the widest thing in it is the name field. So the
+    // guard that keeps a control's click its own is the only thing between a
+    // name being edited and the recording being jumped back to the mark it
+    // belongs to — and the playhead has moved on to B, so a jump would show.
+    await user.click(markerRows(container)[0]);
+    await user.click(aliasField(container));
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+
+    await user.click(timeField(container));
+    await user.click(aliasField(container));
+    expect(aliasField(container)).toHaveFocus();
+    expect(controller.getCurrentTime()).toBe(25);
+  });
+
+  it('leaves a movement’s own name a field whatever the playhead is doing', async () => {
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // A movement's name is a control the surface exists to set, not a name the
+    // row is *read* by, so it does not wait for the playhead the way an alias
+    // does — and the panel's marker rows, which do, offer no field at all.
+    const names = movementNameFields(container);
+    expect(names).toHaveLength(2);
+    expect(names[0]).toHaveValue('I. Allegro');
+    expect(container.querySelector('.markings-row-alias')).toBeNull();
+  });
+});
+
+describe('the alias slot is one box in two shapes (T69)', () => {
+  it('gives the text and the field one box, so neither state moves the row', () => {
+    // jsdom measures nothing, so the two shapes rendering the same size is a
+    // CSS fact. The two are different kinds of element — a `span` and a text
+    // `input` — so both wear `.markings-alias-slot`, which declares the box
+    // itself: `border-box`, so what the rule says is what it renders, and the
+    // text's border transparent rather than absent. The field's own rule may
+    // add ink to that box and nothing else: a field that brought its own
+    // padding would step the clock sideways the moment the playhead arrived.
+    expect(ruleBody('.markings-alias-slot')).toMatch(/box-sizing:\s*border-box;/);
+    const field = ruleBody('.markings-row-alias');
+    expect(field).toMatch(/border-color:/);
+    expect(field).toMatch(/background:/);
+    expect(field).not.toMatch(/padding|border-width|\bwidth|font|line-height/);
+  });
+
+  it('lets the slot shrink to a floor, so the clock and the trash stay on the row', () => {
+    // At the panel's narrowest the row still holds the label, the name, a
+    // millisecond clock and the trash. The slot is the row's grower — it takes
+    // the room the row has, which is what holds the clock off the label on a
+    // row with no name — and it gives way to a floor rather than pushing the
+    // clock off the row.
+    const slot = ruleBody('.markings-alias-slot');
+    expect(slot).toMatch(/flex:\s*1 1 64px;/);
+    expect(slot).toMatch(/min-width:\s*60px;/);
+  });
+
+  it('reads the name in the row’s own face, not a third one', () => {
+    // Nothing above this row declares a font: the app sets a face per element
+    // and never globally, so a row that declares none reads in the document
+    // default — 16px serif — where the practice surface's identical row reads
+    // 15px system-ui. The markings row stopped being a button in T67 and lost
+    // the metrics that came with the button, so the row's own rule states them
+    // again, in the browsing row's words (player.css).
+    const row = ruleBody('.markings-row');
+    expect(row).toMatch(/font:\s*400 15px\/22px system-ui, sans-serif;/);
+    expect(row).toMatch(/color:\s*#334155;/);
+    // And the name beside the label is that same reading at that same size: the
+    // browsing row prints `label — alias` as one line of one face, so the slot
+    // is where that face is declared — it cannot be inherited, because the
+    // field shape takes neither font nor ink from its parent.
+    expect(ruleBody('.markings-alias-slot')).toMatch(/font:\s*400 15px\//);
   });
 });
 

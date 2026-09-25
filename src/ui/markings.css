@@ -98,6 +98,15 @@
   padding: 7px 10px 7px 16px;
   border-radius: 6px;
   cursor: pointer;
+  /* The browsing row's metrics, declared here because nothing above declares
+     any: this app sets a font per element and never globally, so a row that
+     declared none would read in the document default — 16px serif — beside
+     the same row on the practice surface at 15px system-ui. The row stopped
+     being a `<button class="player-marker-row">` in T67 and lost the metrics
+     that came with the button; they are the row's own, so they are stated
+     here, in the browsing row's own words (player.css). */
+  font: 400 15px/22px system-ui, sans-serif;
+  color: #334155;
 }
 
 .markings-row:hover {
@@ -188,31 +197,66 @@
 /* The clock is pushed to the far end of the row, so the room the controls do
    not need becomes the space between them: the row's own wide seek target, and
    where the field is. The field takes the clock's place in that slot (T68), so
-   it is pushed there the same way. */
+   it is pushed there the same way. The alias slot is what grows into that room
+   (T69), which is why this rule pushes and sizes nothing. */
 .markings-row .player-marker-time,
 .markings-row .markings-row-time {
   margin-left: auto;
 }
 
-/* The alias is the one control in the row that gives way. Everything else it
-   shares the row with is a reading the student has to be able to see at its own
-   size — the clock and the field are one slot (T68) and the trash is a glyph —
-   and at the narrowest column the column can be, their widths and the gaps
-   between them come to more than the row holds. The alias is text, so it is the
-   one that gives: it keeps its 96px while there is room and takes the squeeze
-   when there is not. */
-.markings-row-alias {
-  flex: 0 1 96px;
-  min-width: 0;
+/* The alias slot (T69): the one place a mark's own name is read, immediately
+   after the label, and the row's flex grower — so the room the row's controls
+   do not need is the space between the name and the clock rather than a gap
+   that closes on a mark with no name. Every row carries the slot, whether or
+   not it has a name, and that is what keeps every row's clock and trash in one
+   column.
+
+   It is one box in two shapes — the name as plain text, and the field it is
+   typed into on the row the playhead is on — and the two are different kinds of
+   element, a `span` and a text `input`, so the box is *declared* here rather
+   than inherited from either: `border-box`, borders included, the text's border
+   transparent rather than absent, and the field's own rule adding only ink to
+   it. Nothing in the row moves when the playhead arrives, and nothing inside the
+   slot does either, which a field with its own padding could not say. Sizing
+   this class in what it renders also keeps it out of reach of whatever box model
+   the rest of the page is in, and of a user agent's own default for an input.
+
+   Flexible rather than pinned: a fixed slot does not fit the panel's floor
+   beside a millisecond clock and a trash. It takes the room the row has and
+   shrinks to a floor, ellipsising a long name rather than pushing the clock off
+   the row. The alias is the only control in the row that may give way at all —
+   the slot the time occupies is fixed at its full reading (T68) and the trash
+   is a glyph, and both are sized for what they have to show. */
+.markings-alias-slot {
+  box-sizing: border-box;
+  flex: 1 1 64px;
+  /* The floor, rendered: 46px of name, plus the 6px either side and the 1px
+     border declared below. */
+  min-width: 60px;
   padding: 4px 6px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid transparent;
   border-radius: 5px;
-  font: 400 13px/18px system-ui, sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The row's own face at the row's own size, so the name beside the label
+     reads as one line with it — the browsing row prints `label — alias` as one
+     face, and this is the same reading. The face is declared here rather than
+     inherited because the field shape cannot inherit either it or the ink: a
+     form control takes neither from its parent. The line is the field's own
+     height rather than the row's 22px, which keeps the slot — and so every
+     row's own height — what it was before the name moved into it. */
+  font: 400 15px/18px system-ui, sans-serif;
   color: #334155;
 }
 
-.markings-row-alias::placeholder {
-  color: #94a3b8;
+/* The field the name is typed into, on the row the playhead is on (T69): the
+   same slot, in the ink a field is drawn in. It arrives with no placeholder —
+   an empty name is an empty slot, and a hint repeated down the panel would read
+   as content. */
+.markings-row-alias {
+  border-color: #cbd5e1;
+  background: #fff;
 }
 
 .markings-row-alias:focus {
