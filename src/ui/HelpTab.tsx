@@ -173,9 +173,14 @@ export function HelpTab() {
           A correction moves the recording to the time it writes: a nudge, or a committed typed
           time, puts the playhead on the new value — mark and boundary alike — so the row stays
           under the correction that moved it, and the change is heard at once. Nothing else about
-          playback moves, so the recording keeps playing, or stays paused, exactly as it was. The{' '}
-          <strong>−0.1s</strong> and <strong>+0.1s</strong> controls beside the field make the same
-          division.
+          playback moves, so the recording keeps playing, or stays paused, exactly as it was. The
+          four controls under the row make the same division for a pointer, as{' '}
+          <strong>Add marker</strong> is the pointer's <kbd>M</kbd>: <strong>−0.5s</strong> and{' '}
+          <strong>+0.5s</strong> outboard, <strong>−0.1s</strong> and <strong>+0.1s</strong>{' '}
+          between them — a half second in one press, where the tenth takes five — and the tenths
+          stay tenths whatever is held. Hold <kbd>Shift</kbd> and the halves become the whole
+          second the keys take, reading <strong>−1s</strong> and <strong>+1s</strong> while it is
+          down: the label is the step, so no control can show a second and take a half.
         </p>
         <p>
           This page's <kbd>↑</kbd> and <kbd>↓</kbd> are the practice surface's, and they reach a

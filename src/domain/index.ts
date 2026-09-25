@@ -22,6 +22,7 @@ export {
   removeMarker,
   setAliases,
   NUDGE_COARSE_STEP_SECONDS,
+  NUDGE_HALF_STEP_SECONDS,
   NUDGE_STEP_SECONDS,
 } from './markers';
 export { formatTime, formatWholeSeconds, parseTime } from './time';

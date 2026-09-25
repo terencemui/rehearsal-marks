@@ -3,8 +3,10 @@ import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { LabeledMarker } from '../domain';
 import type { Movement } from '../domain';
-import { movementForTime, NUDGE_COARSE_STEP_SECONDS, NUDGE_STEP_SECONDS } from '../domain';
+import { movementForTime } from '../domain';
 import { formatTime, formatWholeSeconds } from '../domain/time';
+import type { NudgeControl } from './nudgeControls';
+import { nudgeControls } from './nudgeControls';
 import { revealDelay, revealScroll } from './revealScroll';
 
 /**
@@ -75,8 +77,8 @@ export interface MarkersAuthoring {
   movementTimeError: { movementId: string; message: string } | null;
   /**
    * Nudges the movement's boundary by `delta` seconds, negative for earlier.
-   * The movement twin of a mark's nudge, and the same steps: a boundary set at
-   * the playhead lands late by reaction time, exactly as a mark does.
+   * The movement twin of a mark's nudge, and the same four steps: a boundary
+   * set at the playhead lands late by reaction time, exactly as a mark does.
    */
   onNudgeMovement(movement: Movement, delta: number): void;
   /**
@@ -121,10 +123,25 @@ export interface MarkersAuthoring {
   onReleasePin(): void;
   /**
    * Nudges the marker by `delta` seconds, negative for earlier. The one action
-   * `[`, `]` and the block's own two controls all take, so a correction is the
-   * same correction however it was made.
+   * `[`, `]` and the block's own controls all take, so a correction is the same
+   * correction however it was made.
    */
   onNudge(marker: LabeledMarker, delta: number): void;
+  /**
+   * Whether `Shift` is held right now, as the keyboard has it (T71) — the state
+   * the correction decks read before a press, so that what a control shows and
+   * what it takes are one reading of one fact.
+   *
+   * It comes from the page rather than from the block, and that is the whole
+   * reason it is here. The block follows the playhead, so it is unmounted from
+   * one row and mounted on the next as the student works through a recording —
+   * and a modifier is a fact about the keyboard, not about the row. A block
+   * that read it once per mount would come back saying `±0.5s` with the key
+   * still down, and a student holding `Shift` for a whole second would take a
+   * half. The page is the surface that stays mounted, so the page is where the
+   * reading lives; the hook that reads the keyboard is `useShiftHeld`.
+   */
+  shiftHeld: boolean;
   /**
    * Commits a typed time for the marker. Returns the time the marker holds once
    * the attempt is over — the exact time on success, the unchanged stored one
@@ -1061,7 +1078,53 @@ function TimeField({ time, seed, label, onCommit, onPin }: TimeFieldProps) {
   );
 }
 
+interface NudgeDeckProps {
+  /** Which deck this is — and so which way its two controls move the row. */
+  side: 'minus' | 'plus';
+  /** The deck's controls, outboard first: the half, then the tenth. */
+  controls: NudgeControl[];
+  /** Nudges the row by `delta` seconds, negative for earlier. */
+  onNudge(delta: number): void;
+}
+
+/**
+ * One of the corrected row's two decks (T71): the two controls that move it one
+ * way, the coarse step outboard of the fine one. Which deck is which is the
+ * class the stylesheet reads — the minus pair sits flush left and the plus pair
+ * flush right, so the row above them reads as the time between the two.
+ *
+ * The controls are named by what they show rather than by a label of their own:
+ * the row they correct is the name of the group around them, and a name that
+ * replaced the visible text would leave the button unaddressable by the words
+ * on it. Their words are also the whole of what they promise, which is why they
+ * carry no title: a tooltip is not something a control can be held to, and the
+ * step is now written on the control that takes it (see `nudgeControls`).
+ */
+function NudgeDeck({ side, controls, onNudge }: NudgeDeckProps) {
+  return (
+    <div className={`markings-nudge-deck markings-nudge-deck-${side}`}>
+      {controls.map((control, position) => (
+        <button
+          // The deck's two controls never swap places, so the position is what
+          // they are. Keying on the label instead would remount a control the
+          // moment `Shift` made its words `±1s` — under a pointer already
+          // reaching for it, which is the one thing the deck is laid out to
+          // avoid.
+          key={position}
+          type="button"
+          className="markings-nudge"
+          onClick={() => onNudge(control.delta)}
+        >
+          {control.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface CorrectionBlockProps {
+  /** Whether `Shift` is held, as the page has read it (T71) — see `MarkersAuthoring`. */
+  shiftHeld: boolean;
   /**
    * The block's own name, as a reader hears it — which row it corrects and what
    * kind of row that is. "Correct marker A" and "Re-time movement II" are both
@@ -1075,12 +1138,19 @@ interface CorrectionBlockProps {
 }
 
 /**
- * The correction block the active row carries (T57, T59, T64): the two nudge
- * controls, and the domain's refusal when it refuses one. One block for both
- * kinds of row, because it is one correction — a boundary placed by ear at the
- * playhead lands late by human reaction time exactly as a mark does, so the two
- * are made exact by the same gesture, in the same steps, and then a tenth of a
- * second apart whether or not they say so the same way.
+ * The correction decks the active row carries (T57, T59, T64, T71): the four
+ * nudge controls, and the domain's refusal when it refuses one. One block for
+ * both kinds of row, because it is one correction — a boundary placed by ear at
+ * the playhead lands late by human reaction time exactly as a mark does, so the
+ * two are made exact by the same gesture, in the same steps, and then a tenth
+ * of a second apart whether or not they say so the same way.
+ *
+ * The four controls come from `nudgeControls`, and the held state they are a
+ * function of is handed in — read once by the page, and passed down, rather
+ * than read by the block itself (T71). The label a control shows and the step
+ * it takes are then the same reading of the same fact, and neither can be said
+ * without the other; the reading itself belongs to the surface that is not
+ * remounted row by row.
  *
  * The row's time used to be read here too; it lives in the row itself now
  * (T68), in the slot its clock occupies, because the correction is made where
@@ -1093,34 +1163,23 @@ interface CorrectionBlockProps {
  * means are all the caller's. A mark's row and a movement's header differ in
  * every one of those and in nothing else.
  */
-function CorrectionBlock({ groupLabel, error, onNudge }: CorrectionBlockProps) {
+function CorrectionBlock({ shiftHeld, groupLabel, error, onNudge }: CorrectionBlockProps) {
+  const controls = nudgeControls(shiftHeld);
   return (
     // The group is named for the row it corrects, so the block is not a set of
     // loose controls in a long list — a reader hears which row they have picked
     // out, and what they may do to it.
     <div className="markings-correct" role="group" aria-label={groupLabel}>
-      {/* The controls are named by what they show, not by a label of their own:
-          the row they correct is already the name of the group around them, and
-          a name that replaced the visible text would leave the button
-          unaddressable by the words on it. */}
-      <button
-        type="button"
-        className="markings-nudge"
-        title="Shift-click to nudge a whole second"
-        onClick={(event) =>
-          onNudge(event.shiftKey ? -NUDGE_COARSE_STEP_SECONDS : -NUDGE_STEP_SECONDS)
-        }
-      >
-        −0.1s
-      </button>
-      <button
-        type="button"
-        className="markings-nudge"
-        title="Shift-click to nudge a whole second"
-        onClick={(event) => onNudge(event.shiftKey ? NUDGE_COARSE_STEP_SECONDS : NUDGE_STEP_SECONDS)}
-      >
-        +0.1s
-      </button>
+      <NudgeDeck
+        side="minus"
+        controls={controls.filter((control) => control.direction < 0)}
+        onNudge={onNudge}
+      />
+      <NudgeDeck
+        side="plus"
+        controls={controls.filter((control) => control.direction > 0)}
+        onNudge={onNudge}
+      />
       {error !== null && (
         // The domain's own sentence, inside the block that holds the field that
         // caused it.
@@ -1138,7 +1197,8 @@ interface MovementCorrectionProps {
 }
 
 /**
- * The movement being re-timed (T59): its start, and the nudges that follow it.
+ * The movement being re-timed (T59): its decks, under the header that holds the
+ * field it is re-timed in (T68).
  *
  * What the domain refuses here is not a nonsense time, as it is for a mark, but
  * a real one that lands on or past a neighbour — and its guidance says which
@@ -1148,6 +1208,7 @@ interface MovementCorrectionProps {
 function MovementCorrection({ movement, authoring }: MovementCorrectionProps) {
   return (
     <CorrectionBlock
+      shiftHeld={authoring.shiftHeld}
       groupLabel={`Re-time movement ${movement.name}`}
       error={
         authoring.movementTimeError?.movementId === movement.id
@@ -1219,13 +1280,14 @@ interface MarkerRowProps {
  *
  * The mark's exact time (T68) is read and typed in the slot the clock occupies,
  * on the row itself — so the correction is made where the time is read. The row
- * the block is on (T57, T64) then grows the `CorrectionBlock` under it: the two
- * nudge controls and the domain's refusal, which it also serves for a movement's
- * boundary. It is a sibling of the row container and not part of it, so the decks
- * are the correction's own surface: a click on one of their controls is that
- * control's, and never the row's. Everything else about the row is unchanged, so
- * the mark being corrected is still read, and still jumped to, as the mark it was
- * a moment ago — minus the clock, which the field has taken the place of.
+ * the block is on (T57, T64) then grows the `CorrectionBlock` under it: the four
+ * nudge controls in their two decks, and the domain's refusal, which it also
+ * serves for a movement's boundary. It is a sibling of the row container and not
+ * part of it, so the decks are the correction's own surface: a click on one of
+ * their controls is that control's, and never the row's. Everything else about
+ * the row is unchanged, so the mark being corrected is still read, and still
+ * jumped to, as the mark it was a moment ago — minus the clock, which the field
+ * has taken the place of.
  */
 function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: MarkerRowProps) {
   const storedAlias = marker.aliases[0] ?? '';
@@ -1404,6 +1466,7 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
       )}
       {carrying && authoring !== undefined && (
         <CorrectionBlock
+          shiftHeld={authoring.shiftHeld}
           groupLabel={`Correct marker ${marker.label}`}
           error={timeError}
           onNudge={(delta) => authoring.onNudge(marker, delta)}

@@ -223,9 +223,32 @@ function timeField(container: HTMLElement): HTMLInputElement {
   return field;
 }
 
-/** One of the corrected row's nudge controls, by the words it shows. */
-function nudgeControl(direction: 'earlier' | 'later'): HTMLElement {
-  return screen.getByRole('button', { name: direction === 'earlier' ? '−0.1s' : '+0.1s' });
+/**
+ * One of the corrected row's nudge controls, by the words it shows — which is
+ * the whole of what it promises, and what a student reads before pressing it
+ * (T71). The halves read the step they are about to take, so a test asking for
+ * `−1s` is asking for the control a held `Shift` has already named.
+ */
+function nudgeControl(label: string): HTMLElement {
+  return screen.getByRole('button', { name: label });
+}
+
+/**
+ * The correction's four steps, in the order the strip reads them: `−0.5s`,
+ * `−0.1s`, `+0.1s`, `+0.5s`.
+ *
+ * Read the way a student reads them — off the words on the controls, in the
+ * order the document offers them — and reached through the group the block puts
+ * around them, which is named for the row it corrects. The reading is the
+ * behaviour and is asserted as such; how the four are laid out, the two decks
+ * and the width that does not move under the finger, is the stylesheet's
+ * business and is asserted there.
+ */
+function nudgeSteps(): string[] {
+  const block = screen.getByRole('group', { name: /^(Correct marker|Re-time movement) / });
+  return within(block)
+    .getAllByRole('button')
+    .map((button) => button.textContent ?? '');
 }
 
 /**
@@ -236,7 +259,14 @@ function nudgeControl(direction: 'earlier' | 'later'): HTMLElement {
 function pressNudge(key: '[' | ']', shift = false): void {
   // A real keyboard reports the shifted character — Shift+[ arrives as "{".
   const shifted = key === '[' ? '{' : '}';
+  // The modifier goes down and comes up like a real one's (T71): the decks read
+  // the state of the keyboard rather than the state of the click, so a `Shift`
+  // pressed and never released would leave them promising `±1s` to the rest of
+  // the test — and the key's own step is read off the key, so releasing it
+  // takes nothing away from the press.
+  if (shift) fireEvent.keyDown(window, { key: 'Shift', shiftKey: true });
   fireEvent.keyDown(window, { key: shift ? shifted : key, shiftKey: shift });
+  if (shift) fireEvent.keyUp(window, { key: 'Shift' });
 }
 
 describe('the markings page opens on a project and plays it (T55)', () => {
@@ -656,7 +686,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     expect(controller.getCurrentTime()).toBeCloseTo(10.1);
   });
 
-  it('nudges a whole second with Shift, and both controls carry the same step', async () => {
+  it('nudges a whole second with Shift from the keys, and the pointer has its own four steps', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
@@ -666,24 +696,33 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 
     await user.click(markerRows(container)[0]);
 
+    // The keys are unchanged by the decks (T71): a tenth, and a whole second
+    // with Shift — the widened step they have always taken.
     pressNudge(']', true);
     expect(await screen.findByDisplayValue('00:11.000')).toBeInTheDocument();
 
     pressNudge('[', true);
     expect(await screen.findByDisplayValue('00:10.000')).toBeInTheDocument();
 
-    // The pointer's way to the same two steps, as Add marker is the pointer's
+    // The pointer's way to the same corrections, as Add marker is the pointer's
     // way to `M`: the keys alone would leave the corrections unreachable
-    // without a keyboard, and Shift-click carries the coarse step they carry.
-    await user.click(nudgeControl('earlier'));
-    expect(await screen.findByDisplayValue('00:09.900')).toBeInTheDocument();
-    await user.click(nudgeControl('later'));
+    // without a keyboard. The decks carry four steps where the keys carry two —
+    // a half second is the tenth's coarse twin, reached in one press where the
+    // tenth takes five — and the fine step is the tenths' own, whatever is held.
+    await user.click(nudgeControl('+0.5s'));
+    expect(await screen.findByDisplayValue('00:10.500')).toBeInTheDocument();
+    await user.click(nudgeControl('−0.5s'));
     expect(await screen.findByDisplayValue('00:10.000')).toBeInTheDocument();
+    await user.click(nudgeControl('+0.1s'));
+    expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
 
+    // `Shift` widens the halves to the keys' whole second, and the control says
+    // so before it is pressed: the step is on the label, not in a tooltip about
+    // a modifier the student cannot see.
     await user.keyboard('{Shift>}');
-    await user.click(nudgeControl('later'));
+    await user.click(nudgeControl('+1s'));
     await user.keyboard('{/Shift}');
-    expect(await screen.findByDisplayValue('00:11.000')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('00:11.100')).toBeInTheDocument();
   });
 
   it('takes a time typed exactly, in the loose forms a student writes', async () => {
@@ -851,7 +890,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     // Safari, where a click does not focus a button. No blur ever arrives, and
     // the nudge re-seeds the field the caret was in, so that field is gone: the
     // pin has nothing left to hold, and the block is the playhead's again.
-    fireEvent.click(nudgeControl('later'));
+    fireEvent.click(nudgeControl('+0.1s'));
     act(() => controller.emitPlayback({ currentTime: 25 }));
     expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
   });
@@ -865,7 +904,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     await waitForPlayerSettled();
 
     await user.click(markerRows(container)[0]);
-    await user.click(nudgeControl('later'));
+    await user.click(nudgeControl('+0.1s'));
 
     // The button has the focus, and still does not hold the block: a button
     // held down is not a row being given a time. Only the caret in the time
@@ -873,7 +912,7 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
     // not in Safari, which does not focus a button on click, and it has nothing
     // to buy now that a nudge takes the playhead with it. So the playhead
     // moving on takes the block with it, as it always would.
-    expect(document.activeElement).toBe(nudgeControl('later'));
+    expect(document.activeElement).toBe(nudgeControl('+0.1s'));
     act(() => controller.emitPlayback({ currentTime: 25 }));
     expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
   });
@@ -1094,8 +1133,181 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
   });
 });
 
-describe('a marker row is a container with seek controls of its own (T67)', () => {
+describe('a half-second step, and four nudges in two decks (T71)', () => {
+  it('reads the four steps as one strip: the halves outboard, the tenths inboard', async () => {
+    const user = userEvent.setup();
+    const { container } = openTwoMarkPage();
+    await waitForPlayerSettled();
 
+    await user.click(markerRows(container)[0]);
+
+    // The row above the strip reads as the time between the two decks — the
+    // minus pair flush left, the plus pair flush right — and within each deck
+    // the coarse step sits outboard of the fine one, next to the row it moves.
+    expect(nudgeSteps()).toEqual(['−0.5s', '−0.1s', '+0.1s', '+0.5s']);
+  });
+
+  it('moves the mark half a second either way, and leaves the playhead on the new time', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10), marker('m2', 20)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    expect(timeField(container)).toHaveValue('00:10.000');
+
+    // The step that was five tenths away in one press where the tenth took
+    // five. It is the same correction a key makes, through the same path (T64):
+    // the mark moves and the recording moves with it, so the student hears the
+    // landmark they have just made exact.
+    await user.click(nudgeControl('−0.5s'));
+    expect(await screen.findByDisplayValue('00:09.500')).toBeInTheDocument();
+    await waitFor(() => expect(api.get('p1')?.markers[0].time).toBeCloseTo(9.5));
+    expect(controller.getCurrentTime()).toBeCloseTo(9.5);
+
+    await user.click(nudgeControl('+0.5s'));
+    expect(await screen.findByDisplayValue('00:10.000')).toBeInTheDocument();
+    await waitFor(() => expect(api.get('p1')?.markers[0].time).toBeCloseTo(10));
+  });
+
+  it('widens the halves to a whole second while Shift is held, and says so before the press', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openTwoMarkPage();
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+
+    await user.keyboard('{Shift>}');
+
+    // The label is the promise (T71). While `Shift` is held the halves are a
+    // whole second, and they say a whole second — the state is read once, and
+    // both what a control shows and what it takes come from that one reading,
+    // so nothing can promise one step and take another.
+    expect(nudgeSteps()).toEqual(['−1s', '−0.1s', '+0.1s', '+1s']);
+
+    await user.click(nudgeControl('+1s'));
+    expect(await screen.findByDisplayValue('00:11.000')).toBeInTheDocument();
+    expect(controller.getCurrentTime()).toBeCloseTo(11);
+
+    await user.keyboard('{/Shift}');
+
+    // Let go, and the halves are halves again — the same controls, saying the
+    // step they would now take.
+    expect(nudgeSteps()).toEqual(['−0.5s', '−0.1s', '+0.1s', '+0.5s']);
+    await user.click(nudgeControl('−0.5s'));
+    expect(await screen.findByDisplayValue('00:10.500')).toBeInTheDocument();
+  });
+
+  it('still reads the held Shift when the correction moves to another row', async () => {
+    const user = userEvent.setup();
+    const { container } = openTwoMarkPage();
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    await user.keyboard('{Shift>}');
+    expect(nudgeSteps()).toEqual(['−1s', '−0.1s', '+0.1s', '+1s']);
+
+    // The correction follows the playhead, so it changes rows as the student
+    // works — and the decks change rows with it. `Shift` is a fact about the
+    // keyboard and not about the row: a deck that read it once, on the row it
+    // was mounted on, would come back saying `±0.5s` with the modifier still
+    // down, and the student holding it would take a half second where the
+    // control they pressed promised a whole one the moment before.
+    await user.click(markerRows(container)[1]);
+    expect(nudgeSteps()).toEqual(['−1s', '−0.1s', '+0.1s', '+1s']);
+
+    await user.click(nudgeControl('+1s'));
+    expect(await screen.findByDisplayValue('00:21.000')).toBeInTheDocument();
+
+    await user.keyboard('{/Shift}');
+    expect(nudgeSteps()).toEqual(['−0.5s', '−0.1s', '+0.1s', '+0.5s']);
+  });
+
+  it('takes a tenth whatever is held — Shift does not widen the fine step', async () => {
+    const user = userEvent.setup();
+    const { container } = openTwoMarkPage();
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+
+    await user.keyboard('{Shift>}');
+    await user.click(nudgeControl('+0.1s'));
+    await user.keyboard('{/Shift}');
+
+    // The tenth is the fine control and wants no coarse twin: with the halves
+    // widened there is nothing left for a widened tenth to be.
+    expect(await screen.findByDisplayValue('00:10.100')).toBeInTheDocument();
+  });
+
+  it('returns the halves to a half second when the window loses focus, or a key-up goes missing', async () => {
+    const user = userEvent.setup();
+    const { container } = openTwoMarkPage();
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+
+    await user.keyboard('{Shift>}');
+    expect(nudgeSteps()).toEqual(['−1s', '−0.1s', '+0.1s', '+1s']);
+
+    // The window losing focus: the student has left, no key-up is coming, and a
+    // deck left saying `±1s` would be describing a keyboard nobody is at.
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    expect(nudgeSteps()).toEqual(['−0.5s', '−0.1s', '+0.1s', '+0.5s']);
+
+    // And a `Shift` whose key-up was swallowed — a browser dialog, an embed
+    // taking the keyboard — is corrected by the next key of any kind, which
+    // carries the modifier state with it.
+    await user.keyboard('{Shift>}');
+    expect(nudgeSteps()).toEqual(['−1s', '−0.1s', '+0.1s', '+1s']);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(nudgeSteps()).toEqual(['−0.5s', '−0.1s', '+0.1s', '+0.5s']);
+    await user.keyboard('{/Shift}');
+  });
+
+  it('leaves the correction on the playhead’s row, and puts no caret in a field', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openTwoMarkPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+
+    await user.click(markerRows(container)[0]);
+    await user.click(nudgeControl('+0.5s'));
+
+    // A press is a press and not an edit: it moves the caret into no field of
+    // the row, so nothing pins the block and the row the corrections are on
+    // stays the playhead's.
+    expect(document.activeElement instanceof HTMLInputElement).toBe(false);
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
+  });
+
+  it('lays the decks out to wrap, and holds the four controls to one width', () => {
+    // "A control does not resize under the finger reaching for it" and "the
+    // decks wrap, and the plus pair stays right-aligned" are claims about
+    // layout, and jsdom computes none — so they are read off the stylesheet,
+    // where they are made.
+    //
+    // The two decks share a line while both fit, the plus one held at the right
+    // end by its own auto margin: `space-between` would do that for the line
+    // they start on, and strand the plus deck at the left of the line it wraps
+    // to. The wrap itself is the panel's floor, not its layout.
+    expect(ruleBody('.markings-correct')).toMatch(/flex-wrap:\s*wrap;/);
+    expect(ruleBody('.markings-nudge-deck-plus')).toMatch(/margin-left:\s*auto;/);
+
+    // One width for all four, and the wider of the two labels the halves read:
+    // five characters of the monospace face the strip is set in. The two that
+    // change their words keep the width they had while the modifier is down.
+    expect(ruleBody('.markings-nudge')).toMatch(/min-width:\s*5ch;/);
+  });
+});
+
+describe('a marker row is a container with seek controls of its own (T67)', () => {
   it('jumps to the mark from the label, from the clock, and from the row itself', async () => {
     const user = userEvent.setup();
     const { container, controller } = openTwoMarkPage();
@@ -1154,7 +1366,7 @@ describe('a marker row is a container with seek controls of its own (T67)', () =
     // recording lands on the time the nudge wrote: the row under the decks
     // does not also seek to the mark, which would put the playhead back on the
     // time the student has just corrected.
-    await user.click(nudgeControl('earlier'));
+    await user.click(nudgeControl('−0.1s'));
     expect(await screen.findByDisplayValue('00:09.900')).toBeInTheDocument();
     expect(controller.getCurrentTime()).toBeCloseTo(9.9);
   });
@@ -2001,12 +2213,28 @@ describe('a movement can be re-timed and deleted (T59)', () => {
     await user.click(movementJumps(container)[0]);
     expect(timeField(container)).toHaveValue('00:15.000');
 
-    // The same step, and the same two controls, a mark's correction carries: a
-    // boundary placed by ear lands late by reaction time just as a mark does.
-    await user.click(nudgeControl('later'));
+    // The same steps, and the same two decks, a mark's correction carries: a
+    // boundary placed by ear lands late by reaction time just as a mark does,
+    // and the decks hang below the band the boundary's own field is in (T68).
+    const block = screen.getByRole('group', { name: 'Re-time movement I. Allegro' });
+    expect(within(block).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '−0.5s',
+      '−0.1s',
+      '+0.1s',
+      '+0.5s',
+    ]);
+    // A list row of its own, directly below the header's: the header's row is
+    // the list's sticky band, and a block inside it would grow the very band
+    // that pins over the marks the band is for. Asserted as the structure it
+    // is — the row above the block's is the row holding the header — so a block
+    // moved inside the band fails however it was written.
+    const blockRow = block.closest('li') as HTMLElement;
+    expect(blockRow.previousElementSibling?.querySelector('.markings-movement-header')).not.toBeNull();
+
+    await user.click(nudgeControl('+0.1s'));
     expect(await screen.findByDisplayValue('00:15.100')).toBeInTheDocument();
     await user.keyboard('{Shift>}');
-    await user.click(nudgeControl('earlier'));
+    await user.click(nudgeControl('−1s'));
     await user.keyboard('{/Shift}');
     expect(await screen.findByDisplayValue('00:14.100')).toBeInTheDocument();
     await pastDebounce();
@@ -2022,7 +2250,7 @@ describe('a movement can be re-timed and deleted (T59)', () => {
     await user.type(timeField(container), '13:50.9');
     await user.keyboard('{Enter}');
     await pastDebounce();
-    await user.click(nudgeControl('later'));
+    await user.click(nudgeControl('+0.1s'));
 
     const refusal = await screen.findByRole('alert');
     expect(refusal.textContent).toContain('II. Adagio');

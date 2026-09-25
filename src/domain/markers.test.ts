@@ -12,6 +12,7 @@ import {
   removeMarker,
   setAliases,
   NUDGE_COARSE_STEP_SECONDS,
+  NUDGE_HALF_STEP_SECONDS,
   NUDGE_STEP_SECONDS,
 } from './markers';
 
@@ -112,6 +113,11 @@ describe('nudgedTime', () => {
   it('moves the time by the delta, in either direction', () => {
     expect(nudgedTime(10, NUDGE_STEP_SECONDS)).toBeCloseTo(10.1);
     expect(nudgedTime(10, -NUDGE_STEP_SECONDS)).toBeCloseTo(9.9);
+    // The half (T71) is a step of the decks and not of the keys, but it is a
+    // step like the others and the nudge takes it like the others: the function
+    // has no opinion about who asked.
+    expect(nudgedTime(10, NUDGE_HALF_STEP_SECONDS)).toBeCloseTo(10.5);
+    expect(nudgedTime(10, -NUDGE_HALF_STEP_SECONDS)).toBeCloseTo(9.5);
     expect(nudgedTime(10, NUDGE_COARSE_STEP_SECONDS)).toBeCloseTo(11);
     expect(nudgedTime(10, -NUDGE_COARSE_STEP_SECONDS)).toBeCloseTo(9);
   });
@@ -122,6 +128,7 @@ describe('nudgedTime', () => {
     // caller would have to refuse for a keypress that was not a mistake.
     expect(nudgedTime(0.05, -NUDGE_STEP_SECONDS)).toBe(0);
     expect(nudgedTime(0, -NUDGE_STEP_SECONDS)).toBe(0);
+    expect(nudgedTime(0.2, -NUDGE_HALF_STEP_SECONDS)).toBe(0);
     expect(nudgedTime(0, -NUDGE_COARSE_STEP_SECONDS)).toBe(0);
   });
 
