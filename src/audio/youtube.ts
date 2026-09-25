@@ -15,6 +15,7 @@ import './youtube.css';
 
 /** The IFrame API's player-state numbers this backend reads. */
 const PLAYER_STATE_PLAYING = 1;
+const PLAYER_STATE_PAUSED = 2;
 const PLAYER_STATE_BUFFERING = 3;
 
 /** How often the playhead is read from the embed — the API clock's granularity. */
@@ -166,6 +167,20 @@ export function loadYouTubeSource({
   let dead = false;
   let player: YouTubePlayer | null = null;
   let pollId: number | null = null;
+  /**
+   * Whether a jump's pause is still owed. seekTo starts the recording from
+   * every state but PAUSED, so a jump into a screen that is not already paused
+   * or playing starts playback the student only asked to jump in. The pause
+   * cannot be issued where the seek is — pausing an embed that has never loaded
+   * blanks it and leaves it with no frame to render — so it waits for the embed
+   * to report PLAYING, the first moment there is a video to stop. Waiting for
+   * less does not work: paying it on BUFFERING, to spare the student the sound
+   * of the load, blanks the player the same way and leaves every later jump
+   * with nothing to move (tried; see #160). It carries no time: the jump's own
+   * seek puts the playhead where the student aimed, and the pause only stops
+   * the recording there.
+   */
+  let owesPause = false;
   /** The metadata wait's poll, armed when ready reports no duration yet. */
   let durationPollId: number | null = null;
   let settle: (result: LoadResult) => void;
@@ -247,6 +262,21 @@ export function loadYouTubeSource({
 
   function seek(time: number): void {
     if (player === null) return;
+    // seekTo plays the video from every state but PAUSED, so a jump disturbs
+    // nothing only where the recording is already playing, already fetching a
+    // play, or already paused. Every other state — never started, cued, and
+    // ended alike — starts the recording the student only asked to jump in, so
+    // the pause is owed. Naming the states to spare rather than the states to
+    // catch keeps a cold screen covered however the API spells it.
+    const state = player.getPlayerState();
+    const wouldPlay =
+      state !== PLAYER_STATE_PLAYING &&
+      state !== PLAYER_STATE_BUFFERING &&
+      state !== PLAYER_STATE_PAUSED;
+    // Only a pause settles the debt, so a second jump taken before the first
+    // has landed leaves it owed: the seek below is the one the embed plays out,
+    // and the stop lands where the student aimed last.
+    if (wouldPlay) owesPause = true;
     // allowSeekAhead=true: exact landings, even beyond the buffered range —
     // a marking tool prefers precision over the API's faster approximation.
     player.seekTo(time, true);
@@ -255,6 +285,10 @@ export function loadYouTubeSource({
 
   function toggle(): void {
     if (player === null) return;
+    // The student's own transport outranks a pause a jump still owes, whichever
+    // way it goes: their play must not be cancelled by it, and their pause has
+    // already done the stopping, so the debt has nothing left to pay.
+    owesPause = false;
     const state = player.getPlayerState();
     if (state === PLAYER_STATE_PLAYING || state === PLAYER_STATE_BUFFERING) {
       player.pauseVideo();
@@ -333,7 +367,20 @@ export function loadYouTubeSource({
     // "playing" over an embed that is not. After a successful ready, state
     // events are the session's own clock and flow through.
     if (disposed || dead) return;
-    onState({ playing: eventData(payload) === PLAYER_STATE_PLAYING });
+    const state = eventData(payload);
+    onState({ playing: state === PLAYER_STATE_PLAYING });
+    // The pause a jump owes, now that there is a video to stop. It is paid on
+    // the first playing after the jump and never seeks: the jump already put
+    // the playhead where the student aimed, and a seek posted from the playing
+    // state this event reports would start the recording up again with the debt
+    // already spent.
+    if (state === PLAYER_STATE_PLAYING && owesPause && player !== null) {
+      owesPause = false;
+      player.pauseVideo();
+      // The store is told at once. Waiting on the embed's own pause event
+      // leaves it reporting a recording that the pause has already stopped.
+      onState({ playing: false });
+    }
   }
 
   function onError(payload: number | YouTubeEvent<number>): void {
