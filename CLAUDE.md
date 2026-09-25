@@ -11,3 +11,7 @@ The five canonical triage roles map to themselves: `needs-triage`, `needs-info`,
 ### Domain docs
 
 Single-context: one `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
+
+### Prototypes
+
+Throwaway design explorations are kept on their own branches as primary sources, and are never merged to main. They are not stale branches — never delete one in a branch cleanup. See `docs/prototypes.md`.
