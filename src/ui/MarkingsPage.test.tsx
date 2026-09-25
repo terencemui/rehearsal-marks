@@ -18,6 +18,10 @@ import { waitForPlayerSettled } from '../test/settle-player';
 // stylesheet — those tests read it from disk (vitest stubs CSS imports, raw or
 // not, to an empty string), the way Player's narrow-viewport tests do.
 const markingsCss = readFileSync('src/ui/markings.css', 'utf8');
+// The panel's own width, which is what the page's rows have to fit: declared
+// once, in the split's stylesheet, and read here for the row that fills it
+// (T70).
+const appCss = readFileSync('src/ui/app.css', 'utf8');
 
 /**
  * The markings page (T55), driven at the app-level seam: `renderApp` serves the
@@ -61,15 +65,41 @@ function multiMovement(overrides = {}) {
 }
 
 /**
- * The marker rows, in DOM order (which is time order) — the element a click
- * seeks through, in whichever of the row's two shapes this surface shows (T67).
- * The browsing surfaces' row *is* its one seek control; the markings page's is
- * the container holding the label and the clock, each a seek control of its
- * own, and a click anywhere else on that container jumps exactly as the button
- * did before it.
+ * A mark's row on the markings page, in the one shape that page gives it — the
+ * container holding the label and the clock, each a seek control of its own, a
+ * click anywhere else on it jumping exactly as the row's single button did
+ * before it (T67).
+ *
+ * A movement's header is laid out by that same rule (T70), so the row's class
+ * alone would answer with the headers too — and a header is a movement's, not a
+ * mark's. The band is the one row that is not a marker's, which is what the
+ * `:not()` is.
  */
+const MARKINGS_ROW = '.markings-row:not(.markings-movement-header)';
+
+/**
+ * A mark's row on the browsing surfaces, which *is* its one seek control (T67) —
+ * the shape the markings page's row must keep agreeing with, since it is the
+ * same row read by the same student a moment earlier.
+ */
+const BROWSING_ROW = '.player-marker-row';
+
+/** Every mark row, whichever of the two shapes the surface under test shows it in. */
+const MARKER_ROW = `${MARKINGS_ROW}, ${BROWSING_ROW}`;
+
+/**
+ * Something a mark's row holds, named by a descendant selector, in both of the
+ * row's shapes. Written as one selector rather than by joining `MARKER_ROW` and
+ * the descendant: a comma-separated list of rows joined to `.x` would read as
+ * "any row, or `.x` inside the second shape" — the first shape would answer with
+ * the row itself.
+ */
+function inMarkerRows(descendant: string): string {
+  return `${MARKINGS_ROW} ${descendant}, ${BROWSING_ROW} ${descendant}`;
+}
+
 function markerRows(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll('.markings-row, .player-marker-row'));
+  return Array.from(container.querySelectorAll(MARKER_ROW));
 }
 
 /** The rows' derived labels, in DOM order. */
@@ -77,26 +107,43 @@ function markerTitles(container: HTMLElement): (string | null)[] {
   return Array.from(container.querySelectorAll('.player-marker-title')).map((t) => t.textContent);
 }
 
-/** The rows' clocks, in DOM order — the rows not being corrected (T68). */
+/**
+ * The rows' clocks, in DOM order — the rows not being corrected (T68). The
+ * marker rows' clocks: a movement's header carries the same clock (T70), and a
+ * header is asked for its own time by `movementTimes`, which reads both kinds of
+ * header state as this reads a mark's.
+ */
 function markerTimes(container: HTMLElement): (string | null)[] {
-  return Array.from(container.querySelectorAll('.player-marker-time')).map((t) => t.textContent);
+  return Array.from(container.querySelectorAll(inMarkerRows('.player-marker-time'))).map(
+    (t) => t.textContent,
+  );
 }
 
 /**
- * Every mark row's time as the page reads it, in DOM order: the exact time the
- * row the playhead is on carries in its field, the whole-second clock every
- * other row carries (T68). The slot holds one reading or the other and never
- * both, so this is a row's time in whichever state the row is in — which is what
- * a test asking *where the marks are* wants. A test asking what a row *shows*
- * reads `markerTimes` (the clocks on the page) or `timeField` (the one field).
+ * Every one of `selector`'s rows read as the page reads it, in DOM order: the
+ * exact time the row the playhead is on carries in its field, the whole-second
+ * clock every other row carries (T68). The slot holds one reading or the other
+ * and never both, so this is a row's time in whichever state the row is in —
+ * which is what a test asking *where the marks are* wants. A test asking what a
+ * row *shows* reads `markerTimes` (the clocks on the page) or `timeField` (the
+ * one field).
+ *
+ * One function for both kinds of row (T70), because both read their times the
+ * same way: what a band's time is differs from a mark's in which rows are asked,
+ * and in nothing else.
  */
-function rowTimes(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('.markings-row')).map(
+function timesOf(container: HTMLElement, selector: string): string[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(selector)).map(
     (row) =>
       row.querySelector<HTMLInputElement>('.markings-row-time')?.value ??
       row.querySelector('.player-marker-time')?.textContent ??
       '',
   );
+}
+
+/** Every mark row's time as the page reads it — `timesOf` over the rows. */
+function rowTimes(container: HTMLElement): string[] {
+  return timesOf(container, MARKINGS_ROW);
 }
 
 /**
@@ -172,10 +219,37 @@ function movementNameFields(container: HTMLElement): HTMLInputElement[] {
   return Array.from(container.querySelectorAll<HTMLInputElement>('.markings-movement-name'));
 }
 
-/** The movement headers' jump controls, in DOM order — one per header. */
+/**
+ * The movement headers' jump controls, in DOM order — one per header that is
+ * not the one being corrected. A header's jump is its clock (T68), and the
+ * clock a header carries is the clock a mark's row carries (T70), so this is
+ * the row's own control read off the band.
+ */
 function movementJumps(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('.markings-movement-jump'));
+  return Array.from(
+    container.querySelectorAll<HTMLElement>('.markings-movement-header .player-marker-time'),
+  );
 }
+
+/** Every movement's time as its band reads it — `timesOf` over the headers. */
+function movementTimes(container: HTMLElement): string[] {
+  return timesOf(container, '.markings-movement-header');
+}
+
+/**
+ * The one rule that sizes the slot every reading on the page is read in — the
+ * clock a row shows and the exact time its field replaces it with, on either
+ * kind of row (T68, T70). It names the row and not either kind of row, which is
+ * what makes a band's reading and a mark's one reading: there is no second rule
+ * for a second occupant to drift into.
+ *
+ * Two tests assert it, each for its own reason, so it is written once here.
+ */
+const CLOCK_SLOT_RULE =
+  /\.markings-row \.player-marker-time,\s*\.markings-row \.markings-row-time \{[^}]*box-sizing:\s*border-box;[^}]*width:\s*var\(--markings-clock-slot\);[^}]*text-align:\s*right;/;
+
+/** The slot's one size: the widest reading a recording can hold, h:mm:ss.mmm (T68). */
+const CLOCK_SLOT_WIDTH = /--markings-clock-slot:\s*104px;/;
 
 /** Waits past the autosave debounce, so a write that was going to happen has. */
 async function pastDebounce(): Promise<void> {
@@ -1512,11 +1586,10 @@ describe('the exact time moves into the active row (T68)', () => {
     await user.click(movementJumps(container)[0]);
 
     // The boundary the playhead is standing on reads to the millisecond in its
-    // own header, in the slot its clock occupied — and the jump gives way to
+    // own header, in the slot its clock occupied — and the clock gives way to
     // it, as the clock in a mark's row does: the playhead is already there.
     const header = container.querySelectorAll<HTMLElement>('.markings-movement-header')[0];
     expect(within(header).getByLabelText('Time for movement I. Allegro')).toHaveValue('00:15.000');
-    expect(header.querySelector('.markings-movement-jump')).toBeNull();
     expect(header.querySelector('.player-marker-time')).toBeNull();
 
     // The movement next door is untouched: still its clock, still its jump,
@@ -1625,15 +1698,11 @@ describe('the exact time moves into the active row (T68)', () => {
   it('gives the clock and the field one slot of one rendered size', () => {
     // "Nothing in the row moves when the playhead arrives" is a claim about
     // layout, and jsdom computes none — so it is read off the stylesheet, where
-    // it is made. One rule sizes all four occupants of the slot (a mark's clock
-    // and field, a movement's jump and field), so the two states cannot drift
-    // apart by being sized in two places.
-    expect(markingsCss).toMatch(
-      /\.markings-row \.player-marker-time,\s*\.markings-row \.markings-row-time,\s*\.markings-movement-header \.markings-movement-jump,\s*\.markings-movement-header \.markings-row-time \{[^}]*box-sizing:\s*border-box;[^}]*width:\s*var\(--markings-clock-slot\);[^}]*text-align:\s*right;/,
-    );
-    // And one size for it to be: the widest reading a recording can hold,
-    // h:mm:ss.mmm, declared once.
-    expect(markingsCss).toMatch(/--markings-clock-slot:\s*104px;/);
+    // it is made. One rule sizes every occupant of the slot, so the two states
+    // cannot drift apart by being sized in two places.
+    expect(markingsCss).toMatch(CLOCK_SLOT_RULE);
+    // And one size for it to be, declared once.
+    expect(markingsCss).toMatch(CLOCK_SLOT_WIDTH);
 
     // The field declares no width of its own — which is the mistake the ticket
     // names: 96px of content plus 12px of padding and 2px of border renders
@@ -1642,16 +1711,14 @@ describe('the exact time moves into the active row (T68)', () => {
     expect(markingsCss).toMatch(/\n\.markings-row-time \{[^}]*padding:\s*4px 6px;/);
     expect(markingsCss).not.toMatch(/\n\.markings-row-time \{[^}]*width:/);
 
-    // Neither clock is a field, and neither shows an edge, so each takes the
-    // field's right inset — 6px of padding and 1px of border — in transparent
-    // space. Both, because a movement's header shares this slot too: one of
-    // them keeping a bare `border: 0` would put that header's digits 1px left
-    // of its own field's.
+    // A clock is not a field and shows no edge, so it takes the field's right
+    // inset — 6px of padding and 1px of border — in transparent space. One rule
+    // and not two, because there is one clock (T70): a movement's header reads
+    // its time in this same control, so a `border: 0` here would put that
+    // header's digits 1px left of its own field's and there would be no second
+    // rule left to correct it.
     expect(markingsCss).toMatch(
       /\.markings-row \.player-marker-time \{[^}]*padding:\s*0 6px;[^}]*border:\s*1px solid transparent;/,
-    );
-    expect(markingsCss).toMatch(
-      /\n\.markings-movement-jump \{[^}]*border:\s*1px solid transparent;/,
     );
 
     // The passed row's accent reaches the field as it reached the clock it
@@ -1918,6 +1985,224 @@ describe('the alias slot is one box in two shapes (T69)', () => {
     // is where that face is declared — it cannot be inherited, because the
     // field shape takes neither font nor ink from its parent.
     expect(ruleBody('.markings-alias-slot')).toMatch(/font:\s*400 15px\//);
+  });
+});
+
+/**
+ * The ticket's own mechanism is most of what is asserted here: "Sharing one row
+ * is what puts them there, so the sharing is the mechanism and not a nicety."
+ * A band that carries the row's class is laid out by the row's rules and cannot
+ * drift from a mark's; two rows laid out by two rules that happen to agree today
+ * can drift apart tomorrow and nothing would notice.
+ *
+ * The parent spec's testing decision is that no test asserts a class name or a
+ * CSS measurement (#152). Two of these do, and deliberately: "one column", "one
+ * typeface" and "the same gap" are claims that layout alone makes, and jsdom
+ * computes no layout — so they are either read off the stylesheet, where they
+ * are made, or not held to at all. That is the T68 precedent this follows. What
+ * sits on top of the sharing — the order of the controls, what each row reads,
+ * what a caret can reach — is asserted by driving the page, as the spec asks.
+ */
+describe("a movement's header is a marker's row (T70)", () => {
+  /**
+   * The page on a private project with two movements and marks inside them: a
+   * mark before the first boundary, one inside I. Allegro and one inside
+   * II. Adagio, so both kinds of row are on the page at once and each header
+   * has a mark of its own to be compared with.
+   */
+  function openPage() {
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    return renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+  }
+
+  /** The first movement's header — the band the list draws above its own marks. */
+  function header(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>('.markings-movement-header')!;
+  }
+
+  it("lays a movement's header out by a marker row's own rule, one indent step out", async () => {
+    const { container } = openPage();
+    await waitForPlayerSettled();
+
+    // A band is a row. It carries the row's own class, which is what puts every
+    // rule the row is laid out by under it without being told — the same gap,
+    // the same right padding, the same slot for its time — and it is *that*
+    // sharing, rather than two rules that agree today, that keeps a header's
+    // trash in the column of its own markers' trash a ticket from now.
+    expect(header(container)).toHaveClass('markings-row');
+
+    // And it is no longer the browsing header: that rule lays out the button the
+    // practice surface's header still is, and it is not what lays this out.
+    expect(header(container)).not.toHaveClass('player-movement-header');
+  });
+
+  it("gives the band nothing of the row but the one indent step it sits at", () => {
+    // jsdom computes no layout, so "one row" is read off the stylesheet, where
+    // it is made. The band's own rule carries the step out — a header sits at
+    // the panel's inset and the rows are indented from it — and the divider the
+    // band is. It declares no gap, no right padding and no face of its own: each
+    // of those is the row's, declared once, so neither kind of row can drift
+    // from the other by being laid out in a second place.
+    const band = ruleBody('.player-marker-movement .markings-movement-header');
+    expect(band).toMatch(/padding-left:\s*10px;/);
+    expect(band).not.toMatch(/\bgap:/);
+    expect(band).not.toMatch(/padding:/);
+    expect(band).not.toMatch(/padding-right:/);
+    expect(band).not.toMatch(/\bfont:/);
+    expect(band).not.toMatch(/display:/);
+
+    // The right padding and the step are the row's own numbers, which is what
+    // makes a header's trash and a mark's the same distance from the panel's
+    // edge — and so one column, whatever the panel is doing.
+    expect(ruleBody('.markings-row')).toMatch(/padding:\s*7px 10px 7px 16px;/);
+    expect(ruleBody('.markings-row')).toMatch(/gap:\s*6px;/);
+  });
+
+  it('holds the reading and the trash in the same order on both kinds of row', async () => {
+    const { container } = openPage();
+    await waitForPlayerSettled();
+
+    // The two things both kinds of row carry are the time and the control that
+    // destroys, and they come in that order on both — the same thing in the same
+    // place, whichever row it is on. What leads them is the row's own grower:
+    // the name beside the label on a mark's row, the movement's name on a
+    // boundary's, both of them the room between the row's left end and its time.
+    //
+    // The row is the second mark's: the one inside the first movement, so the
+    // header compared with it is the header of the group that row is in.
+    for (const row of [markerRows(container)[1], header(container)]) {
+      const grower = row.querySelector('.markings-alias-slot, .markings-movement-name')!;
+      const clock = row.querySelector('.player-marker-time')!;
+      const trash = row.querySelector('.markings-delete')!;
+      expect(clock).not.toBeNull();
+      expect(trash).not.toBeNull();
+      expect(grower.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(clock.compareDocumentPosition(trash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // The trash is the last thing the row holds, and the row's right padding
+      // is the one the two kinds share: together those are the column.
+      expect(row.lastElementChild).toBe(trash);
+    }
+  });
+
+  it("reads a header's time in the row's own slot and face, from the row's own clock", async () => {
+    const { container } = openPage();
+    await waitForPlayerSettled();
+
+    // One rule sizes the slot both kinds of row read their time in, and it names
+    // the row rather than either kind of row (T70) — the rule itself is stated
+    // once for the two tests that assert it.
+    expect(markingsCss).toMatch(CLOCK_SLOT_RULE);
+    // And the header's clock is that control and not a second one: the button
+    // the mark's row jumps by, which is why the movement's own jump class is
+    // gone from the panel and from the stylesheet both.
+    expect(container.querySelector('.markings-movement-jump')).toBeNull();
+    expect(markingsCss).not.toMatch(/markings-movement-jump/);
+    // Both clocks read in the row's face, taken by inheritance — a button takes
+    // neither the face nor the ink around it unless it is told to, which is the
+    // one thing that made the header's reading a different reading.
+    expect(markingsCss).toMatch(
+      /\.markings-row \.player-marker-title,\s*\.markings-row \.player-marker-time \{[^}]*font-family:\s*inherit;/,
+    );
+  });
+
+  it('reaches a movement from the keyboard, which the arrows alone cannot do', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 1800 }));
+
+    // `↑`/`↓` walk the marks and reach no movement, so a band's clock is the one
+    // control on the page that gets the keyboard to a boundary — which is why it
+    // is a Tab stop where a mark's clock is not. That difference is deliberate
+    // and is the only one the two rows have.
+    const bandClock = movementJumps(container)[0];
+    bandClock.focus();
+    expect(bandClock).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    // Pressed, it does what a click does: the playhead stands on the boundary,
+    // which is what makes it the row being corrected (T59, T64), and the field
+    // takes the clock's place in the slot — as it does in a mark's row.
+    expect(movementTimes(container)[0]).toBe('00:15.000');
+    expect(container.querySelectorAll('.markings-row-time')).toHaveLength(1);
+  });
+
+  it('reads whole seconds on both kinds of row until one of them is the active one', async () => {
+    const user = userEvent.setup();
+    const { container, controller } = openPage();
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 1800 }));
+
+    // Nothing is being corrected: every row and every header reads whole seconds
+    // — the music stand's reading — down the one column.
+    expect(rowTimes(container)).toEqual(['00:10', '00:20', '15:00']);
+    expect(movementTimes(container)).toEqual(['00:15', '13:51']);
+
+    // The playhead lands on a mark inside the first movement: that row reads to
+    // the millisecond, and every other reading on the page — the other marks'
+    // and both headers' — stays in whole seconds.
+    await user.click(markerRows(container)[1]);
+    expect(rowTimes(container)).toEqual(['00:10', '00:20.000', '15:00']);
+    expect(movementTimes(container)).toEqual(['00:15', '13:51']);
+
+    // And the playhead on the boundary next door: the header reads exact in the
+    // slot its clock occupied, and the marks it holds read whole seconds again.
+    // One millisecond reading is on the page, whichever kind of row it is on.
+    await user.click(movementJumps(container)[0]);
+    expect(movementTimes(container)).toEqual(['00:15.000', '13:51']);
+    expect(rowTimes(container)).toEqual(['00:10', '00:20', '15:00']);
+    expect(container.querySelectorAll('.markings-row-time')).toHaveLength(1);
+  });
+
+  it('fits the panel at its floor, with the trash reachable on both kinds of row', () => {
+    // The panel's width is the split's, and its floor is the one the ticket
+    // names. jsdom measures nothing, so what is asserted is the one thing that
+    // makes the row fit in it: the parts that cannot give way are sized for what
+    // they show, and the parts that can are the growers, floored rather than
+    // pinned — so nothing is pushed off the edge at 280px and the trash stays on
+    // every row.
+    expect(appCss).toMatch(/--player-side-column:\s*clamp\(280px, 26vw, 26rem\);/);
+    // A row is never wider than what holds it...
+    expect(ruleBody('.markings-row')).not.toMatch(/(^|[^-])\bwidth:/);
+    // ...its time is a slot sized once for the longest reading there is...
+    expect(markingsCss).toMatch(CLOCK_SLOT_WIDTH);
+    // ...its trash is a glyph that takes no room and gives none...
+    expect(ruleBody('.markings-delete')).toMatch(/flex:\s*0 0 auto;/);
+    // ...and the two things that may give way are the row's growers, each with a
+    // floor rather than a width: the name beside a mark's label, and the
+    // movement's name, which is the band's own grower.
+    expect(ruleBody('.markings-alias-slot')).toMatch(/min-width:\s*60px;/);
+    expect(ruleBody('.markings-movement-name')).toMatch(/min-width:\s*0;/);
+  });
+
+  it("leaves the browsing panel's own header the button it has always been", async () => {
+    const api = fakeProjectsApi();
+    api.seed(multiMovement());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 1800 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 1800 }));
+
+    // The practice surface's header is the jump control alone — the whole header
+    // is the button — and it is laid out by the header's browsing rule, not by
+    // the markings page's row. The read-only public view draws the same panel
+    // with no authoring either, so what is true here is true there: this work
+    // reaches the page where markings are authored and no further.
+    // Both of the page's headers: the movement's own, and the divider standing
+    // for the marks before the first one. The first of those is the button; the
+    // second is the divider, and the assertion is that neither has moved.
+    const band = container.querySelector<HTMLElement>('button.player-movement-header')!;
+    expect(band).toHaveTextContent('I. Allegro');
+    expect(band.tagName).toBe('BUTTON');
+    for (const header of container.querySelectorAll('.player-movement-header')) {
+      expect(header).not.toHaveClass('markings-row');
+      expect(header).not.toHaveClass('markings-movement-header');
+    }
+    expect(container.querySelector('.markings-row')).toBeNull();
+    expect(container.querySelector('.markings-delete')).toBeNull();
+    expect(container.querySelector('.markings-row-time')).toBeNull();
   });
 });
 

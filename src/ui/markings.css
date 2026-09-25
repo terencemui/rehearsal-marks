@@ -90,7 +90,12 @@
    label and the clock are seek controls of their own inside it, which is what
    makes room for a field between them, an input being unable to live inside a
    button. Every pixel that is not a control is part of the seek target, and
-   the padding below is what brings the row's own edges into it. */
+   the padding below is what brings the row's own edges into it.
+
+   A movement's header is this row too (T70) — the same class, one step out and
+   filled as a band — so that a boundary's delete control and the delete
+   controls of the marks beneath it are one column and their readings are one
+   reading, by being the same row rather than by two rules agreeing. */
 .markings-row {
   display: flex;
   align-items: center;
@@ -171,9 +176,7 @@
 }
 
 .markings-row .player-marker-time,
-.markings-row .markings-row-time,
-.markings-movement-header .markings-movement-jump,
-.markings-movement-header .markings-row-time {
+.markings-row .markings-row-time {
   box-sizing: border-box;
   flex: 0 0 auto;
   width: var(--markings-clock-slot);
@@ -186,9 +189,9 @@
    and the row's own padding, and a clock taller than the text it shows would
    move the row as the playhead arrives.
 
-   A movement's jump takes the same border in its own rule below, which is where
-   its padding lives: one rule per control, so neither can be overridden by the
-   other's order. */
+   One rule, because there is one clock: a movement's header is a marker's row
+   (T70), so the reading in a band is this same control in this same slot, and
+   there is no second control left to declare a border of its own. */
 .markings-row .player-marker-time {
   padding: 0 6px;
   border: 1px solid transparent;
@@ -478,13 +481,34 @@
   color: #9a3412;
 }
 
-/* A movement's header on the markings page (T58): the movement is named where
-   it is read, so the name becomes the field and the header keeps the band, the
-   start time, and the jump. `align-items` leaves the base rule's baseline,
-   which an input does not share and would sit oddly against. */
+/* A movement's header on the markings page (T58) — and now a marker's row
+   (T70): the movement is named where it is read, so the name becomes the field
+   and the header keeps the band, the start time, and the jump.
+
+   The row lays it out, and this rule carries only what is the band's own: the
+   one step out to the panel's inset — a mark's row is indented from the edge a
+   boundary sits at — and the divider the band is, filled against the list's
+   white. The gap, the right padding, the slot, the typeface and the control
+   order are the row's, declared there once, which is what makes the two kinds
+   of row one row: nothing here may restate them, or the two could drift again
+   by being laid out in two places.
+
+   The base rule says a row is a seek target; this one is not. A marker row is
+   clickable at every pixel that is not a control, because a click anywhere in
+   it means "take me to that mark". A band is a boundary's name and its clock,
+   and the name is a field — a click on the band's own pixels asks for nothing
+   it can give — so the pointer says default and leaves the seeking to the clock
+   the row shares with a mark's.
+
+   Declared in `padding-left` rather than in the `padding` shorthand: the row's
+   vertical padding and its right padding are the row's, and a shorthand here
+   would set all four. */
 .player-marker-movement .markings-movement-header {
-  align-items: center;
-  gap: 8px;
+  padding-left: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: #f1f5f9;
+  cursor: default;
 }
 
 /* The movement's name, editable in place. It keeps the browsing header's
@@ -520,32 +544,17 @@
   color: #94a3b8;
 }
 
-/* The movement's start, and now the header's one control: the name is a field,
-   so the jump lives on the time it jumps to. When the playhead is standing on
-   the boundary the slot holds the exact-time field instead (T68) — same slot,
-   same size, and the jump gives way to it, because the playhead is already
-   where the jump would take it.
-
-   The border is transparent rather than absent: it is the field's own 1px, and
-   taking it here is what puts the reading where the field's goes. The two
-   pixels of vertical padding are the hover fill's, where a mark's clock — which
-   has no fill to keep — takes none; they are also what makes the two states the
-   same height, 2+2+22+1+1 against 4+4+18+1+1, both 28px, so the band does not
-   change height as the playhead arrives on it and the field replaces the jump. */
-.markings-movement-jump {
-  flex: 0 0 auto;
-  padding: 2px 6px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: none;
-  cursor: pointer;
-}
-
-.markings-movement-jump:hover {
+/* The movement's start is the row's shared clock (T70), so its padding, border
+   and slot are the row's own rules above and nothing is declared here. What the
+   band adds is the fill a mark's clock has no need of: on a mark's row the
+   pointer's feedback is the row's own hover, and that fill is the band's own
+   colour — a band cannot light up against itself. So the clock is where the
+   band says the pointer is on something it can do. */
+.player-marker-movement .markings-movement-header .player-marker-time:hover {
   background: #e2e8f0;
 }
 
-/* The movement's Delete (T59), in the header beside the jump, is the shared
+/* The movement's Delete (T59), in the header beside the clock, is the shared
    delete control (T66) — see its rule above the movement styles. It stays quiet
    in the band the word was quiet in: no fill until the pointer is on it, and
    the same danger ink. */
