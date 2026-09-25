@@ -165,8 +165,9 @@ export function HelpTab() {
           boundary wins when one is under the playhead, whether or not a mark stands there too. So
           the block of controls is wherever the recording is, with nothing to click to begin, and
           the mark <kbd>M</kbd> has just made is the mark it is on. It holds still while the caret
-          is in its time field, so the recording cannot take the field away mid-entry, and follows
-          the playhead again once the field is left.
+          is in one of the row's own fields — the time, or the name beside the label — so the
+          recording cannot take the field away mid-entry, and follows the playhead again once no
+          caret is in a field of that row.
         </p>
         <p>
           A correction moves the recording to the time it writes: a nudge, or a committed typed

@@ -268,15 +268,15 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * nudge takes the playhead with it.
    */
   const [pinnedId, setPinnedId] = useState<string | null>(null);
-  /** The caret entered a row's time field: that row holds the block until `releasePin`. */
+  /** The caret entered one of a row's own fields: that row holds the block until `releasePin`. */
   const pin = useCallback((id: string): void => {
     setPinnedId(id);
   }, []);
 
   /**
-   * The caret left that field, or the field left with it — the block goes back
-   * to following the playhead. Both are the same fact: no caret is in a time
-   * field, so there is nothing holding the block still.
+   * The caret left the row's fields, or the field left with it — the block goes
+   * back to following the playhead. Both are the same fact: no caret is in a
+   * field of that row, so there is nothing holding the block still.
    */
   const releasePin = useCallback((): void => {
     setPinnedId(null);
