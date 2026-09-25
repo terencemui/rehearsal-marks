@@ -51,8 +51,9 @@ A correction moves the recording to the time it writes: a nudge, or a committed
 typed time, puts the playhead on the new value — mark and boundary alike — so
 the row stays under the correction that moved it, and the change is heard at
 once. Nothing else about playback moves, so the recording keeps playing, or
-stays paused, exactly as it was. The `−0.1s` and `+0.1s` controls beside the
-field make the same division.
+stays paused, exactly as it was. The exact time is typed into the row itself, in
+the slot its clock reads in; the `−0.1s` and `+0.1s` controls under it make the
+same division.
 
 This page's `↑` and `↓` are the practice surface's, and they reach a marker the
 same way: the jump moves the playhead to it, and the playhead is what decides
