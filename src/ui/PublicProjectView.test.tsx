@@ -78,6 +78,11 @@ describe('PublicProjectView', () => {
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Playback' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
+    // No correction step either, on any row (T71): the decks are the Markings
+    // page's, and a reader who may not change a marker is not offered a control
+    // that would. Matched on the shape every step reads as — `−0.5s`, `+1s` —
+    // so a deck arriving under a new name is still caught.
+    expect(screen.queryByRole('button', { name: /^[−+][0-9.]+s$/ })).not.toBeInTheDocument();
   });
 
   it('shows the not-found page when the project is not visible, with the way back to the gallery', async () => {

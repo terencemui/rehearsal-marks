@@ -109,12 +109,18 @@ export function moveMarker(markers: readonly Marker[], id: string, time: number)
 }
 
 /**
- * The correction steps ADR-0007 gives the bracket keys: a tenth of a second,
- * for human reaction time — a mark pressed at the moment a landmark is heard
- * always lands late by about that much — and a whole second with `Shift`, for
- * being a second out.
+ * The steps a row can be corrected by: a tenth of a second — the fine one, for
+ * human reaction time, since a mark pressed at the moment a landmark is heard
+ * always lands late by about that much — a half second, and a whole one.
+ *
+ * The bracket keys take two of them (ADR-0007): the tenth, and the tenth
+ * widened to a whole second by `Shift`. The half is the decks' own coarse step
+ * (T71) — the step the tenth takes five of, reached in one press — and the keys
+ * do not carry it, because a key that reached it would be a third spelling of a
+ * step the same finger already has.
  */
 export const NUDGE_STEP_SECONDS = 0.1;
+export const NUDGE_HALF_STEP_SECONDS = 0.5;
 export const NUDGE_COARSE_STEP_SECONDS = 1;
 
 /**

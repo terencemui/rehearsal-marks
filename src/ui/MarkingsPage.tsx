@@ -33,6 +33,7 @@ import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
 import { useNavigationBlocker, useTabCloseGuard } from './exitGuards';
+import { useShiftHeld } from './useShiftHeld';
 import './markings.css';
 
 /** One markings page session: the autosave over the loaded project and its controller. */
@@ -65,8 +66,9 @@ export interface MarkingsPageProps {
  * quiet way through. This page is where a project stops being empty — a mark is
  * placed with `M` at the playhead, named with the student's own word for it, and
  * removed if it was a mistake (T56) — and where a mark that landed wrong is put
- * right: selected, nudged by a tenth of a second or a whole one, or given an
- * exact time typed from a score (T57). A mark pressed at the moment a landmark
+ * right: selected, nudged by a tenth of a second or a half, a whole second with
+ * `Shift` or through the deck the halves widen in (T71), or given an exact time
+ * typed from a score (T57). A mark pressed at the moment a landmark
  * is heard always lands late by human reaction time, so a page that can place
  * marks and not correct them is a page that can only be wrong.
  *
@@ -294,6 +296,16 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const activeRow = activeRowId(labeled, record.movements, elapsed);
   /** What the block is actually on: the pin where a caret holds one, the active row otherwise. */
   const blockRow = pinnedId ?? activeRow;
+  /**
+   * Whether `Shift` is held, read once for the page (T71) and handed to the
+   * correction decks. It is read here rather than inside the block because the
+   * block changes rows as the student works and is unmounted and mounted again
+   * with them, while `Shift` is a fact about the keyboard that no row owns: read
+   * per mount, the decks would come back saying `±0.5s` with the key still down.
+   * The page stays mounted for as long as the project is open, so this is the
+   * one place the reading can live.
+   */
+  const shiftHeld = useShiftHeld();
   /** The row the correction keys correct, as the record holds it now. */
   const blockMarker = labeled.find((marker) => marker.id === blockRow) ?? null;
   /** The boundary the correction keys correct, when the block is on a movement's row. */
@@ -457,7 +469,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   );
 
   /**
-   * Moves a boundary by `delta` seconds — the one correction the block's two
+   * Moves a boundary by `delta` seconds — the one correction the block's own
    * controls make, and the movement twin of a mark's nudge. Unlike a mark's it
    * can be refused: the boundary is bounded by its neighbours where a mark is
    * bounded by nothing, so a nudge into the movement next door is a domain
@@ -526,7 +538,8 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
 
   /**
    * Moves a mark by `delta` seconds — the one correction `[`, `]` and the
-   * block's two controls all make. The correction takes the recording with it
+   * block's own controls all make, the decks' four steps included (T71). The
+   * correction takes the recording with it
    * (T64): the playhead goes to the time just written, so the student hears the
    * mark they have just made exact rather than the one it used to be. Nothing
    * else about playback is touched — a correction while the recording plays
@@ -631,6 +644,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   });
 
   const authoring: MarkersAuthoring = {
+    shiftHeld,
     onAddMarker: addAtPlayhead,
     onAddMovement: addMovementAtPlayhead,
     movementAddError,

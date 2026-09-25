@@ -44,16 +44,22 @@ the recording has last passed, or the boundary it is sitting on — and a bounda
 wins when one is under the playhead, whether or not a mark stands there too. So
 the block of controls is wherever the recording is, with nothing to click to
 begin, and the mark `M` has just made is the mark it is on. It holds still while
-the caret is in its time field, so the recording cannot take the field away
-mid-entry, and follows the playhead again once the field is left.
+the caret is in one of the row's own fields — the time, or the name beside the
+label — so the recording cannot take the field away mid-entry, and follows the
+playhead again once no caret is in a field of that row.
 
 A correction moves the recording to the time it writes: a nudge, or a committed
 typed time, puts the playhead on the new value — mark and boundary alike — so
 the row stays under the correction that moved it, and the change is heard at
 once. Nothing else about playback moves, so the recording keeps playing, or
 stays paused, exactly as it was. The exact time is typed into the row itself, in
-the slot its clock reads in; the `−0.1s` and `+0.1s` controls under it make the
-same division.
+the slot its clock reads in; the four controls under it make the same division
+for a pointer, as **Add marker** is the pointer's `M`: `−0.5s` and `+0.5s`
+outboard, `−0.1s` and `+0.1s` between them — a half second in one press, where
+the tenth takes five — and the tenths stay tenths whatever is held. Hold `Shift`
+and the halves become the whole second the keys take, reading `−1s` and `+1s`
+while it is down: the label is the step, so no control can show a second and
+take a half.
 
 This page's `↑` and `↓` are the practice surface's, and they reach a marker the
 same way: the jump moves the playhead to it, and the playhead is what decides

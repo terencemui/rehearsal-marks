@@ -318,11 +318,21 @@
   outline-offset: -2px;
 }
 
-/* The correction block on the row carrying it: the two nudges, and the
-   domain's refusal when it makes one. Its own inset and tint, so the controls
-   read as a panel that belongs to the row above them rather than as two more
-   rows of the list — the row the exact time is typed into is the row itself
-   (T68), and this is what is left under it. */
+/* The correction decks on the row carrying them: the four nudges — a deck each
+   side — and the domain's refusal when it makes one. Its own inset and tint, so
+   the controls read as a panel that belongs to the row above them rather than
+   as more rows of the list — the row the exact time is typed into is the row
+   itself (T68), and this is what is left under it.
+
+   The two decks are pushed to the ends of one line (`space-between`'s work done
+   by the plus deck's own auto margin, which keeps doing it after a wrap), so the
+   strip reads as the row above it: `−0.5s −0.1s` … `+0.1s +0.5s`. They wrap
+   rather than shrink once the pair no longer fits the panel's width — each deck
+   is a row of its own that a control cannot be broken out of — and the plus deck
+   keeps the right end of whatever line it lands on, which is what an auto margin
+   buys over `justify-content` (that would strand it at the left of its own
+   line). The wrap is a floor, not a layout: at the panel's own width the four
+   fit and the decks stay on one line. */
 .markings-correct {
   display: flex;
   flex-wrap: wrap;
@@ -333,6 +343,16 @@
   border: 1px solid #99f6e4;
   border-radius: 6px;
   background: #f0fdfa;
+}
+
+.markings-nudge-deck {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.markings-nudge-deck-plus {
+  margin-left: auto;
 }
 
 /* The exact time, at the millisecond precision a correction is made in. Its
@@ -353,7 +373,23 @@
   outline-offset: -1px;
 }
 
+/* A nudge control, in its deck. All four are held to the width of the widest
+   label the deck can show — `±0.5s`, five characters of the monospace face the
+   strip is set in — because two of them are the same control saying two things:
+   the halves read `±0.5s` and, while `Shift` is held, `±1s` (T71). Without the
+   floor the two would narrow as the modifier went down, moving the strip — and
+   the control under the pointer — in the middle of the gesture the widening is
+   for.
+
+   `ch` is a character of the element's own font, and this font is monospaced,
+   so five of them are the five glyphs of the wider label exactly; the tenths
+   are five characters in either state and are simply not shrunk by it. No
+   `box-sizing` here, so the declared width is the content's and the label's
+   padding and border are added to it, as they are for a label at its own
+   width — which is what makes the pinned box and the natural one the same
+   size. */
 .markings-nudge {
+  min-width: 5ch;
   padding: 4px 8px;
   border: 1px solid #99f6e4;
   border-radius: 5px;

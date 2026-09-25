@@ -43,6 +43,27 @@ describe('HelpTab', () => {
     expect(keyboard).toHaveTextContent(/Alt\+arrows are the browser's again/);
   });
 
+  it('names the four correction steps, and the Shift that widens the halves (T71)', () => {
+    render(<HelpTab />);
+
+    const keyboard = screen.getByRole('heading', { name: 'Keyboard reference' }).closest('section')!;
+
+    // The pointer's steps are the four the decks under a row carry, and they
+    // are named where the keys that make the same corrections are: a student
+    // reading the reference is deciding whether the keyboard is enough, which
+    // is the question the fourth step answers.
+    for (const step of ['−0.5s', '−0.1s', '+0.1s', '+0.5s']) {
+      expect(keyboard).toHaveTextContent(step);
+    }
+
+    // And the widening is stated rather than left to be found by accident: the
+    // halves are a whole second while `Shift` is held, and they say so before
+    // they are pressed.
+    expect(keyboard).toHaveTextContent(/Hold Shift and the halves become the whole second/i);
+    expect(keyboard).toHaveTextContent('−1s');
+    expect(keyboard).toHaveTextContent('+1s');
+  });
+
   it('states the marker rules and their limits', () => {
     render(<HelpTab />);
 

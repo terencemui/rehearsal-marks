@@ -177,6 +177,11 @@ describe('Player — playback-only (T39)', () => {
     // label (`Delete marker A`), so an exact `Delete marker` matches nothing
     // however the panel changes — which is no guard at all (T66).
     expect(screen.queryByRole('button', { name: /Delete marker/ })).not.toBeInTheDocument();
+    // And no correction step on any row (T71): the decks belong to the surface
+    // that may change a marker, and this one may not. Matched on the shape every
+    // step reads as — `−0.5s`, `+1s` — so a deck arriving under a new name is
+    // still caught.
+    expect(screen.queryByRole('button', { name: /^[−+][0-9.]+s$/ })).not.toBeInTheDocument();
     // The marker rows themselves survive — they are the navigable map of the marks.
     expect(markerRows(container)).toHaveLength(2);
   });
