@@ -26,8 +26,8 @@ const MANUAL_SCROLL_GRACE_MS = 3000;
  * needs no choice either (T64): the block sits on the **active row**, which the
  * page derives from the playhead rather than holding, so nothing can be left
  * aimed at a row that has gone. The one thing that moves the block off that row
- * — a caret sitting in a pinned row's time field — arrives as `onPin` and
- * `onReleasePin`, and the row it resolves to arrives as `blockRowId`.
+ * — a caret sitting in one of a pinned row's own fields (T64, T69) — arrives as
+ * `onPin` and `onReleasePin`, and the row it resolves to arrives as `blockRowId`.
  */
 export interface MarkersAuthoring {
   /** Places a mark at the playhead. */
@@ -103,20 +103,21 @@ export interface MarkersAuthoring {
   /** Removes the marker. */
   onDelete(marker: LabeledMarker): void;
   /**
-   * The caret entered a row's time field (T64). That row holds the block —
-   * it becomes `blockRowId` — until `onReleasePin`, whatever the playhead does
-   * in the meantime, so a time being typed is not re-seeded out from under the
-   * typist by the next mark going by, and the row a correction is being given
-   * is not scrolled away from them.
+   * The caret entered one of a row's own fields (T64) — its time, or the name
+   * beside its label (T69). That row holds the block — it becomes `blockRowId` —
+   * until `onReleasePin`, whatever the playhead does in the meantime, so a time
+   * being typed is not re-seeded and a name half-typed is not unmounted out from
+   * under the typist by the next mark going by, and the row a correction is
+   * being given is not scrolled away from them.
    *
-   * The pin is armed by the caret entering the field and released by leaving
-   * it, and by nothing else. A nudge-button click is deliberately not a
-   * trigger: Safari on macOS does not focus a button on click, so the same
-   * gesture would pin there and not in Chrome — and it has nothing left to buy,
-   * now that a nudge takes the playhead with it.
+   * The pin is armed by the caret entering one of the row's fields and released
+   * when it has left them all, and by nothing else. A nudge-button click is
+   * deliberately not a trigger: Safari on macOS does not focus a button on
+   * click, so the same gesture would pin there and not in Chrome — and it has
+   * nothing left to buy, now that a nudge takes the playhead with it.
    */
   onPin(id: string): void;
-  /** The caret left that field. The block goes back to following the playhead. */
+  /** The caret left the row's fields. The block goes back to following the playhead. */
   onReleasePin(): void;
   /**
    * Nudges the marker by `delta` seconds, negative for earlier. The one action
@@ -196,11 +197,13 @@ export interface MarkersPanelProps {
   /**
    * What the panel may do to its marks and its movements, supplied only by the
    * markings page (T56, T57, T58). Present, the head carries Add marker and Add
-   * movement, the rows carry the alias field, the delete control, and — on the
-   * active row — the correction block that nudges the row and takes an exact
-   * time for it, and a movement's header becomes the field its name is edited
-   * in; absent, the panel is the browsing list the practice surface and the
-   * read-only view have always shown, with no control that could change either.
+   * movement, the rows carry the delete control, and — on the active row — the
+   * alias field (T69) and the correction block that nudges the row and takes an
+   * exact time for it, and a movement's header becomes the field its name is
+   * edited in; absent, the panel is the browsing list the practice surface and
+   * the read-only view have always shown, with no control that could change
+   * either. Which row is the active one is `blockRowId`'s to say: this surface
+   * alone does not put a field on any row.
    */
   authoring?: MarkersAuthoring;
 }
@@ -437,9 +440,10 @@ function pinnedHeaderInset(row: HTMLElement): number {
  *
  * Given an `authoring` surface (T56, T57, T58, T59) the panel becomes the
  * markings page's own column: the head carries Add marker and Add movement, the
- * rows carry the alias field and the delete control, a movement's header
- * carries its name, its jump and its own delete, and the active row carries the
- * correction block — a mark's exact time and nudges, or a boundary's. The list
+ * rows carry the delete control and — on the active row — the alias field
+ * (T69), a movement's header carries its name, its jump and its own delete, and
+ * the active row carries the correction block — a mark's exact time and
+ * nudges, or a boundary's. The list
  * itself is untouched — the same grouping, the same derived labels, the same
  * reveal — because the marks a student edits are the marks they were reading a
  * moment ago. The reveal follows the row carrying the block, which is the
@@ -651,8 +655,23 @@ export function MarkersPanel({
             // It is drawn when the playhead sits *on* the boundary (T64), which
             // is why the panel only ever has one block: the active row is one
             // row, and a movement that holds the playhead holds it alone.
+            //
+            // The row is the pin's (T64, T69): the caret leaving the block's own
+            // field, and not landing in another field of this row, is what hands
+            // the block back to the playhead. A row with one field releases as
+            // it always did; the rule is stated once and in one place because a
+            // mark's row has two.
             movement !== null && blockId === movement.id && authoring !== undefined && (
-              <li key={`correct-${movement.id}`} className="correcting" aria-current="true">
+              <li
+                key={`correct-${movement.id}`}
+                className="correcting"
+                aria-current="true"
+                onBlur={(event) => {
+                  if (caretLeftTheRow(event.currentTarget, event.relatedTarget)) {
+                    authoring.onReleasePin();
+                  }
+                }}
+              >
                 <MovementCorrection movement={movement} duration={duration} authoring={authoring} />
               </li>
             ),
@@ -889,6 +908,27 @@ function movementDeleteQuestion(
   );
 }
 
+/**
+ * Whether a blur hands its row back to the playhead (T64, T69). It does unless
+ * the caret has landed in another field *of that same row*.
+ *
+ * The question is asked of the row and answered by its fields, because a row
+ * now has two of them and one edit can move between them: a name half-typed is
+ * not abandoned because the student has stepped to the time beside it. Naming
+ * the destination this narrowly is deliberate — a rule that held the row for
+ * any focus landing inside it would behave differently in Safari, where a click
+ * does not focus a button at all, which is the same divergence T64 rejected.
+ */
+function caretLeftTheRow(row: HTMLElement, related: EventTarget | null): boolean {
+  return !(related instanceof HTMLInputElement && row.contains(related));
+}
+// The test above is an `input` and not "a field" on purpose: what holds the row
+// is a caret, and a caret is what an input has. A row's fields are all inputs
+// today, so the narrower rule and the wider one agree — and if a later ticket
+// gives a row a field that is not one, this is the line that has to learn about
+// it, because a node the rule does not recognise reports the row as left and an
+// input unmounted mid-edit takes what was typed with it.
+
 interface CorrectionBlockProps {
   /**
    * The block's own name, as a reader hears it — which row it corrects and what
@@ -918,8 +958,6 @@ interface CorrectionBlockProps {
    * only that its own field was entered.
    */
   onPin(): void;
-  /** The caret left the field. The block goes back to following the playhead. */
-  onReleasePin(): void;
 }
 
 /**
@@ -954,7 +992,6 @@ function CorrectionBlock({
   onTime,
   onNudge,
   onPin,
-  onReleasePin,
 }: CorrectionBlockProps) {
   return (
     // The group is named for the row it corrects, so the block is not a set of
@@ -977,10 +1014,6 @@ function CorrectionBlock({
           onFocus={onPin}
           onBlur={(event) => {
             const field = event.currentTarget;
-            // The caret has gone, so the block is the playhead's again — before
-            // the commit below, which parks the playhead on the very time being
-            // written and so leaves the block on this row anyway.
-            onReleasePin();
             // Nothing typed is nothing to commit — and re-committing the time
             // the row holds would only re-validate a time already accepted.
             if (field.value === time) return;
@@ -1060,7 +1093,6 @@ function MovementCorrection({ movement, duration, authoring }: MovementCorrectio
       // (T64) — a movement is a marker's peer, so its boundary is pinned exactly
       // as a mark's row is.
       onPin={() => authoring.onPin(movement.id)}
-      onReleasePin={authoring.onReleasePin}
     />
   );
 }
@@ -1074,6 +1106,13 @@ interface MarkerRowProps {
    * row a caret is holding it on. The two are told apart because they are two
    * facts: the playhead may have moved on while a time is being typed, and the
    * row being typed into keeps the block and the highlight both.
+   *
+   * It is also the whole of what makes the row a *form* (T69): the alias is a
+   * field on this row and text on every other, because being the row the student
+   * is working on is the one thing that may put a control in a list of them. A
+   * mark's name can therefore only be edited where its time can, and a surface
+   * that supplies `authoring` without ever setting `blockRowId` offers no way to
+   * name a mark at all — the panel has one gate for both, and this is it.
    */
   carrying: boolean;
   /** The recording's length — the row's clock divides by it. */
@@ -1100,8 +1139,17 @@ interface MarkerRowProps {
  * than a row that *is* a control.
  *
  * An editable row shows its derived label on its own rather than the browsing
- * rows' `label — alias`, because the alias is the field beside it — printing
- * it twice would read as two different facts about one mark.
+ * rows' `label — alias`, because the alias is the row's own beside it —
+ * printing it twice would read as two different facts about one mark.
+ *
+ * **The alias is text until its row is active** (T69), and a field on the row
+ * the playhead is on: a row is a line of a table of contents until it is the
+ * line being worked on, and a form only then. The two shapes are one slot of
+ * one rendered size, so nothing in the row moves as the playhead arrives on it,
+ * and the slot is there whether or not the mark has a name — it is what holds
+ * the clock off the label. A name is read where the label is, because the two
+ * things that name a mark belong together rather than at opposite ends of the
+ * row with the clock wedged between them.
  *
  * The alias field is uncontrolled and commits on leaving it (or on Enter,
  * which is the same thing): the marker's stored alias is what the field is
@@ -1154,6 +1202,15 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
     <li
       className={classes === '' ? undefined : classes}
       aria-current={carrying ? 'true' : undefined}
+      // The caret leaving the row's own fields is what hands the row back to
+      // the playhead (T64, T69). Both of them are in here — the alias and the
+      // time — so the rule is the row's own rather than either field's, and
+      // stepping from one to the other is one edit, not two.
+      onBlur={(event) => {
+        if (caretLeftTheRow(event.currentTarget, event.relatedTarget)) {
+          authoring?.onReleasePin();
+        }
+      }}
     >
       {authoring === undefined ? (
         <button
@@ -1203,27 +1260,48 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
           >
             {marker.label}
           </button>
-          <input
-            type="text"
-            className="markings-row-alias"
-            defaultValue={storedAlias}
-            placeholder="alias"
-            aria-label={`Alias for marker ${marker.label}`}
-            onBlur={(event) => {
-              const field = event.currentTarget;
-              // Nothing typed is nothing to commit — and re-committing the
-              // stored alias would only re-validate text already accepted.
-              if (field.value === storedAlias) return;
-              // The panel writes the honest value back: the normalized alias
-              // when the domain took it, the unchanged stored one when it did
-              // not — so the field never shows text the record does not hold.
-              field.value = authoring.onAlias(marker, field.value);
-            }}
-            onKeyDown={(event) => {
-              // Enter commits by leaving the field — one commit path, not two.
-              if (event.key === 'Enter') event.currentTarget.blur();
-            }}
-          />
+          {carrying ? (
+            <input
+              type="text"
+              className="markings-alias-slot markings-row-alias"
+              defaultValue={storedAlias}
+              aria-label={`Alias for marker ${marker.label}`}
+              // The caret is in the row's own field, so the row is the one being
+              // worked on whatever the playhead does next (T64, T69) — the twin
+              // of the same gesture in the time field, and the reason a name
+              // half-typed is not unmounted by the next mark going by.
+              onFocus={() => authoring.onPin(marker.id)}
+              onBlur={(event) => {
+                const field = event.currentTarget;
+                // Nothing typed is nothing to commit — and re-committing the
+                // stored alias would only re-validate text already accepted.
+                if (field.value === storedAlias) return;
+                // The panel writes the honest value back: the normalized alias
+                // when the domain took it, the unchanged stored one when it did
+                // not — so the field never shows text the record does not hold.
+                field.value = authoring.onAlias(marker, field.value);
+              }}
+              onKeyDown={(event) => {
+                // Enter commits by leaving the field — one commit path, not two.
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+            />
+          ) : (
+            // The name as it is read (T69): plain text, in the slot the field
+            // will occupy, so the row is a line of a list of contents until the
+            // playhead lands on it and a form only then. It is rendered
+            // whether or not the mark has a name: the slot is what holds the
+            // clock off the label, so a row without one keeps the same gap
+            // rather than bunching its clock and its trash against the label.
+            //
+            // The title carries the whole name, as the browsing row's own span
+            // carries the whole reading: at the panel's floor the slot ellipsises
+            // a long name, and a student should not have to make the row active —
+            // which moves the recording to it — to read the rest of it.
+            <span className="markings-alias-slot" title={storedAlias === '' ? undefined : storedAlias}>
+              {storedAlias}
+            </span>
+          )}
           <button
             type="button"
             tabIndex={-1}
@@ -1254,7 +1332,6 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
           onTime={(text) => authoring.onTime(marker, text)}
           onNudge={(delta) => authoring.onNudge(marker, delta)}
           onPin={() => authoring.onPin(marker.id)}
-          onReleasePin={authoring.onReleasePin}
         />
       )}
     </li>
