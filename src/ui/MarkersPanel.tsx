@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { LabeledMarker } from '../domain';
-import type { Movement } from '../domain';
-import { movementForTime } from '../domain';
+import type { Movement, Naming } from '../domain';
+import { markerIdentity, markerName, markerTitle, movementForTime } from '../domain';
 import { formatTime, formatWholeSeconds } from '../domain/time';
 import type { NudgeControl } from './nudgeControls';
 import { nudgeControls } from './nudgeControls';
@@ -167,6 +167,13 @@ export interface MarkersPanelProps {
    * movement header and labels restart at A within each movement.
    */
   movements: Movement[];
+  /**
+   * How the project names its marks (T72). The rows read it, so a project kept
+   * by measure shows bar numbers and one kept in letters shows `A — Recap`;
+   * the accessibility names and the label a corrected row edits read it too,
+   * which is why it is the panel's rather than any one row's.
+   */
+  naming: Naming;
   /** The known recording duration, seconds — row times divide by it. */
   duration: number;
   /**
@@ -520,6 +527,7 @@ export function MarkersPanel({
   // Records saved before movements existed (ADR-0005) read the field back as
   // undefined — default it to the empty, ungrouped list the contract describes.
   movements = [],
+  naming,
   duration,
   passedId,
   blockRowId,
@@ -747,6 +755,7 @@ export function MarkersPanel({
               <MarkerRow
                 key={marker.id}
                 marker={marker}
+                naming={naming}
                 passed={marker.id === passedId}
                 carrying={blockId === marker.id}
                 duration={duration}
@@ -1285,6 +1294,8 @@ function MovementCorrection({ movement, authoring }: MovementCorrectionProps) {
 
 interface MarkerRowProps {
   marker: LabeledMarker;
+  /** How the project names its marks (T72) — see `MarkersPanelProps.naming`. */
+  naming: Naming;
   /** Whether the playhead has passed this mark — the tint, which the block does not follow. */
   passed: boolean;
   /**
@@ -1352,8 +1363,15 @@ interface MarkerRowProps {
  * jumped to, as the mark it was a moment ago — minus the clock, which the field
  * has taken the place of.
  */
-function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: MarkerRowProps) {
+function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authoring }: MarkerRowProps) {
   const storedAlias = marker.aliases[0] ?? '';
+  /**
+   * The mark's accessible name (T72) — what a reader hears the controls called,
+   * and what the corrected row's own fields are labelled by. Under `measures`
+   * that is the alias, so a mark named `17` reads `Delete marker 17`; an
+   * unnamed mark falls back to its label rather than announcing nothing.
+   */
+  const identity = markerIdentity(marker, naming);
   const aliasError =
     authoring !== undefined && authoring.aliasError?.markerId === marker.id
       ? authoring.aliasError.message
@@ -1408,15 +1426,13 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
           tabIndex={-1}
           className="player-marker-row"
           onClick={seek}
-          title={
-            marker.aliases.length > 0
-              ? `${marker.label} — ${marker.aliases.join(', ')}`
-              : marker.label
-          }
+          // The whole name on hover (T72): under `measures` it is the alias
+          // alone, and a mark the owner has not named says nothing — the row
+          // shows the blank the project has, rather than a letter the project
+          // does not use.
+          title={markerTitle(marker, naming)}
         >
-          <span className="player-marker-title">
-            {marker.aliases.length === 0 ? marker.label : `${marker.label} — ${marker.aliases[0]}`}
-          </span>
+          <span className="player-marker-title">{markerName(marker, naming)}</span>
           <span className="player-marker-time">{clock}</span>
         </button>
       ) : (
@@ -1425,7 +1441,9 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
         // between its controls and the row's own padding — moves the playhead
         // to the mark as well, so a student still never has to aim.
         <div
-          className="markings-row"
+          className={
+            naming === 'measures' ? 'markings-row naming-measures' : 'markings-row'
+          }
           onClick={(event) => {
             // A control in the row keeps its own click: a field takes the
             // caret, the delete control deletes. The guard walks up from the
@@ -1441,21 +1459,28 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
             onSeek(marker);
           }}
         >
-          <button
-            type="button"
-            tabIndex={-1}
-            className="player-marker-title"
-            title={`Jump to ${marker.label}`}
-            onClick={seek}
-          >
-            {marker.label}
-          </button>
+          {/* The derived label names the mark only where the project is read
+              in letters or numbers (T72). Under `measures` the label is a
+              rank the score does not use — printing it would be the app
+              talking to itself — so the row leads with the name the owner
+              wrote instead, and the alias slot below is that leading element. */}
+          {naming !== 'measures' && (
+            <button
+              type="button"
+              tabIndex={-1}
+              className="player-marker-title"
+              title={`Jump to ${identity}`}
+              onClick={seek}
+            >
+              {marker.label}
+            </button>
+          )}
           {carrying ? (
             <input
               type="text"
               className="markings-alias-slot markings-row-alias"
               defaultValue={storedAlias}
-              aria-label={`Alias for marker ${marker.label}`}
+              aria-label={`Alias for marker ${identity}`}
               // The caret is in the row's own field, so the row is the one being
               // worked on whatever the playhead does next (T64, T69) — the twin
               // of the same gesture in the time field, and the reason a name
@@ -1502,17 +1527,17 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
             <TimeField
               time={exactTime}
               seed={marker.time}
-              label={`Time for marker ${marker.label}`}
+              label={`Time for marker ${identity}`}
               onCommit={(text) => authoring.onTime(marker, text)}
               onPin={() => authoring.onPin(marker.id)}
             />
           ) : (
             // The clock a movement's header carries too (T70) — the same
             // component, so a mark's reading and a movement's are one control.
-            <Clock name={marker.label} time={clock} onJump={() => onSeek(marker)} />
+            <Clock name={identity} time={clock} onJump={() => onSeek(marker)} />
           )}
           <DeleteControl
-            label={`Delete marker ${marker.label}`}
+            label={`Delete marker ${identity}`}
             onDelete={() => authoring.onDelete(marker)}
           />
         </div>
@@ -1525,7 +1550,7 @@ function MarkerRow({ marker, passed, carrying, duration, onSeek, authoring }: Ma
       {carrying && authoring !== undefined && (
         <CorrectionBlock
           shiftHeld={authoring.shiftHeld}
-          groupLabel={`Correct marker ${marker.label}`}
+          groupLabel={`Correct marker ${identity}`}
           error={timeError}
           onNudge={(delta) => authoring.onNudge(marker, delta)}
         />

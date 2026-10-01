@@ -9,6 +9,12 @@ const migrationUrl = resolve(
   'supabase/migrations/20260917000000_init.sql',
 );
 
+/** The T72 naming migration — the first migration after the squashed baseline. */
+const namingMigrationUrl = resolve(
+  process.cwd(),
+  'supabase/migrations/20261001000000_project_naming.sql',
+);
+
 /**
  * The baseline migration's contracts, pinned the way the seed test pins the
  * seed: what an actor can and cannot read or write is the database's own rule,
@@ -197,5 +203,42 @@ describe('the baseline migration', () => {
       expect(migration).toContain(`when '${action}' then`);
     }
     expect(migration).toMatch(/revoke execute on function public\.moderate_project\(uuid, text\) from public;/);
+  });
+});
+
+/**
+ * The naming migration (T72), read the same way — as text. It is a separate
+ * file from the baseline, and a separate `describe`, because a squash and a
+ * migration promise different things: the baseline must build the whole schema
+ * from nothing, while this one is a single correct step on top of it. The
+ * baseline's own exact-string grant assertions above are untouched by it.
+ *
+ * CI never executes this SQL, so these are the only automated check it gets —
+ * the column, its constraint, and who may write it. Whether it *runs* is
+ * checked locally, against the stack (see the ticket).
+ */
+describe('the project naming migration', () => {
+  const migration = readFileSync(namingMigrationUrl, 'utf8');
+
+  it('adds the naming column with its default and its three values', () => {
+    expect(migration).toMatch(
+      /add column naming text not null default 'letters'\s+check \(naming in \('letters', 'numbers', 'measures'\)\)/,
+    );
+  });
+
+  it('gives the client the naming update grant and nothing else', () => {
+    // The setting is set through its own operation, beside visibility — the
+    // same shape of grant, on the same table, to the same role.
+    expect(migration).toMatch(/grant update \(naming\) on public\.projects to authenticated;/);
+    // The value at creation is the column default, so the create path — the
+    // insert grant and the payload it carries — is untouched.
+    expect(migration).not.toMatch(/grant insert/);
+    // And no wider read or delete right is granted by this file.
+    expect(migration).not.toMatch(/grant (select|delete|all)/);
+  });
+
+  it('is a migration, not a baseline — it never drops or renames', () => {
+    expect(migration).not.toMatch(/\bdrop\s+(table|function|policy|trigger|index|column)\b/i);
+    expect(migration).not.toMatch(/\brename\s+to\b/i);
   });
 });

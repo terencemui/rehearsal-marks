@@ -356,6 +356,22 @@ describe('Player — the practice console (T36)', () => {
     ).toEqual(['A — Recap', 'B']);
   });
 
+  it('leaves the next slot bare where the derived label names the marks', async () => {
+    // The alias belongs to the mark the playhead has *reached*; the slot for
+    // the one it is heading for has always read the bare label, and T72 does
+    // not change that — a naming setting decides what a mark is called, not
+    // how much of the name each slot of the head shows.
+    const { controller } = await renderLoadedPlayer(
+      serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20, ['Chorus'])] }),
+    );
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+
+    const head = readout().querySelector('.player-practice-head');
+    expect(
+      Array.from((head as HTMLElement).children).map((element) => element.textContent),
+    ).toEqual(['A — Recap', 'B']);
+  });
+
   it('spreads the head as a flex row, the now shrinkable and the next flush right', () => {
     // jsdom computes no flex, so pin the CSS rules that realize the row: the
     // head spreads its two values baseline-aligned, the now column shrinking
@@ -779,6 +795,40 @@ describe('Player — the timeline bar and markers (T38)', () => {
 
     act(() => controller.emitPlayback({ currentTime: 25 }));
     expect(rows[1].closest('li')).toHaveClass('passed');
+  });
+
+  it('names the marks by measure — the alias alone — when the project is kept that way', async () => {
+    // A score that boxes bar numbers: the owner writes `17` and `42` as the
+    // aliases, and the derived letters never name those marks at all.
+    const { container, controller } = await renderLoadedPlayer(
+      serverProject({
+        naming: 'measures',
+        markers: [marker('m1', 10, ['17']), marker('m2', 20, ['42'])],
+      }),
+    );
+
+    const rows = markerRows(container);
+    expect(rows[0].querySelector('.player-marker-title')!.textContent).toBe('17');
+    expect(rows[1].querySelector('.player-marker-title')!.textContent).toBe('42');
+
+    // The practice readout names them the same way, both slots.
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+    const region = screen.getByRole('region', { name: 'Practice readout' });
+    expect(within(region).getByText('17')).toBeInTheDocument();
+    expect(within(region).getByText('42')).toBeInTheDocument();
+  });
+
+  it('names the marks by number — 1, 2 — when the project counts rather than letters', async () => {
+    const { container } = await renderLoadedPlayer(
+      serverProject({
+        naming: 'numbers',
+        markers: [marker('m1', 10, ['Recap']), marker('m2', 20)],
+      }),
+    );
+
+    const rows = markerRows(container);
+    expect(rows[0].querySelector('.player-marker-title')!.textContent).toBe('1 — Recap');
+    expect(rows[1].querySelector('.player-marker-title')!.textContent).toBe('2');
   });
 
   it('makes marker rows pointer targets, not tab stops — the letter keys navigate', async () => {

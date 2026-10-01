@@ -8,11 +8,12 @@
  * `recordingTitle` is the canonical recording title, fetched once from
  * YouTube at creation and never editable; `name` is the user's own label. The
  * recording identity is `videoId` (with `duration` as a soft check); the
- * review surface is `visibility` + `publicationStatus`.
+ * review surface is `visibility` + `publicationStatus`; `naming` is how the
+ * project's own score names its marks (T72).
  */
 
-import { isVideoId, parseMarkers, parseMovements } from '../domain';
-import type { Marker, Movement } from '../domain';
+import { NAMINGS, isVideoId, parseMarkers, parseMovements } from '../domain';
+import type { Marker, Movement, Naming } from '../domain';
 import { ProjectsError } from './errors';
 
 /** Whether a project's markings are visible to anonymous readers. */
@@ -46,6 +47,8 @@ export interface ServerProject {
   markers: Marker[];
   /** The recording's movements (ADR-0005); empty means one flat sequence. */
   movements: Movement[];
+  /** How this project's score names its marks (T72) — a fact about the project. */
+  naming: Naming;
   visibility: ProjectVisibility;
   publicationStatus: PublicationStatus;
   /** Epoch ms. */
@@ -62,6 +65,8 @@ export interface ProjectSummary {
   /** Seconds, float. */
   duration: number;
   markerCount: number;
+  /** How this project's score names its marks (T72) — the row's own control reads it. */
+  naming: Naming;
   visibility: ProjectVisibility;
   publicationStatus: PublicationStatus;
   /** Epoch ms. */
@@ -79,10 +84,12 @@ export interface ProjectValues {
 }
 
 /**
- * The fields an owner may edit — exactly the update grant the T49 migration
- * gives the client (name, markers, movements); visibility has its own
- * operation, and recording identity, ownership, and status are never
- * client-settable.
+ * The fields the markings autosave writes — the project's own substance. The
+ * update grant covers more than this, but the settings on it each have an
+ * operation of their own: `visibility` (and, since T72, `naming`) are project
+ * decisions written through `setVisibility` / `setNaming`, never smuggled in
+ * on a markings save (ADR-0007's save split). Recording identity, ownership,
+ * and review status are never client-settable at all.
  */
 export interface ProjectUpdate {
   name?: string;
@@ -160,6 +167,7 @@ export function parseProjectRow(value: unknown): ServerProject {
   }
 
   const visibility = assertOneOf(row.visibility, PROJECT_VISIBILITIES, 'visibility');
+  const naming = assertOneOf(row.naming, NAMINGS, 'naming');
   const publicationStatus = assertOneOf(
     row.publication_status,
     PUBLICATION_STATUSES,
@@ -174,6 +182,7 @@ export function parseProjectRow(value: unknown): ServerProject {
     duration,
     markers,
     movements,
+    naming,
     visibility,
     publicationStatus,
     createdAt: assertTimestamp(row.created_at, 'created_at'),
@@ -189,6 +198,7 @@ export function summarizeProject(project: ServerProject): ProjectSummary {
     recordingTitle: project.recordingTitle,
     duration: project.duration,
     markerCount: project.markers.length,
+    naming: project.naming,
     visibility: project.visibility,
     publicationStatus: project.publicationStatus,
     updatedAt: project.updatedAt,

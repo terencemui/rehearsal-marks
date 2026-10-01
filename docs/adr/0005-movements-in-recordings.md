@@ -1,6 +1,7 @@
 # ADR-0005 — Movements in recordings: repeated labels, derived membership, and the authoring gap
 
 **Status:** Accepted — 2026-08-28
+**Amended — 2026-10-01 (#169):** a label is written in the hand the *project's* **Naming** names, and under `measures` it is not the mark's name at all. The amendment is under the "Labels restart per movement" bullet, below.
 **Supersedes:** the A–Z "surviving keyboard navigation" clause of ADR-0003
 
 ## Context
@@ -13,6 +14,12 @@ The domain model has no concept of a subdivision of a recording. A single video 
 
 - **Membership is derived from time, never stored.** A marker belongs to the movement whose start is the latest start ≤ its time (a marker at a movement's start belongs to that movement); before the first movement's start it belongs to none. Markers carry no movement reference.
 - **Labels restart per movement.** A marker's label is its rank within its own movement — movement I runs A, B, C; movement II starts fresh at A. Labels remain derived, never stored.
+
+  > _Amended 2026-10-01 (T72)._ A rank is not always *written* as a letter. The project carries a **Naming** — `letters`, `numbers`, or `measures` — and the rank is drawn in the hand that setting names: A, B, C; 1, 2, 3; or, under `measures`, not drawn at all, because a score that boxes bar numbers names its marks with the owner's **Alias** and a rank would be a name the score does not use. The rank itself is unchanged — still derived, still restarting per movement, still never stored — and so is everything above it: membership is still time-derived and the panel still groups under the same headers. What changed is that "the letter a marker is called" was never quite right, and is now only one of the ways a mark is named.
+  >
+  > The setting is the **project's**, never the viewer's. A published project has one reading of its marks, and a reader who has never met the owner sees the names the score uses; a per-viewer preference would make the same public project read differently to two people, which is what the Commons cannot have (see the consequence below).
+  >
+  > _Rejected:_ a per-viewer preference, for exactly that reason; an authored-label column, which would store what a rank derives and leave the two free to disagree after a marker moves or a movement is deleted; and naming the marks by movement-qualified labels (`II-C`), which solves a different problem — which movement a mark is in — and neither the score nor the panel has one.
 - **The A–Z letter-jump keys are removed entirely** — for every project, not just multi-movement ones. Labels became ambiguous, and resolving that ambiguity (current-movement, next-occurrence, or a movement-key-first press) all fought the single-press premise of ADR-0003. With the keys gone, the alias-vs-label collision rule — which existed only to keep letter navigation unambiguous — is **dropped**; aliases keep non-empty, ≤16 chars, per-set dedupe, and case-insensitive uniqueness against *other aliases only*.
 - **The practice surface.** The markers panel groups rows by movement under a sticky, scroll-driven movement header that swaps as the next movement's group scrolls into place and seeks to the movement's start when clicked. ↑/↓ still walk the full recording across movement boundaries; the practice readout's passed/next slots stay bare (movement-qualified slots and a movement subtitle line are held as prototype candidates, not shipped).
 - **Movements ship in the label set.** The project file and Commons row gain an additive `movements` array alongside markers; membership and labels are derived from it at load. Whether this rides as schema version 1 (tolerant) or 2 is a migration detail for implementation.

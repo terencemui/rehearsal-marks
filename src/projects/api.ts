@@ -21,7 +21,7 @@ import {
   listPublishedProjects as fetchPublishedProjects,
   readProjectsConfig,
 } from './read';
-import type { Marker, Movement } from '../domain';
+import type { Marker, Movement, Naming } from '../domain';
 import type { ProjectSummary, ProjectUpdate, ProjectValues, ServerProject } from './types';
 import type { ProjectVisibility } from './types';
 
@@ -47,10 +47,19 @@ export interface PublicProjectSummary {
   createdAt: number;
 }
 
-/** A single public project opened read-only: the summary plus its content. */
+/**
+ * A single public project opened read-only: the summary plus its content.
+ *
+ * It carries `naming` (T72) where the summary deliberately does not: the
+ * gallery lists no marks, so it has nothing to name, while the read-only view
+ * renders the same rows the owner sees and must name them the same way — which
+ * is the whole reason the setting lives on the project rather than in a
+ * viewer's preference (ADR-0005).
+ */
 export interface PublicProject extends PublicProjectSummary {
   markers: Marker[];
   movements: Movement[];
+  naming: Naming;
 }
 
 /**
@@ -87,6 +96,17 @@ export interface ProjectsApi {
   saveProject(id: string, update: ProjectUpdate): Promise<ServerProject>;
   /** The visibility toggle; making a private project public re-enters review. */
   setVisibility(id: string, visibility: ProjectVisibility): Promise<void>;
+  /**
+   * How the project names its marks (T72). Its own operation, beside the
+   * visibility toggle, because it is a project-level setting and not a
+   * marking: a markings save must never carry it (ADR-0007's save split).
+   *
+   * The review trigger is row-level, not column-aware, so setting this on a
+   * published public project returns it to review and off the public gallery —
+   * the same rule a rename already obeys (ADR-0006, T56). The row's badge is
+   * where that consequence surfaces.
+   */
+  setNaming(id: string, naming: Naming): Promise<void>;
   /** Deletes the signed-in user's own project. */
   deleteProject(id: string): Promise<void>;
   /** Every published public project, newest first — the gallery's source. */

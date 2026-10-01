@@ -122,6 +122,24 @@ describe('HelpTab', () => {
     expect(projects).not.toHaveTextContent(/in your browser/i);
   });
 
+  it('names the three ways a project can name its marks, and what separates them (T72)', () => {
+    render(<HelpTab />);
+
+    const projects = screen.getByRole('heading', { name: 'Projects' }).closest('section')!;
+    // The two counting modes are the same machinery written two ways, and the
+    // text has to say so — they are a style, not a difference in what a mark
+    // is. Bar numbers are the other kind, and the reason is the one that makes
+    // them impossible to derive: the gaps.
+    expect(projects).toHaveTextContent(/names its markers/i);
+    expect(projects).toHaveTextContent('A, B, C');
+    expect(projects).toHaveTextContent('1, 2, 3');
+    expect(projects).toHaveTextContent(/bar numbers/i);
+    expect(projects).toHaveTextContent(/gaps/i);
+    // And whose choice it is: the project's, so a public project reads the
+    // same to the owner and to a stranger.
+    expect(projects).toHaveTextContent(/belongs to the project, not to you/i);
+  });
+
   it('keeps the privacy promise honest about YouTube streaming', () => {
     render(<HelpTab />);
 

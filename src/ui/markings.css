@@ -253,6 +253,21 @@
   color: #334155;
 }
 
+/* A project kept by measure (T72) names its marks with the alias alone, so the
+   slot leads the row where a derived label leads every other project's, and it
+   is then the row's only name rather than a second one beside a letter.
+
+   Leading, it takes the floor the label's own column would have set and the
+   room the label would have taken: the slot stops yielding at the width a bar
+   number reads at (`[17]`, `[142]`) instead of at the browsing row's narrower
+   alias floor, so the name that *is* the mark's name is not the first thing to
+   be ellipsised. Everything else about the slot — the face, the ellipsis, the
+   field shape — is unchanged. */
+.markings-row.naming-measures .markings-alias-slot {
+  flex: 1 1 auto;
+  min-width: 46px;
+}
+
 /* The field the name is typed into, on the row the playhead is on (T69): the
    same slot, in the ink a field is drawn in. It arrives with no placeholder —
    an empty name is an empty slot, and a hint repeated down the panel would read

@@ -83,6 +83,12 @@ export function createSupabaseProjectsApi(
       if (error) throw postgrestErrorToProjectsError(error);
     },
 
+    async setNaming(id, naming) {
+      await requireSession(client);
+      const { error } = await client.from('projects').update({ naming }).eq('id', id);
+      if (error) throw postgrestErrorToProjectsError(error);
+    },
+
     async deleteProject(id) {
       await requireSession(client);
       const { error } = await client.from('projects').delete().eq('id', id);

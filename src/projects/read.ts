@@ -13,6 +13,7 @@
  */
 
 import { parseMarkers, parseMovements } from '../domain';
+import type { Naming } from '../domain';
 import type { PublicProject, PublicProjectSummary } from './api';
 
 /** The anon-key client identity a read carries; RLS is the boundary, not the key. */
@@ -62,8 +63,12 @@ export interface ProjectsReadDependencies {
  * summaries has no use for it.
  */
 const LIST_SELECT = 'id,name,recording_title,video_id,duration,created_at,markers';
-/** The read-only view's projection: the summary's facts plus the full content. */
-const DETAIL_SELECT = 'id,name,recording_title,video_id,duration,created_at,markers,movements';
+/**
+ * The read-only view's projection: the summary's facts plus the full content.
+ * `naming` is here and not on `LIST_SELECT` because only this read renders
+ * marks — a gallery entry names none.
+ */
+const DETAIL_SELECT = 'id,name,recording_title,video_id,duration,created_at,markers,movements,naming';
 
 /** The projects query root with the read projection and the published filter. */
 function projectsQuery(
@@ -217,7 +222,21 @@ function publicProjectFromRow(raw: unknown): PublicProject {
     ...summary,
     markers: parseMarkers(row.markers),
     movements: parseMovements(row.movements ?? []),
+    naming: namingField(row),
   };
+}
+
+/**
+ * The row's naming, read tolerantly — an absent or unrecognised value is the
+ * default (`letters`), exactly as `movements` degrades to the empty list on the
+ * line above. The signed-in reader can afford to be strict, because the column
+ * is the app's own schema; this read rides the anon key against whatever the
+ * deployment happens to be running, and a reader who cannot be told which
+ * convention a project uses is better served by today's rendering than by no
+ * rendering at all.
+ */
+function namingField(row: Record<string, unknown>): Naming {
+  return row.naming === 'numbers' || row.naming === 'measures' ? row.naming : 'letters';
 }
 
 function asObject(raw: unknown): Record<string, unknown> {

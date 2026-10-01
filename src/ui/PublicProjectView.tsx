@@ -147,6 +147,10 @@ function projectRecordFrom(project: PublicProject): ServerProject {
     duration: project.duration,
     markers: project.markers,
     movements: project.movements,
+    // The owner's own naming travels with the row, so a stranger reading the
+    // project sees its marks named the way its owner sees them (T72) — the
+    // point of holding naming on the project rather than on the viewer.
+    naming: project.naming,
     // The anonymous read only ever returns a published public row, so the
     // status fields the server shape carries are fixed — the session will
     // never write them.

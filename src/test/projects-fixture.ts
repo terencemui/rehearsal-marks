@@ -3,7 +3,8 @@ import { ProjectsError } from '../projects/errors';
 import type { ProjectsApi, PublicProject, PublicProjectSummary } from '../projects/api';
 import { summarizeProject } from '../projects/types';
 import type { ProjectSummary, ProjectUpdate, ProjectValues, ServerProject } from '../projects/types';
-import type { ProjectVisibility } from '../projects/types';
+import type { ProjectVisibility, PublicationStatus } from '../projects/types';
+import type { Naming } from '../projects';
 
 /**
  * Test double for the ProjectsApi seam — the in-memory counterpart of the
@@ -62,11 +63,27 @@ export function fakeProjectsApi(): FakeProjectsApi {
     };
   }
 
+  /**
+   * The T49 review trigger's general rule, for the fakes that write: it is
+   * row-level, not column-aware, so *any* write to a public project that was
+   * not already pending returns it to the queue — an edit, a rename, or, since
+   * T72, a naming change. The server enforces one exception the fake has no
+   * notion of: a trusted owner's write stays published.
+   */
+  function afterWrite(project: ServerProject): PublicationStatus {
+    return project.visibility === 'public' && project.publicationStatus !== 'pending'
+      ? 'pending'
+      : project.publicationStatus;
+  }
+
   function publicProject(project: ServerProject): PublicProject {
     return {
       ...gallerySummary(project),
       markers: project.markers,
       movements: project.movements,
+      // The read-only view renders the owner's marks, so it carries the
+      // project's naming — the gallery summary beside it does not (T72).
+      naming: project.naming,
     };
   }
 
@@ -91,6 +108,9 @@ export function fakeProjectsApi(): FakeProjectsApi {
         duration: values.duration,
         markers: values.markers,
         movements: values.movements,
+        // A new project is always the column default — creation carries no
+        // naming (T72).
+        naming: 'letters',
         visibility: 'public',
         publicationStatus: 'pending',
         createdAt: Date.now(),
@@ -113,14 +133,9 @@ export function fakeProjectsApi(): FakeProjectsApi {
         movements: update.movements ?? project.movements,
         updatedAt: Date.now(),
       };
-      // The T49 review trigger's general rule: an owner's edit to a public
-      // project that was not pending returns it to the queue, so the returned
-      // row and the list badge reflect the demotion. (A trusted owner's edit
-      // stays published — the fake has no trust notion; the server enforces
-      // that exception.)
-      if (next.visibility === 'public' && project.publicationStatus !== 'pending') {
-        next.publicationStatus = 'pending';
-      }
+      // See afterWrite: the returned row and the list badge both reflect the
+      // demotion an edit to a published public project causes.
+      next.publicationStatus = afterWrite(project);
       projects.set(id, next);
       return next;
     }),
@@ -137,6 +152,22 @@ export function fakeProjectsApi(): FakeProjectsApi {
           ? 'pending'
           : project.publicationStatus;
       projects.set(id, { ...project, visibility, publicationStatus, updatedAt: Date.now() });
+    }),
+
+    setNaming: vi.fn(async (id: string, naming: Naming): Promise<void> => {
+      throwIfFailing('setNaming');
+      const project = projects.get(id);
+      if (project === undefined) {
+        throw new ProjectsError('This project was not found.', 'not-found');
+      }
+      // See afterWrite: a naming change demotes exactly as a rename does, and
+      // the row's badge is where that surfaces.
+      projects.set(id, {
+        ...project,
+        naming,
+        publicationStatus: afterWrite(project),
+        updatedAt: Date.now(),
+      });
     }),
 
     deleteProject: vi.fn(async (id: string): Promise<void> => {
