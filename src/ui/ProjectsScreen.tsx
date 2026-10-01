@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { NAMINGS } from '../projects';
+import type { Naming } from '../projects';
 import type { ProjectSummary, PublicationStatus } from '../projects/types';
 import { formatDuration, formatUpdatedAt, validateProjectName } from '../projects/summary';
 import type { SaveStatus } from '../projects/autosave';
@@ -18,6 +20,29 @@ const PUBLIC_STATUS: Record<PublicationStatus, { text: string; title: string }> 
   rejected: {
     text: 'Rejected',
     title: 'Not published — this project did not pass review',
+  },
+};
+
+/**
+ * What each of the three naming modes reads as in the row's control (T72). The
+ * wording is the distinction itself rather than the vocabulary — a project is
+ * kept in `A, B, C`, `1, 2, 3` or `Bar numbers` — because the choice is about
+ * which name a score uses, and the mode's key says nothing about that. Keyed by
+ * the vocabulary so a mode can never be added to the domain and go unspoken
+ * here.
+ */
+const NAMING_TEXT: Record<Naming, { label: string; title: string }> = {
+  letters: {
+    label: 'A, B, C',
+    title: 'Name each mark by its letter within the movement',
+  },
+  numbers: {
+    label: '1, 2, 3',
+    title: 'Name each mark by its number within the movement',
+  },
+  measures: {
+    label: 'Bar numbers',
+    title: 'Name each mark by the bar number you write for it',
   },
 };
 
@@ -63,6 +88,13 @@ export interface ProjectsScreenProps {
   onDelete: (id: string) => void;
   /** Flips a project's public/private visibility; the caller persists and refreshes. */
   onToggleVisibility: (id: string) => void;
+  /**
+   * Sets how the project names its marks (T72); the caller persists and
+   * refreshes. It is the project's own setting, not the viewer's, so it is
+   * changed here — where the project is, on the list of them — and reads the
+   * same to everyone afterwards.
+   */
+  onSetNaming: (id: string, naming: Naming) => void;
 }
 
 /**
@@ -83,6 +115,7 @@ export function ProjectsScreen({
   onRename,
   onDelete,
   onToggleVisibility,
+  onSetNaming,
 }: ProjectsScreenProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -218,6 +251,27 @@ export function ProjectsScreen({
               >
                 {view.toggleLabel}
               </button>
+              {/* How the project names its marks (T72). A select rather than
+                  three buttons, because the row already carries five controls
+                  and a list of rows has no room for three more: one control,
+                  one reading, and the options are the choice itself. The
+                  control is named for the project the way the row's other
+                  controls are, since a reader walking the list hears which
+                  project each one belongs to. */}
+              <select
+                className="projects-naming"
+                aria-label={`Naming for ${project.name}`}
+                title={NAMING_TEXT[project.naming].title}
+                disabled={busy}
+                value={project.naming}
+                onChange={(event) => onSetNaming(project.id, event.currentTarget.value as Naming)}
+              >
+                {NAMINGS.map((naming) => (
+                  <option key={naming} value={naming}>
+                    {NAMING_TEXT[naming].label}
+                  </option>
+                ))}
+              </select>
               {confirmingId === project.id ? (
                 <span className="projects-confirm">
                   <span>Delete “{project.name}”? This cannot be undone.</span>

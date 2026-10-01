@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { AudioController, PlaybackState } from '../audio';
 import { deriveLabels, practiceReadout } from '../domain';
-import type { LabeledMarker } from '../domain';
+import type { LabeledMarker, Naming } from '../domain';
 import type { ServerProject } from '../projects/types';
 
 export interface LabeledPlaybackOptions {
@@ -27,6 +27,11 @@ export interface LabeledPlayback {
   playback: PlaybackState;
   /** The record's marks, labelled by rank within their movement (ADR-0005). */
   labeled: LabeledMarker[];
+  /**
+   * How the project names its marks (T72) — passed down to the surfaces that
+   * write a name, so the project's own convention reaches every reading.
+   */
+  naming: Naming;
   /** The recording's length — the measured one when the media supplied it. */
   duration: number;
   /** The playhead, clamped to the end — what a readout reads and divides by. */
@@ -50,10 +55,12 @@ export function useLabeledPlayback({
   // Labels derive from the recording's movements (ADR-0005): they restart at A
   // within each movement, so a movement's letters read the same whether the
   // piece is one movement or four. The derived label is what a surface shows —
-  // it is never edited, only recomputed.
+  // it is never edited, only recomputed — and the project's naming is what
+  // decides the hand it is written in (T72): the same marks, counted.
+  const naming = record.naming;
   const labeled = useMemo(
-    () => deriveLabels(record.markers, record.movements),
-    [record.markers, record.movements],
+    () => deriveLabels(record.markers, record.movements, naming),
+    [record.markers, record.movements, naming],
   );
 
   // The measured duration wins once the media has supplied one; the record's
@@ -65,6 +72,7 @@ export function useLabeledPlayback({
   return {
     playback,
     labeled,
+    naming,
     duration,
     elapsed,
     passedMarker: practiceReadout(labeled, elapsed, duration).passed,

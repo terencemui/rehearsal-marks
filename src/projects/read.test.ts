@@ -153,6 +153,7 @@ describe('getPublicProject', () => {
     expect(queryOf(seenUrl)).toContain(`id=eq.${ROW.id}`);
     expect(queryOf(seenUrl)).toContain('markers');
     expect(queryOf(seenUrl)).toContain('movements');
+    expect(queryOf(seenUrl)).toContain('naming');
     expect(project).toEqual({
       id: ROW.id,
       name: ROW.name,
@@ -163,7 +164,29 @@ describe('getPublicProject', () => {
       createdAt: Date.parse(ROW.created_at),
       markers: fullRow.markers,
       movements: fullRow.movements,
+      naming: 'letters',
     });
+  });
+
+  it('reads the naming the owner chose', async () => {
+    const fullRow = { ...ROW, naming: 'measures' };
+    const project = await getPublicProject(ROW.id, deps(JSON.stringify([fullRow])));
+    expect(project?.naming).toBe('measures');
+  });
+
+  it('names the marks the default way when the row carries no naming', async () => {
+    // The anonymous read rides the anon key against whatever the deployment
+    // runs, so a deployment whose schema predates the column — or answers a
+    // value this reader doesn't know — still renders: the reader who cannot be
+    // told which convention applies is better served by today's rendering than
+    // by no rendering at all. (The signed-in reader throws instead — see
+    // types.test.ts.)
+    const project = await getPublicProject(ROW.id, deps(JSON.stringify([ROW])));
+    expect(project?.naming).toBe('letters');
+
+    const unknown = { ...ROW, naming: 'aliases' };
+    const degraded = await getPublicProject(ROW.id, deps(JSON.stringify([unknown])));
+    expect(degraded?.naming).toBe('letters');
   });
 
   it('returns null when the project is not visible (not published, not public, or missing)', async () => {

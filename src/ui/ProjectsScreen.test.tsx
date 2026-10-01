@@ -12,6 +12,7 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     recordingTitle: 'Brahms: Klavierstücke, Op. 118',
     duration: 123.456,
     markerCount: 2,
+    naming: 'letters',
     visibility: 'public',
     publicationStatus: 'published',
     updatedAt: 1_700_000_000_000,
@@ -29,6 +30,7 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
     onRename: vi.fn(),
     onDelete: vi.fn(),
     onToggleVisibility: vi.fn(),
+    onSetNaming: vi.fn(),
     ...overrides,
   };
   const view = render(<ProjectsScreen {...props} />);
@@ -252,6 +254,44 @@ describe('ProjectsScreen review and visibility', () => {
   it('disables the toggle while a workspace pipeline runs', () => {
     renderScreen({ busy: true });
     expect(screen.getByRole('button', { name: 'Make private' })).toBeDisabled();
+  });
+});
+
+describe('ProjectsScreen naming', () => {
+  /** The row's naming control — the select that says how the project names its marks. */
+  function namingControl(): HTMLSelectElement {
+    return screen.getByRole('combobox', { name: 'Naming for Brahms Op. 118 No. 2' });
+  }
+
+  it('shows how the project names its marks, and offers all three modes', () => {
+    renderScreen();
+    expect(namingControl()).toHaveValue('letters');
+    expect(within(namingControl()).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'A, B, C',
+      '1, 2, 3',
+      'Bar numbers',
+    ]);
+  });
+
+  it.each(['numbers', 'measures'] as const)('reads the %s a project is kept in', (naming) => {
+    renderScreen({ projects: [summary({ naming })] });
+    expect(namingControl()).toHaveValue(naming);
+  });
+
+  it('commits the chosen mode for the row it belongs to', async () => {
+    const user = userEvent.setup();
+    const { props } = renderScreen({
+      projects: [summary(), summary({ id: 'project-2', name: 'The other one' })],
+    });
+
+    await user.selectOptions(namingControl(), 'measures');
+
+    expect(props.onSetNaming).toHaveBeenCalledWith('project-1', 'measures');
+  });
+
+  it('disables the control while a workspace pipeline runs', () => {
+    renderScreen({ busy: true });
+    expect(namingControl()).toBeDisabled();
   });
 });
 

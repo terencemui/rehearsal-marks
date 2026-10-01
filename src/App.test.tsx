@@ -670,6 +670,45 @@ describe('App project visibility', () => {
   });
 });
 
+describe('App project naming', () => {
+  it('keeps the chosen naming on the project, and a published one returns to review', async () => {
+    // The naming is the project's, not the viewer's (T72), so it is stored on
+    // the row — and the write is a write to a published project's row, which
+    // the review trigger returns to the queue exactly as a rename does.
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject());
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Naming for Brahms Op. 118 No. 2' }),
+      'measures',
+    );
+
+    expect(await screen.findByText('Pending review')).toBeInTheDocument();
+    expect(api.get('project-1')!.naming).toBe('measures');
+  });
+
+  it('stores the mode on a private project, which review never touches', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ visibility: 'private', publicationStatus: 'pending' }));
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Brahms Op. 118 No. 2');
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Naming for Brahms Op. 118 No. 2' }),
+      'numbers',
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+    expect(api.get('project-1')!.naming).toBe('numbers');
+  });
+});
+
 describe('App published-project peek', () => {
   it('shows a debounced published-project peek under the link field', async () => {
     const user = userEvent.setup();

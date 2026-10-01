@@ -85,6 +85,25 @@ describe('PublicProjectView', () => {
     expect(screen.queryByRole('button', { name: /^[−+][0-9.]+s$/ })).not.toBeInTheDocument();
   });
 
+  it('names the marks the way the project does — a stranger reads what the owner reads', async () => {
+    // The naming belongs to the project rather than to the viewer, and this is
+    // the surface that shows why (T72): a published project kept by measure
+    // reads as bar numbers to everyone who opens it, exactly as it reads to
+    // the owner who chose them.
+    const { container } = renderView(
+      publicProject({
+        naming: 'measures',
+        markers: [marker('m1', 10, ['17']), marker('m2', 20, ['42'])],
+      }),
+    );
+    await waitForPlayerSettled();
+
+    const titles = Array.from(container.querySelectorAll('.player-marker-title')).map(
+      (title) => title.textContent,
+    );
+    expect(titles).toEqual(['17', '42']);
+  });
+
   it('shows the not-found page when the project is not visible, with the way back to the gallery', async () => {
     renderView(null);
 

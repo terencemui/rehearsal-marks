@@ -264,6 +264,16 @@ export function HelpTab() {
             anywhere to seek — and live in your project on the server:{' '}
             <strong>Google never sees them</strong>.
           </li>
+          <li>
+            Every project chooses how it <strong>names its markers</strong>, on the workspace
+            row beside the project's other controls. <strong>A, B, C</strong> and{' '}
+            <strong>1, 2, 3</strong> are the same idea written two ways: each mark is named by
+            its place in the recording, restarting within every movement.{' '}
+            <strong>Bar numbers</strong> is the other kind — the name is the one you write for
+            the mark, because a score's bar numbers have gaps and no counting rule could
+            produce them. The setting belongs to the <strong>project</strong>, not to you or to
+            whoever is reading it, so a public project reads the same to everyone who opens it.
+          </li>
         </ul>
       </section>
 

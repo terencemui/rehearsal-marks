@@ -2003,6 +2003,89 @@ describe('the alias slot is one box in two shapes (T69)', () => {
  * sits on top of the sharing — the order of the controls, what each row reads,
  * what a caret can reach — is asserted by driving the page, as the spec asks.
  */
+describe('a project is named the way its score is (T72)', () => {
+  /**
+   * The page on a private project kept by measure: the owner writes the bar
+   * numbers the score boxes as the aliases, and the derived letters never name
+   * those marks at all.
+   */
+  function openMeasurePage(markers = [marker('m1', 10, ['17']), marker('m2', 20, ['42'])]) {
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', naming: 'measures', markers }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    return {
+      ...renderApp({ api, controller, initialEntry: '/projects/p1/markings' }),
+      api,
+    };
+  }
+
+  /**
+   * What the rows' name slots read, in DOM order — the name each row shows,
+   * which is plain text on every row but the one being edited, where it is the
+   * field the owner is typing into.
+   */
+  function nameSlots(container: HTMLElement): string[] {
+    return markerRows(container).map((row) => readPart(row, '.markings-alias-slot'));
+  }
+
+  it('names the marks by their bar numbers, and says so wherever a mark is named', async () => {
+    const { container } = openMeasurePage();
+    await waitForPlayerSettled();
+
+    // The row leads with the name the owner wrote. The derived rank is a
+    // letter this score does not use, so it is not printed at all — the app
+    // does not talk to itself in a reading the project has said it does not
+    // keep.
+    expect(markerTitles(container)).toEqual([]);
+    expect(nameSlots(container)).toEqual(['17', '42']);
+
+    // And what a reader hears names the mark the way the project does, so the
+    // controls a reader reaches by name are the ones the score names.
+    expect(screen.getByRole('button', { name: 'Delete marker 17' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete marker 42' })).toBeInTheDocument();
+  });
+
+  it('still names a mark the owner has not measured, rather than announcing nothing', async () => {
+    // A mark placed a moment ago has no bar number yet. The row shows the
+    // blank the project has — no letter invented for it — but the controls
+    // still have to say which mark they act on, and the label is what stands
+    // in: `Delete marker A` is a worse name than `Delete marker 17`, and a
+    // much better one than no name at all.
+    const { container } = openMeasurePage([marker('m1', 10), marker('m2', 20, ['42'])]);
+    await waitForPlayerSettled();
+
+    expect(nameSlots(container)).toEqual(['', '42']);
+    expect(screen.getByRole('button', { name: 'Delete marker A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete marker 42' })).toBeInTheDocument();
+  });
+
+  it('commits a bar number typed into the row the playhead is on', async () => {
+    const user = userEvent.setup();
+    const { container, api } = openMeasurePage([marker('m1', 10, ['17'])]);
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    const field = aliasField(container);
+    expect(field).toHaveValue('17');
+    await user.clear(field);
+    await user.type(field, '63');
+    await user.tab();
+
+    await waitFor(() => expect(api.get('p1')?.markers[0].aliases).toEqual(['63']));
+    expect(nameSlots(container)).toEqual(['63']);
+  });
+
+  it('gives the leading name the room a bar number needs', () => {
+    // Leading the row, the slot is the mark's only name rather than a second
+    // one beside a letter, so it takes the floor the label's own column would
+    // have set and stops yielding at the width a bar number reads at — the
+    // name that *is* the mark's name is not the first thing ellipsised.
+    expect(ruleBody('.markings-row.naming-measures .markings-alias-slot')).toMatch(
+      /min-width:\s*46px;/,
+    );
+  });
+});
+
 describe("a movement's header is a marker's row (T70)", () => {
   /**
    * The page on a private project with two movements and marks inside them: a

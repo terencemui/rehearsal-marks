@@ -15,6 +15,12 @@ export type {
   PublicationStatus,
 } from './types';
 export { parseProjectRow, summarizeProject } from './types';
+// Re-exported beside `ProjectsApi` because naming is a project-level setting,
+// so the screens that already read this barrel for a project's surface get its
+// vocabulary from the same place. A screen that reads the domain directly —
+// the panel and the readout, which are handed markers — imports it there.
+export { NAMINGS } from '../domain';
+export type { Naming } from '../domain';
 export {
   getPublicProject,
   listPublishedForVideo,

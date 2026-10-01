@@ -1,11 +1,17 @@
 import type { MouseEvent } from 'react';
-import type { LabeledMarker } from '../domain';
-import { practiceReadout } from '../domain';
+import type { LabeledMarker, Naming } from '../domain';
+import { markerIdentity, markerName, practiceReadout } from '../domain';
 import { formatWholeSeconds } from '../domain/time';
 
 export interface PracticeReadoutProps {
   /** Markers with derived labels, in time order. */
   markers: LabeledMarker[];
+  /**
+   * How the project names its marks (T72). The readout must name the mark —
+   * there is a slot and a reader waiting — so where the display reading is
+   * blank (an unnamed mark under `measures`), the label stands in.
+   */
+  naming: Naming;
   /** The live playhead, seconds. */
   currentTime: number;
   /** The known recording duration, seconds. */
@@ -28,6 +34,11 @@ const END = 'End';
  * reads Start at 00:00; after the last mark the right slot reads End at
  * the recording's duration, with the bar spanning the last mark to the end.
  *
+ * The name it reads is the project's own (T72): `label — alias` where the
+ * derived label names the marks, the alias alone where the project is kept by
+ * measure — and the label stands in for a mark the owner has not yet named, so
+ * the slot is never blank.
+ *
  * The head is the T36 metro arrangement: the passed marker in large display
  * type on the left, the next marker smaller and right-aligned on the same
  * line — the "Current marker" and "Next" captions above them retired, the
@@ -39,21 +50,28 @@ const END = 'End';
  * toward the next, so a click near the right end lands just before the next
  * marker, never past it.
  */
-export function PracticeReadout({ markers, currentTime, duration, onSeek }: PracticeReadoutProps) {
+export function PracticeReadout({
+  markers,
+  naming,
+  currentTime,
+  duration,
+  onSeek,
+}: PracticeReadoutProps) {
   const { passed, passedTime, next, nextTime, progress } = practiceReadout(
     markers,
     currentTime,
     duration,
   );
 
-  // The passed slot: the letter plus the first alias, when it has one.
+  // The passed slot: the project's own name for the mark (T72) — `label — alias`
+  // where the derived label names the marks, the alias alone under `measures` —
+  // with the label standing in where that name would be blank, so an unnamed
+  // `measures` mark still says which mark the playhead has reached.
   const passedLabel =
-    passed === null
-      ? START
-      : passed.aliases.length > 0
-        ? `${passed.label} — ${passed.aliases[0]}`
-        : passed.label;
-  const nextLabel = next?.label ?? END;
+    passed === null ? START : markerName(passed, naming) || markerIdentity(passed, naming);
+  // The next slot stays bare: it is the mark being headed for, not the one the
+  // playhead is on, and the alias belongs to the mark you have reached.
+  const nextLabel = next === null ? END : markerIdentity(next, naming);
 
   /**
    * A bar click: seek to the clicked position within the bar's own span — the

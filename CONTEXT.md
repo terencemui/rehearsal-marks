@@ -15,12 +15,16 @@ A point in time on a recording that pins one rehearsal mark; carries its time an
 _Avoid_: pin, bookmark, mark
 
 **Label**:
-The letter a marker displays (A, B, … Z, AA, AB, …), derived from its time rank within its movement — restarting at A for each movement — and never stored as truth.
+A marker's derived name (A, B, … Z, AA, AB, …), written from its time rank within its movement — restarting at A for each movement — and never stored as truth. A project's Naming decides how it is written, and whether it is the mark's name at all.
 _Avoid_: letter, index, number
 
 **Alias**:
 A user's own name for a marker ("Recap", "1"), attached to the marker's identity, never the label.
 _Avoid_: name, title, custom label
+
+**Naming**:
+A project's answer to how its score marks its rehearsals: `letters` or `numbers`, where the derived Label is each marker's name, or `measures`, where the authored Alias is. Held by the project rather than the viewer, so a published project reads to everyone as it reads to its owner.
+_Avoid_: label style, numbering mode, naming scheme
 
 ### Projects and recordings
 

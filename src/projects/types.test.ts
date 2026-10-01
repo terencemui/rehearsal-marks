@@ -22,6 +22,7 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     duration: 123.456,
     markers: [marker('m1', 10, ['Recap'], 1), marker('m2', 20, [], 2)],
     movements: [],
+    naming: 'letters',
     visibility: 'public',
     publication_status: 'published',
     created_at: '2026-08-28T12:00:00Z',
@@ -40,6 +41,7 @@ function expected(overrides: Partial<ServerProject> = {}): ServerProject {
     duration: 123.456,
     markers: [marker('m1', 10, ['Recap'], 1), marker('m2', 20, [], 2)],
     movements: [],
+    naming: 'letters',
     visibility: 'public',
     publicationStatus: 'published',
     createdAt: Date.parse('2026-08-28T12:00:00Z'),
@@ -100,6 +102,17 @@ describe('parseProjectRow', () => {
     expectInvalid(row({ publication_status: 'live' }));
   });
 
+  it('reads the naming the project holds, and rejects one outside the vocabulary', () => {
+    // The signed-in reader is strict, because the column is the app's own
+    // schema: a value the domain cannot name is the database's fault, thrown
+    // loudly rather than silently defaulted. (The anonymous reader degrades
+    // instead — see read.test.ts.)
+    expect(parseProjectRow(row({ naming: 'measures' })).naming).toBe('measures');
+    expect(parseProjectRow(row({ naming: 'numbers' })).naming).toBe('numbers');
+    expectInvalid(row({ naming: 'aliases' }));
+    expectInvalid(row({ naming: 'labels' }));
+  });
+
   it('rejects timestamps nothing can parse', () => {
     expectInvalid(row({ created_at: 'not-a-date' }));
     expectInvalid(row({ updated_at: 0 }));
@@ -120,6 +133,7 @@ describe('summarizeProject', () => {
       recordingTitle: 'Brahms: Klavierstücke, Op. 118',
       duration: 123.456,
       markerCount: 2,
+      naming: 'letters',
       visibility: 'public',
       publicationStatus: 'published',
       updatedAt: Date.parse('2026-08-28T12:00:00Z'),

@@ -72,7 +72,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
   const { record } = session;
   // The playback view of the recording — the shared derivation (T55), so the
   // practice surface and the markings page read the same record the same way.
-  const { playback, labeled, duration, passedMarker } = useLabeledPlayback({
+  const { playback, labeled, naming, duration, passedMarker } = useLabeledPlayback({
     controller,
     record,
   });
@@ -116,6 +116,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
         <>
           <PracticeReadout
             markers={labeled}
+            naming={naming}
             currentTime={playback.currentTime}
             duration={duration}
             onSeek={handleReadoutSeek}
@@ -123,6 +124,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
           <MarkersPanel
             markers={labeled}
             movements={record.movements}
+            naming={naming}
             duration={duration}
             passedId={passedMarker?.id ?? null}
             onSeek={handleMarkerSeek}

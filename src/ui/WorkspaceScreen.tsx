@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router';
+import type { Naming } from '../projects';
 import { validateProjectName } from '../projects/summary';
 import type { SaveStatus } from '../projects/autosave';
 import { returnsToReview } from '../projects/types';
@@ -199,6 +200,24 @@ export function WorkspaceScreen({
     });
   }
 
+  /**
+   * Sets how a project names its marks (T72) — the same pipeline as the
+   * visibility flip beside it, and for the same reason: both are writes to a
+   * published project's row, and either can send it back to review. The
+   * refreshed list is where that shows, on the row's own badge.
+   */
+  async function setNaming(id: string, naming: Naming): Promise<void> {
+    await runProjectMutation(id, async () => {
+      onStatus('saving');
+      try {
+        await projectsApi.setNaming(id, naming);
+        onStatus('saved');
+      } catch {
+        onStatus('error');
+      }
+    });
+  }
+
   // Every workspace pipeline holds the working lock while it runs; each
   // control must be disabled across all of them, or an action made mid-flight
   // is silently dropped by the lock guard. An open is instant navigation now
@@ -228,6 +247,7 @@ export function WorkspaceScreen({
         onRename={(id, name) => void renameProject(id, name)}
         onDelete={(id) => void deleteProject(id)}
         onToggleVisibility={(id) => void toggleVisibility(id)}
+        onSetNaming={(id, naming) => void setNaming(id, naming)}
       />
     </>
   );

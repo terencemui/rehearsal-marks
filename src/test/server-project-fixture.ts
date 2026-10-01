@@ -16,6 +16,7 @@ export function serverProject(overrides: Partial<ServerProject> = {}): ServerPro
     duration: 123.456,
     markers: [marker('m1', 10), marker('m2', 20)],
     movements: [],
+    naming: 'letters',
     visibility: 'public',
     publicationStatus: 'published',
     createdAt: 1_700_000_000_000,
