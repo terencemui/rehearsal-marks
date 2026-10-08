@@ -26,10 +26,15 @@ export function PlayerByVariant(props: PlayerProps) {
   const variant = usePrototypeVariant();
   if (variant === 'part') return <PlayerPartPrototype {...props} />;
   if (variant === 'console') return <PlayerConsolePrototype {...props} />;
-  // `current` and `hybrid` both land here, deliberately: the combination is
-  // today's player with the Part's styling laid over it, so it renders the
-  // shipped component untouched and the whole difference lives in
+  // `hybrid` is today's player with the Part's styling laid over it, so it
+  // renders the shipped component with the difference in
   // `prototypeHybrid.css`, keyed on the direction attribute the shell sets.
-  // No variant gets its own markup just to look different mid-restyle.
+  //
+  // `prototypeStave` is the one exception: the Part's clock is a stave, and
+  // its marks-per-position elements are structure, not style. The flag is
+  // decided *here* rather than inside `Player` because this seam is the one
+  // guaranteed to be inside a router — `Player` is rendered bare by its own
+  // tests, where `useSearchParams` would throw.
+  if (variant === 'hybrid') return <Player {...props} prototypeStave />;
   return <Player {...props} />;
 }

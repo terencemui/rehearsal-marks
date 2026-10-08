@@ -2,6 +2,7 @@ import type { AudioController } from '../audio';
 import type { LabeledMarker, Movement } from '../domain';
 import type { Autosave } from '../projects/autosave';
 import { MarkersPanel } from './MarkersPanel';
+import { PartStave } from './PartStave';
 import { PracticeReadout } from './PracticeReadout';
 import { RecordingSurface } from './RecordingSurface';
 import { useLabeledPlayback } from './useLabeledPlayback';
@@ -34,6 +35,18 @@ export interface PlayerProps {
    * way — the link navigates, and nothing on this screen writes.
    */
   markingsHref?: string;
+  /**
+   * PROTOTYPE (branch `prototype/visual-direction`): draw the Part's stave as
+   * the recording's clock, instead of the flat bar `RecordingSurface` draws.
+   *
+   * It is a prop rather than a `usePrototypeVariant()` call read here on
+   * purpose. This component is rendered *outside a router* by its own tests,
+   * and `useSearchParams` throws there — so the variant has to be decided at
+   * the seam that does sit inside a router (`PlayerByVariant`), the way every
+   * other prototype decision is. It also keeps the whole prototype out of the
+   * ordinary render path: absent, this component is exactly what main renders.
+   */
+  prototypeStave?: boolean;
 }
 
 /**
@@ -67,7 +80,13 @@ export interface PlayerProps {
  * because of something here or because of the embedded player's own controls —
  * with a grace period after the reader scrolls the list by hand.
  */
-export function Player({ autosave, controller, readOnly = false, markingsHref }: PlayerProps) {
+export function Player({
+  autosave,
+  controller,
+  readOnly = false,
+  markingsHref,
+  prototypeStave = false,
+}: PlayerProps) {
   const session = useRecordingSession({ autosave, controller, readOnly });
   const { record } = session;
   // The playback view of the recording — the shared derivation (T55), so the
@@ -104,6 +123,30 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
     controller.seek(time);
   }
 
+  /**
+   * PROTOTYPE (branch `prototype/visual-direction`): the hybrid direction's
+   * bottom element. The Part's clock is a *stave*, not a bar, and a stave
+   * needs an element per mark — structure a stylesheet cannot invent from a
+   * flat bar — so it is built here and handed to the surface as its timeline
+   * slot.
+   *
+   * It draws the marks on the strip, which the recorded verdict rejected. This
+   * is that rejection being tried again, not overturned: ADR-0003 stands until
+   * the hybrid is judged. Delete this block, the prop, and `PartStave.tsx`
+   * when the branch dies.
+   */
+  const stave = prototypeStave ? (
+    <PartStave
+      markers={labeled}
+      movements={record.movements}
+      naming={naming}
+      duration={duration}
+      currentTime={playback.currentTime}
+      passedId={passedMarker?.id ?? null}
+      onSeek={handleReadoutSeek}
+    />
+  ) : undefined;
+
   return (
     <RecordingSurface
       controller={controller}
@@ -112,6 +155,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
       settled={session.settled}
       loadFailed={session.loadFailed}
       onRetryLoad={session.retryLoad}
+      timeline={stave}
       side={(markersMaxHeight) => (
         <>
           <PracticeReadout

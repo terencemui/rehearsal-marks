@@ -111,32 +111,38 @@ html[data-direction='hybrid'] .player-practice-next.practice-placeholder {
 }
 
 /* ------------------------------------------------------------------ *
- * The two bars — today's geometry, squared off. The Part has no
+ * The progress bars — today's geometry, squared off. The Part has no
  * rounded corner anywhere, and what the playhead has passed is
  * pencilled in blue rather than tealed.
+ *
+ * The readout's bar is the only one left to style. The bottom element is
+ * not a bar any more: `Player` hands `RecordingSurface` the Part's stave
+ * instead (see `PartStave.tsx`), so `.player-timeline-*` never renders in
+ * this direction and restyling it here would be styling nothing.
  * ------------------------------------------------------------------ */
 
-html[data-direction='hybrid'] .player-practice-bar,
-html[data-direction='hybrid'] .player-timeline-track {
+html[data-direction='hybrid'] .player-practice-bar {
   border-radius: 0;
   background: var(--wash);
   box-shadow: inset 0 0 0 1px var(--rule);
 }
 
-html[data-direction='hybrid'] .player-practice-bar-fill,
-html[data-direction='hybrid'] .player-timeline-fill {
+html[data-direction='hybrid'] .player-practice-bar-fill {
   border-radius: 0;
   background: var(--pencil);
 }
 
-html[data-direction='hybrid'] .player-practice-times,
-html[data-direction='hybrid'] .player-timeline-times {
+html[data-direction='hybrid'] .player-practice-times {
   font-family: var(--serif);
   color: var(--ink-2);
 }
 
-html[data-direction='hybrid'] .player-timeline-times {
-  font-weight: 400;
+/* The stave below the split. `prototypePart.css` gives it `margin-bottom:
+   44px` to clear the part list that follows it in the Part direction; here it
+   is the last thing on the page, so only the top matters — the same 24px of
+   air today's replaced bar kept under the recording. */
+html[data-direction='hybrid'] .part-staff {
+  margin-top: 24px;
 }
 
 /* ------------------------------------------------------------------ *

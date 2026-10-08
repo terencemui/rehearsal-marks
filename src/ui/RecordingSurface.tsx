@@ -54,6 +54,17 @@ export interface RecordingSurfaceProps {
    * than measuring for itself.
    */
   side: (markersMaxHeight: number | null) => ReactNode;
+  /**
+   * The recording's clock below the split, when the caller has one of its
+   * own. Absent — the markings page, and every ordinary player render — the
+   * surface draws the full-width click-to-seek bar it has always drawn, so
+   * this prop changes nothing for a caller that does not pass it. It exists
+   * for the prototype's hybrid direction, whose bottom element is the Part's
+   * stave: a stave needs an element per mark and no stylesheet can invent
+   * those from a bar, so the swap has to happen here, at the surface that
+   * owns the slot, rather than by restyling what the bar renders.
+   */
+  timeline?: ReactNode;
 }
 
 /**
@@ -88,6 +99,7 @@ export function RecordingSurface({
   loadFailed,
   onRetryLoad,
   side,
+  timeline,
 }: RecordingSurfaceProps) {
   /** The practice split — the measurement effect observes it for size changes. */
   const splitRef = useRef<HTMLDivElement>(null);
@@ -232,23 +244,25 @@ export function RecordingSurface({
         </div>
         <div className="player-side-column">{side(markersMaxHeight)}</div>
       </div>
-      <div className="player-timeline-bar">
-        <div
-          className="player-timeline-track"
-          role="slider"
-          aria-label="Recording timeline"
-          aria-valuemin={0}
-          aria-valuemax={duration}
-          aria-valuenow={Math.round(elapsed)}
-          onClick={handleTrackSeek}
-        >
-          <div className="player-timeline-fill" style={{ width: `${playheadPercent}%` }} />
+      {timeline ?? (
+        <div className="player-timeline-bar">
+          <div
+            className="player-timeline-track"
+            role="slider"
+            aria-label="Recording timeline"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={Math.round(elapsed)}
+            onClick={handleTrackSeek}
+          >
+            <div className="player-timeline-fill" style={{ width: `${playheadPercent}%` }} />
+          </div>
+          <div className="player-timeline-times">
+            <span>{formatWholeSeconds(elapsed, duration)}</span>
+            <span>{formatWholeSeconds(duration, duration)}</span>
+          </div>
         </div>
-        <div className="player-timeline-times">
-          <span>{formatWholeSeconds(elapsed, duration)}</span>
-          <span>{formatWholeSeconds(duration, duration)}</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
