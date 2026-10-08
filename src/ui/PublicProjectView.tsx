@@ -5,7 +5,7 @@ import type { Autosave } from '../projects/autosave';
 import type { PublicProject, ProjectsApi } from '../projects';
 import type { ServerProject } from '../projects/types';
 import { NotFoundPage } from './NotFoundPage';
-import { Player } from './Player';
+import { PlayerByVariant } from './PlayerByVariant';
 import './public-project.css';
 
 export interface PublicProjectViewProps {
@@ -118,7 +118,7 @@ export function PublicProjectView({ api, controllerFactory }: PublicProjectViewP
           keyed by the new id would mount on the old session's record. The
           session's identity keeps the player on the project it belongs to
           until the next read replaces it. */}
-      <Player
+      <PlayerByVariant
         key={session.autosave.get().id}
         readOnly
         autosave={session.autosave}

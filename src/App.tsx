@@ -17,6 +17,8 @@ import { MarkingsPage } from './ui/MarkingsPage';
 import { Navbar } from './ui/Navbar';
 import { NotWiredUpScreen } from './ui/NotWiredUpScreen';
 import { ProjectPage } from './ui/ProjectPage';
+import { PrototypeSwitcher } from './ui/PrototypeSwitcher';
+import { usePrototypeDirection, usePrototypeVariant } from './ui/prototypeVariant';
 import { PublicProjectView } from './ui/PublicProjectView';
 import { WorkspaceScreen } from './ui/WorkspaceScreen';
 import './ui/app.css';
@@ -106,6 +108,17 @@ function WiredApp({
    * token that a slow create reads before it lands.
    */
   const location = useLocation();
+
+  /**
+   * PROTOTYPE (branch `prototype/visual-direction`): the visual redesign's
+   * direction, read from `?variant=`. The shell owns it rather than each page,
+   * so the three surfaces that offer the switch agree on one answer and the
+   * document is marked once — a direction has to repaint the shell's ground
+   * and navbar to be judgeable, and a page-level effect would flicker as pages
+   * mounted and unmounted beneath it.
+   */
+  const prototypeVariant = usePrototypeVariant();
+  usePrototypeDirection(prototypeVariant);
   const [notice, setNotice] = useState<string | null>(null);
   /** The user session — the header's sign-in state and the home page's fork. Anonymous first paint. */
   const [authState, setAuthState] = useState<AuthState>({ kind: 'anonymous' });
@@ -358,6 +371,10 @@ function WiredApp({
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
+      {/* PROTOTYPE: the floating direction switcher. Dev-only, so a stray
+          merge could never ship it to a reader; it also hides itself on the
+          routes that offer no variant. */}
+      {import.meta.env.DEV && <PrototypeSwitcher />}
     </main>
   );
 }

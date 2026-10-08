@@ -1,0 +1,572 @@
+/*
+ * PROTOTYPE — Direction A, "The Part".
+ *
+ * The app as a document you read: a performer's own marked-up part. Cool
+ * score-white, ink, and a hairline rule; an engraving-character serif carries
+ * the content and a neutral grotesque carries the chrome — two faces with two
+ * clearly separate jobs.
+ *
+ * Everything here is scoped under `.part-root`, so the direction cannot leak
+ * onto a page it does not own. The one deliberate exception is the `html
+ * [data-direction='part']` block at the end, which repaints the *shell* — the
+ * page ground and the navbar — because a direction judged only inside its own
+ * box is not a direction. Throwaway; this file dies with the branch.
+ */
+
+.part-root {
+  --paper: #fcfcfa;
+  --ink: #14161a;
+  --ink-2: #5a6068;
+  --rule: #d8dce1;
+  --pencil: #1f4fa8;
+  --editorial: #8c2f2f;
+
+  --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --sans: 'Public Sans', system-ui, -apple-system, sans-serif;
+
+  /* A is a document, and a document has a measure. Run edge to edge, the
+     index throws its own numbers a screen away from the names they count, and
+     the tail of every row is a place the eye never goes. */
+  --measure: 860px;
+
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.part-player,
+.part-gallery {
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+/* ------------------------------------------------------------------ *
+ * The staff — the timeline, drawn as the part's own ruled stave
+ * ------------------------------------------------------------------ */
+
+.part-staff {
+  position: relative;
+  margin: 0 0 44px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The band of boxed marks above the stave, where a score puts them. */
+.part-staff-marks {
+  position: relative;
+  height: 26px;
+}
+
+.part-staff-box {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 2px;
+  border: 1.25px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* The mark the playhead has last passed — the part's pencil going over it. */
+.part-staff-box.is-passed {
+  border-color: var(--pencil);
+  background: var(--pencil);
+  color: var(--paper);
+}
+
+/* The five hairlines, the bar lines at movement starts, and the playhead. */
+.part-staff-rules {
+  position: relative;
+  height: 34px;
+}
+
+/* The stave is a drawing, not a hairline rule, so its five lines sit a step
+   darker than the table rules — light enough to stay under the marks, dark
+   enough that the staff reads as a staff and not as a smudge. */
+.part-staff-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #b9bec6;
+}
+
+.part-staff-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--ink);
+}
+
+/* The playhead is a pencil rule: it runs through the marks band and the
+   stave both, so the box it is passing is unambiguous. */
+.part-staff-playhead {
+  position: absolute;
+  top: -26px;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--pencil);
+}
+
+.part-staff-movements {
+  display: flex;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+/* Grown proportionally to each movement's share of the recording, so a name
+   sits under the stretch it names and can never overlap its neighbour. */
+.part-staff-movement {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-right: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.part-staff-clock {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-family: var(--serif);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------------ *
+ * The part — the marks as a ruled list
+ * ------------------------------------------------------------------ */
+
+.part-movement {
+  margin-bottom: 36px;
+}
+
+.part-movement-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--serif);
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.part-movement-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.part-movement-start {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.part-marks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.part-row {
+  border-bottom: 1px solid var(--rule);
+}
+
+.part-row:last-child {
+  border-bottom: 0;
+}
+
+.part-row-hit {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 9px 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* THE signature: a rehearsal mark is a letter in a ruled box. */
+.part-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border: 1.5px solid var(--ink);
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.part-alias {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.part-time {
+  flex: none;
+  font-family: var(--serif);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+/* The passed mark: the box inverts and the row comes up to full ink. */
+.part-row.is-passed .part-box {
+  border-color: var(--pencil);
+  background: var(--pencil);
+  color: var(--paper);
+}
+
+.part-row.is-passed .part-alias,
+.part-row.is-passed .part-time {
+  color: var(--ink);
+}
+
+.part-row-hit:hover .part-box {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+.part-row.is-passed .part-row-hit:hover .part-box {
+  color: var(--paper);
+}
+
+.part-row-hit:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: -2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * The title band
+ * ------------------------------------------------------------------ */
+
+.part-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 20px;
+  margin-bottom: 22px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.part-project {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.12;
+}
+
+.part-recording {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.part-door {
+  font-size: 13px;
+  color: var(--pencil);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 1px;
+}
+
+.part-door:hover {
+  border-bottom-width: 2px;
+}
+
+.part-door:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------------ *
+ * The recording's plate
+ * ------------------------------------------------------------------ */
+
+/* The recording is a plate in the document, not the document. Full measure it
+   is a 484px cinema screen that pushes the part itself below the fold, and
+   this direction is about the part. Centred at a plate's width it reads as an
+   illustration at the head of the page, and the staff stays on screen with it.
+   (OPEN QUESTION for the panel: is 540 the right fraction, or should the plate
+   go beside the marks instead of above them?) */
+.part-plate {
+  max-width: 540px;
+  margin: 0 auto 30px;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  background: #f4f4f1;
+}
+
+.part-video-mount {
+  min-width: 0;
+}
+
+/* The audio layer's own ruler band is hidden on the shipped player; hide it
+   here too, or the prototype grows a second timeline under the video. */
+.part-video-mount .rm-youtube-ruler {
+  display: none;
+}
+
+.part-video-mount .rm-youtube-player {
+  margin-bottom: 0;
+}
+
+.part-failure {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--editorial);
+  color: var(--editorial);
+  font-size: 14px;
+}
+
+.part-failure p {
+  margin: 0 0 10px;
+}
+
+.part-retry {
+  padding: 6px 14px;
+  border: 1px solid currentColor;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.part-retry:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * The gallery — an index to a printed edition
+ * ------------------------------------------------------------------ */
+
+.part-gallery {
+  padding-block: 6px 64px;
+}
+
+.part-gallery-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.part-gallery-intro {
+  margin: 5px 0 40px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.part-recording {
+  margin-bottom: 34px;
+}
+
+.part-recording-title {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.part-recording-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.part-recording-length {
+  flex: none;
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.part-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.part-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  width: 100%;
+  padding: 11px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.part-entry-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.part-entry-count {
+  flex: none;
+  min-width: 96px;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.part-entry:hover .part-entry-name {
+  color: var(--pencil);
+}
+
+.part-entry:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: -2px;
+}
+
+.part-notice {
+  margin: 18px 0;
+  font-size: 15px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Narrow widths: the stave's boxes would collide, and that is the one
+ * thing on the surface that must stay legible. The list below still
+ * carries every box, so nothing is lost by dropping them here.
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 760px) {
+  .part-staff-marks {
+    display: none;
+  }
+
+  .part-staff-playhead {
+    top: 0;
+  }
+
+  .part-project {
+    font-size: 22px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The shell, repainted — A's ground is the sheet of paper itself.
+ * ------------------------------------------------------------------ */
+
+html[data-direction='part'] body {
+  background: var(--part-shell-paper, #fcfcfa);
+}
+
+html[data-direction='part'] .app-nav {
+  background: #fcfcfa;
+  border-bottom: 1px solid #d8dce1;
+}
+
+/* The app's name is a title on the document, so it takes the document's face. */
+html[data-direction='part'] .app-name {
+  color: #14161a;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* Navigation is chrome, and chrome here is square and unhighlighted: the
+   current page is marked by a rule under it, the way a running head is, not by
+   a filled pill. */
+html[data-direction='part'] .app-nav-link {
+  border-radius: 0;
+  color: #5a6068;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+html[data-direction='part'] .app-nav-link:hover {
+  background: none;
+  color: #1f4fa8;
+}
+
+html[data-direction='part'] .app-nav-link[aria-current='page'] {
+  background: none;
+  color: #14161a;
+  box-shadow: inset 0 -2px 0 #14161a;
+}
+
+html[data-direction='part'] .user-status {
+  color: #5a6068;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-size: 13.5px;
+}
+
+html[data-direction='part'] .user-status button {
+  border-color: #14161a;
+  border-radius: 0;
+  color: #14161a;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-size: 13.5px;
+}
+
+html[data-direction='part'] .user-status button:hover {
+  background: #14161a;
+  color: #fcfcfa;
+}
+
+/* The public view's own back link is shell chrome the direction doesn't own,
+   but it sits directly above the player and has to belong to it. */
+html[data-direction='part'] .public-project-back {
+  color: #1f4fa8;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-size: 13px;
+}

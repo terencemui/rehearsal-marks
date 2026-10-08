@@ -1,0 +1,639 @@
+/*
+ * PROTOTYPE — Direction B, "The Console".
+ *
+ * The app as an instrument you play: a device on the music stand. Graphite,
+ * one grotesque throughout with a wide display cut reserved for the boxed
+ * marks, and a scrub rail that reads as transport hardware rather than as a
+ * progress bar.
+ *
+ * There is no accent colour. The only saturated thing on the surface is the
+ * focus blue on the mark the playhead has last passed and on the row that is
+ * live under the pointer; everything else is a value of grey. The light in the
+ * design comes from the recording and from the marks.
+ *
+ * Scoped under `.console-root`, plus the `html[data-direction='console']`
+ * block at the end, which repaints the shell. Throwaway; dies with the branch.
+ */
+
+.console-root {
+  --ground: #15171c;
+  --deck: #1d2027;
+  --deck-lit: #242a33;
+  --ink: #edeef0;
+  --ink-2: #9aa1ab;
+  --focus: #4c8df6;
+  --alert: #e0857f;
+
+  --chrome: 121px;
+  --deck-docked: clamp(210px, 34vh, 380px);
+
+  /* The breakout that lets the console own the window: the rail is a reading
+     measure (T44), and a device is not prose. */
+  margin-inline: calc(50% - 50vw);
+  padding-inline: clamp(16px, 3vw, 48px);
+  background: var(--ground);
+  color: var(--ink);
+  font-family: 'Archivo', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* The ground runs the full window; the instrument standing on it has a body.
+   A mark row 1760px wide is not a device — it is a spreadsheet. The dark stays
+   edge to edge, the thing on it is an object with edges. */
+.console-player,
+.console-gallery {
+  max-width: 1280px;
+  margin-inline: auto;
+}
+
+/* ------------------------------------------------------------------ *
+ * The player: plate, stage, transport, and the deck below them
+ * ------------------------------------------------------------------ */
+
+.console-player {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: calc(100vh - var(--chrome));
+  min-height: 560px;
+  /* The docked deck's room, reserved so the transport sits above it rather
+     than behind it. */
+  padding-bottom: var(--deck-docked);
+  overflow: hidden;
+}
+
+/* The name plate: the recording's name, its canonical title, the door out. */
+.console-plate {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 2px 2px 12px;
+}
+
+.console-project {
+  flex: none;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.console-recording {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.console-door {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.console-door:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--ink);
+}
+
+.console-door:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The recording's light: everything else on this surface is grey so that this
+   is the brightest thing in the frame. */
+.console-stage {
+  position: relative;
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #0e1014;
+}
+
+.console-video-mount {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The audio layer draws its own ruler band under the embed; the shipped
+   player hides it, and so does this one. */
+.console-video-mount .rm-youtube-ruler {
+  display: none;
+}
+
+.console-video-mount .rm-youtube-player {
+  margin-bottom: 0;
+}
+
+.console-failure {
+  position: absolute;
+  inset: auto 16px 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(224, 133, 127, 0.5);
+  border-radius: 3px;
+  background: rgba(21, 23, 28, 0.92);
+  color: var(--alert);
+  font-size: 13px;
+}
+
+.console-failure p {
+  margin: 0 0 10px;
+}
+
+.console-retry {
+  padding: 5px 12px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.console-retry:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * The transport — a rail, not a progress bar
+ * ------------------------------------------------------------------ */
+
+.console-transport {
+  flex: none;
+  padding: 16px 2px 12px;
+}
+
+.console-rail {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: #262c35;
+  cursor: pointer;
+}
+
+.console-rail-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 3px;
+  background: var(--focus);
+}
+
+/* The head is a physical knob sitting on the rail, not a caret on a bar. */
+.console-rail-head {
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  margin-left: -6.5px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 10px rgba(76, 141, 246, 0.65);
+  transform: translateY(-50%);
+}
+
+.console-rail-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 9px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.console-clock {
+  color: var(--ink);
+}
+
+.console-clock-total {
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------------ *
+ * The deck — the marks, docked along the bottom and liftable
+ * ------------------------------------------------------------------ */
+
+.console-deck {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: var(--deck-docked);
+  padding-inline: inherit;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--deck);
+  box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.5);
+  transition: height 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* Raised: the deck comes off its dock until it covers the recording. This is
+   the move that costs something — see docs/prototypes.md on the chapters
+   prototype, where a side panel beat a bottom section for this content. */
+.console-player.is-lifted .console-deck {
+  height: 100%;
+}
+
+.console-grip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px 8px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.console-grip-bar {
+  width: 46px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 140ms ease;
+}
+
+.console-grip:hover {
+  color: var(--ink);
+}
+
+.console-grip:hover .console-grip-bar {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.console-grip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -3px;
+}
+
+.console-deck-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 12px 22px;
+}
+
+.console-band-name {
+  margin: 14px 0 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.console-band:first-child .console-band-name {
+  margin-top: 4px;
+}
+
+.console-slots {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-slot-hit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.console-slot-hit:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+/* The row the playhead is on: a plate lit a step above the deck, so the mark
+   you are under is legible at a glance from the stand. */
+.console-slot-hit.is-current {
+  background: var(--deck-lit);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.console-slot-hit:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* The lamp: the only other place the focus colour appears, and it means the
+   same thing the filled box does. */
+.console-lamp {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.console-slot-hit.is-current .console-lamp {
+  background: var(--focus);
+  box-shadow: 0 0 8px rgba(76, 141, 246, 0.9);
+}
+
+/* THE signature: the rehearsal mark's box, in the wide display cut. */
+.console-slot-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-width: 30px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  font-stretch: 125%;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* Active: filled, and the letter knocked out of it. */
+.console-slot-hit.is-current .console-slot-box {
+  border-color: var(--focus);
+  background: var(--focus);
+  color: var(--ground);
+}
+
+.console-slot-alias {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.console-slot-hit.is-current .console-slot-alias {
+  color: var(--ink);
+}
+
+.console-slot-time {
+  flex: none;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.console-slot-hit.is-current .console-slot-time {
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ *
+ * The gallery — a bank of recordings, not a page of entries
+ * ------------------------------------------------------------------ */
+
+.console-gallery {
+  padding-block: 14px 72px;
+}
+
+.console-gallery-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.console-gallery-intro {
+  margin: 4px 0 32px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.console-bank {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.console-recording-strip {
+  margin: 0 0 6px;
+  padding: 9px 12px;
+  border-radius: 3px;
+  background: var(--deck);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.console-channels {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-channel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 11px 12px 11px 16px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The channel comes up when you point at it: the strip on its left edge grows
+   and the row lifts onto the deck. */
+.console-channel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 2px;
+  height: 0;
+  border-radius: 1px;
+  background: var(--focus);
+  transform: translateY(-50%);
+  transition: height 150ms ease;
+}
+
+.console-channel:hover {
+  background: var(--deck);
+}
+
+.console-channel:hover::before,
+.console-channel:focus-visible::before {
+  height: 58%;
+}
+
+.console-channel:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.console-channel-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  color: #c9ced6;
+}
+
+.console-channel:hover .console-channel-name {
+  color: var(--ink);
+}
+
+.console-channel-readout {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.console-readout-value {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.console-readout-unit {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.console-notice {
+  margin: 18px 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------------ *
+ * Motion: the deck's lift is the one orchestrated move, and it answers a
+ * press. Nothing here animates on its own.
+ * ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .console-deck,
+  .console-channel::before,
+  .console-grip-bar {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The shell, repainted — the console's ground is its own, and a light
+ * navbar over a graphite instrument is the one thing that would make
+ * this direction unjudgeable.
+ * ------------------------------------------------------------------ */
+
+html[data-direction='console'] body {
+  background: #15171c;
+  overflow-x: hidden;
+}
+
+html[data-direction='console'] .app-nav {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: #15171c;
+}
+
+html[data-direction='console'] .app-name {
+  color: #edeef0;
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+html[data-direction='console'] .app-nav-link {
+  border-radius: 3px;
+  color: #9aa1ab;
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-weight: 600;
+}
+
+html[data-direction='console'] .app-nav-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #edeef0;
+}
+
+html[data-direction='console'] .app-nav-link[aria-current='page'] {
+  background: rgba(255, 255, 255, 0.08);
+  color: #edeef0;
+}
+
+html[data-direction='console'] .user-status {
+  color: #9aa1ab;
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 13px;
+}
+
+html[data-direction='console'] .user-status button {
+  border-color: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  color: #c9ced6;
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 13px;
+}
+
+html[data-direction='console'] .user-status button:hover {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.08);
+  color: #edeef0;
+}
+
+html[data-direction='console'] .app-page {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+/* The player page has no prose to breathe around; the console owns the fold. */
+html[data-direction='console'] .app-page:has(.console-player) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* The public view's back link sits directly above the player, on the console's
+   own ground, so it has to read as part of the instrument. */
+html[data-direction='console'] .public-project-back {
+  color: #9aa1ab;
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 12.5px;
+}
+
+html[data-direction='console'] .public-project-back:hover {
+  color: #edeef0;
+}

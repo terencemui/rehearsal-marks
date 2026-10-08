@@ -1,0 +1,57 @@
+/*
+ * PROTOTYPE — the switcher bar's own chrome.
+ *
+ * Deliberately in neither direction's voice and deliberately using the system
+ * stack: it must read as scaffolding sitting on top of the design, never as
+ * part of it. Throwaway; it dies with the branch.
+ */
+
+.prototype-switcher {
+  position: fixed;
+  z-index: 1000;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: #0b0d11;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  font: 500 12px/1 system-ui, -apple-system, sans-serif;
+  color: #f4f5f7;
+}
+
+.prototype-switcher button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.prototype-switcher button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.prototype-switcher button:focus-visible {
+  outline: 2px solid #7aa2ff;
+  outline-offset: 1px;
+}
+
+.prototype-switcher-label {
+  min-width: 132px;
+  padding: 0 8px;
+  text-align: center;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}

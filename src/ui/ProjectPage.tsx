@@ -7,7 +7,7 @@ import type { ProjectsApi } from '../projects/api';
 import type { SaveStatus } from '../projects/autosave';
 import { markingsPath } from '../routes';
 import { NotFoundPage } from './NotFoundPage';
-import { Player } from './Player';
+import { PlayerByVariant } from './PlayerByVariant';
 import { SaveStatusLine } from './SaveStatusLine';
 
 /** One project page session: the autosave over the loaded project and its controller. */
@@ -153,7 +153,7 @@ export function ProjectPage({ projectsApi, controllerFactory, onExitStatus, onNo
   return (
     <>
       <SaveStatusLine autosave={session.autosave} />
-      <Player
+      <PlayerByVariant
         key={session.projectId}
         autosave={session.autosave}
         controller={session.controller}
