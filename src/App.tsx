@@ -278,6 +278,10 @@ function WiredApp({
     <main>
       <Navbar
         authState={authState}
+        // The navbar is outside the rail below, so it takes the same width by
+        // being told: a player page's rail is the wide one, and the navbar has
+        // to match it or the two disagree by the height term.
+        wide={isPlayerPage}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         onDeleteAccount={handleDeleteAccount}

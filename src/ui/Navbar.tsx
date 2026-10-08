@@ -10,6 +10,16 @@ export interface NavbarProps {
   onSignOut: () => void;
   /** Requests the signed-in user's account deletion (T26). */
   onDeleteAccount: () => void;
+  /**
+   * Whether the page below this navbar is a player page. The navbar is
+   * rendered *outside* the `page-rail` element, so it cannot inherit the
+   * page's rail and has to be told which one the page is using: on a player
+   * the rail is `page-rail-wide`, whose cap is derived from the viewport's
+   * height, and a navbar left at the text rail's flat 1600px would sit at a
+   * different width from the content it heads — narrower on a tall window,
+   * wider on a short one, and never reliably either.
+   */
+  wide?: boolean;
 }
 
 /**
@@ -20,10 +30,16 @@ export interface NavbarProps {
  * is retired, and the navbar links are the only navigation. The gallery is
  * the front door at `/` (T50); the owner's workspace lives at `/projects`.
  */
-export function Navbar({ authState, onSignIn, onSignOut, onDeleteAccount }: NavbarProps) {
+export function Navbar({
+  authState,
+  onSignIn,
+  onSignOut,
+  onDeleteAccount,
+  wide = false,
+}: NavbarProps) {
   return (
     <nav className="app-nav" aria-label="Primary">
-      <div className="page-rail app-nav-inner">
+      <div className={`page-rail app-nav-inner${wide ? ' page-rail-wide' : ''}`}>
         <h1 className="app-name">Rehearsal Marks</h1>
         <NavLink to="/" end className="app-nav-link">
           Gallery

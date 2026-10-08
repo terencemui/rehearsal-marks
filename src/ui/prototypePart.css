@@ -517,13 +517,41 @@ html:is([data-direction='part'], [data-direction='hybrid']) .app-nav {
   border-bottom: 1px solid #d8dce1;
 }
 
-/* The app's name is a title on the document, so it takes the document's face. */
+/* The app's name is a title on the document, so it takes the document's face.
+   It is a flex row rather than a line of text because the wordmark now carries
+   a mark in front of it, and a box needs centring against the words beside it
+   — `vertical-align` arithmetic on an inline-block would be guessing at the
+   face's cap height. */
 html:is([data-direction='part'], [data-direction='hybrid']) .app-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   color: #14161a;
   font-family: 'Source Serif 4', Georgia, serif;
   font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.015em;
+}
+
+/* The mark in the wordmark. A rehearsal mark in a score is a letter in a ruled
+   box — the app is named after the object, and the name's own initial is the
+   one letter that can stand for all of them. Drawn with `content` rather than
+   put in the markup on purpose: it is a piece of this direction's chrome, not
+   a fact about the app, so it should die with the branch like the rest of it,
+   and `current` must go on rendering the plain name. The consequence is that
+   a screen reader may announce "R Rehearsal Marks"; redundant, not wrong. */
+html:is([data-direction='part'], [data-direction='hybrid']) .app-name::before {
+  content: 'R';
+  flex: none;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 27px;
+  height: 27px;
+  border: 1.5px solid #14161a;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 /* Navigation is chrome, and chrome here is square and unhighlighted: the
