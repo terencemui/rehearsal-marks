@@ -7,10 +7,14 @@
  * clearly separate jobs.
  *
  * Everything here is scoped under `.part-root`, so the direction cannot leak
- * onto a page it does not own. The one deliberate exception is the `html
- * [data-direction='part']` block at the end, which repaints the *shell* — the
- * page ground and the navbar — because a direction judged only inside its own
- * box is not a direction. Throwaway; this file dies with the branch.
+ * onto a page it does not own. The one deliberate exception is the
+ * `html:is([data-direction='part'], [data-direction='hybrid'])` block at the
+ * end, which repaints the *shell* — the page ground and the navbar — because a
+ * direction judged only inside its own box is not a direction. It matches
+ * `hybrid` too (see `prototypeHybrid.css`): that variant is this direction's
+ * style over the shipped player's layout, and the navbar is the one piece of
+ * it the Part owns outright, so the two must not be allowed to drift.
+ * Throwaway; this file dies with the branch.
  */
 
 .part-root {
@@ -504,17 +508,17 @@
  * The shell, repainted — A's ground is the sheet of paper itself.
  * ------------------------------------------------------------------ */
 
-html[data-direction='part'] body {
+html:is([data-direction='part'], [data-direction='hybrid']) body {
   background: var(--part-shell-paper, #fcfcfa);
 }
 
-html[data-direction='part'] .app-nav {
+html:is([data-direction='part'], [data-direction='hybrid']) .app-nav {
   background: #fcfcfa;
   border-bottom: 1px solid #d8dce1;
 }
 
 /* The app's name is a title on the document, so it takes the document's face. */
-html[data-direction='part'] .app-name {
+html:is([data-direction='part'], [data-direction='hybrid']) .app-name {
   color: #14161a;
   font-family: 'Source Serif 4', Georgia, serif;
   font-size: 21px;
@@ -525,7 +529,7 @@ html[data-direction='part'] .app-name {
 /* Navigation is chrome, and chrome here is square and unhighlighted: the
    current page is marked by a rule under it, the way a running head is, not by
    a filled pill. */
-html[data-direction='part'] .app-nav-link {
+html:is([data-direction='part'], [data-direction='hybrid']) .app-nav-link {
   border-radius: 0;
   color: #5a6068;
   font-family: 'Public Sans', system-ui, sans-serif;
@@ -533,24 +537,24 @@ html[data-direction='part'] .app-nav-link {
   font-weight: 500;
 }
 
-html[data-direction='part'] .app-nav-link:hover {
+html:is([data-direction='part'], [data-direction='hybrid']) .app-nav-link:hover {
   background: none;
   color: #1f4fa8;
 }
 
-html[data-direction='part'] .app-nav-link[aria-current='page'] {
+html:is([data-direction='part'], [data-direction='hybrid']) .app-nav-link[aria-current='page'] {
   background: none;
   color: #14161a;
   box-shadow: inset 0 -2px 0 #14161a;
 }
 
-html[data-direction='part'] .user-status {
+html:is([data-direction='part'], [data-direction='hybrid']) .user-status {
   color: #5a6068;
   font-family: 'Public Sans', system-ui, sans-serif;
   font-size: 13.5px;
 }
 
-html[data-direction='part'] .user-status button {
+html:is([data-direction='part'], [data-direction='hybrid']) .user-status button {
   border-color: #14161a;
   border-radius: 0;
   color: #14161a;
@@ -558,15 +562,31 @@ html[data-direction='part'] .user-status button {
   font-size: 13.5px;
 }
 
-html[data-direction='part'] .user-status button:hover {
+html:is([data-direction='part'], [data-direction='hybrid']) .user-status button:hover {
   background: #14161a;
   color: #fcfcfa;
 }
 
 /* The public view's own back link is shell chrome the direction doesn't own,
-   but it sits directly above the player and has to belong to it. */
-html[data-direction='part'] .public-project-back {
+   but it sits directly above the player and has to belong to it. Recolouring
+   it was not enough: it keeps its own pill — a 1px grey border on a 6px radius,
+   hovering to a teal fill — so a pencil-blue label sat inside a teal-hovering
+   lozenge an inch from square chrome. The direction has to take the shape too,
+   or the first thing above the player is today's placeholder UI. */
+html:is([data-direction='part'], [data-direction='hybrid']) .public-project-back {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: none;
   color: #1f4fa8;
   font-family: 'Public Sans', system-ui, sans-serif;
   font-size: 13px;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+
+html:is([data-direction='part'], [data-direction='hybrid']) .public-project-back:hover {
+  background: none;
+  color: #14161a;
+  border-bottom-width: 2px;
 }

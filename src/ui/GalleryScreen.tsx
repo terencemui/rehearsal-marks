@@ -77,7 +77,8 @@ function useGalleryGroups(api: ProjectsApi): GalleryScreenState {
  *
  * PROTOTYPE: `?variant=part` and `?variant=console` swap this rendering for
  * the redesign's two directions, on the same real read. `?variant=current`
- * (and no `?variant=` at all) is the markup below, unchanged.
+ * (and no `?variant=` at all) is the markup below, unchanged, and so does
+ * `?variant=hybrid` — that variant is the player's.
  */
 export function GalleryScreen({ api }: GalleryScreenProps) {
   const state = useGalleryGroups(api);
@@ -85,6 +86,9 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
 
   if (variant === 'part') return <GalleryPartPrototype {...state} />;
   if (variant === 'console') return <GalleryConsolePrototype {...state} />;
+  // `hybrid` is a player-only variant — today's gallery keeps today's markup
+  // and today's styling; the Part reaches this page through the navbar alone,
+  // which is exactly the scope the fold was given.
   return <CurrentGallery {...state} />;
 }
 

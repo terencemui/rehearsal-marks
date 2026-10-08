@@ -1,5 +1,14 @@
 import { useEffect } from 'react';
 import { matchPath, useSearchParams } from 'react-router';
+// The Part's stylesheet is imported here, not only by the Part's own
+// components, because `hybrid` renders no Part component — it is the shipped
+// player restyled — yet it wears the Part's *navbar*, and those shell rules
+// live at the end of this file. Loading it from the one module the shell
+// always imports is what keeps `?variant=hybrid` from painting today's navbar
+// on the Part's paper. The `.part-root` rules it also carries are inert
+// without a `.part-root` in the tree.
+import './prototypePart.css';
+import './prototypeHybrid.css';
 
 /**
  * PROTOTYPE — the visual redesign's two directions, switchable in place.
@@ -24,6 +33,11 @@ import { matchPath, useSearchParams } from 'react-router';
  *                            the music stand. Graphite, one grotesque, the
  *                            recording owning the screen, and a deck of marks
  *                            that lifts over the video.
+ *   `hybrid`  — The Part's style over today's layout. Not a third proposal:
+ *                            it is the split verdict made viewable — the
+ *                            Part's paper, faces, hairlines and boxed mark
+ *                            over the shipped player's structure, which is
+ *                            what the fold would ship.
  *
  * Variants are gated by `?variant=` on the routes the app already has (the
  * gallery and the two player pages), so the real data fetching, the real
@@ -37,7 +51,7 @@ import { matchPath, useSearchParams } from 'react-router';
  */
 
 /** The prototype's variant keys. `current` is today's UI, not a proposal. */
-export type PrototypeVariantKey = 'current' | 'part' | 'console';
+export type PrototypeVariantKey = 'current' | 'part' | 'hybrid' | 'console';
 
 export interface PrototypeVariant {
   key: PrototypeVariantKey;
@@ -45,9 +59,12 @@ export interface PrototypeVariant {
   name: string;
 }
 
+// `hybrid` sits next to `part` on purpose: one arrow key apart is how the
+// comparison gets made — the same paper and faces, the layout swapped.
 export const PROTOTYPE_VARIANTS: readonly PrototypeVariant[] = [
   { key: 'current', name: 'Today' },
   { key: 'part', name: 'The Part' },
+  { key: 'hybrid', name: "The Part's style, today's layout" },
   { key: 'console', name: 'The Console' },
 ];
 
