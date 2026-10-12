@@ -172,11 +172,41 @@ html[data-direction='hybrid'] .player-markings-open:hover {
   border-bottom-width: 2px;
 }
 
+/* The frame is the panel's (`player.css`); in this direction it is square —
+   the Part has no rounded corner anywhere — and drawn in the sheet's own rule
+   color, one hairline among the hairlines it encloses. The inset
+   `player.css` keeps is what stops the last row's rule from landing on the
+   frame's own and reading as a doubled line. */
+html[data-direction='hybrid'] .player-markers {
+  border: 1px solid var(--rule);
+  border-radius: 0;
+}
+
 /* Rows lose the pill and the tint band; the rule between them is the
-   structure, as it is in the Part's index. */
+   structure, as it is in the Part's index, so the rows sit closed up and the
+   rules do the separating. The scrollbar is squared off and colored to match,
+   since `player.css` gives it the shipped direction's rounded grey. */
 html[data-direction='hybrid'] .player-marker-list {
   gap: 0;
-  padding-right: 0;
+}
+
+/* `background-clip` restated after the shorthand in the same block, or the
+   shorthand resets it to `border-box` and the thumb paints back out to the
+   full track, undoing the inset `player.css` sets. */
+html[data-direction='hybrid'] .player-marker-list::-webkit-scrollbar-thumb {
+  background: #b9bec6;
+  background-clip: content-box;
+  border-radius: 0;
+}
+
+/* The same guard `player.css` puts on the standard pair, and for the same
+   reason — it is what the browsers without `::-webkit-scrollbar` read, and
+   it must not reach one that has it. */
+@supports not selector(::-webkit-scrollbar) {
+  html[data-direction='hybrid'] .player-marker-list {
+    scrollbar-width: thin;
+    scrollbar-color: #b9bec6 transparent;
+  }
 }
 
 html[data-direction='hybrid'] .player-marker-list .player-marker-row {

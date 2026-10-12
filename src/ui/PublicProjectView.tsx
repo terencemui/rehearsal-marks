@@ -110,9 +110,6 @@ export function PublicProjectView({ api, controllerFactory }: PublicProjectViewP
 
   return (
     <div className="public-project">
-      <Link to="/" className="public-project-back">
-        ← Back to Gallery
-      </Link>
       {/* Keyed by the session's own project, not the routed id: during a
           gallery-id swap the old session is still in state, and a player
           keyed by the new id would mount on the old session's record. The

@@ -1,7 +1,7 @@
-import type { MouseEvent } from 'react';
 import { Link } from 'react-router';
 import { formatWholeSeconds } from '../domain';
 import type { PlayerProps } from './Player';
+import { PartStave } from './PartStave';
 import {
   YOUTUBE_FAILED_EXPLANATION,
   aliasText,
@@ -49,18 +49,6 @@ export function PlayerPartPrototype({
 
   const segments = movementSegments(labeled, record.movements, duration);
   const passedId = passedMarker?.id ?? null;
-  const elapsed = Math.min(playback.currentTime, duration);
-  const played = duration > 0 ? (elapsed / duration) * 100 : 0;
-  /** A time's position along the recording, as a percentage of its width. */
-  const at = (time: number): number => (duration > 0 ? (time / duration) * 100 : 0);
-
-  /** A click anywhere on the staff seeks to that point of the recording. */
-  function handleStaffSeek(event: MouseEvent<HTMLDivElement>): void {
-    if (duration <= 0) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientX - rect.left) / rect.width;
-    controller.seek(Math.min(1, Math.max(0, ratio)) * duration);
-  }
 
   return (
     <div className="part-root part-player" data-settled={session.settled || undefined}>
@@ -87,62 +75,20 @@ export function PlayerPartPrototype({
         <div ref={session.containerRef} className="part-video-mount" />
       </div>
 
-      <div
-        className="part-staff"
-        role="slider"
-        aria-label="Recording timeline"
-        aria-valuemin={0}
-        aria-valuemax={duration}
-        aria-valuenow={Math.round(elapsed)}
-        onClick={handleStaffSeek}
-      >
-        <div className="part-staff-marks">
-          {labeled.map((marker) => {
-            const text = boxText(marker, naming);
-            if (text === '') return null;
-            return (
-              <span
-                key={marker.id}
-                className={`part-staff-box${marker.id === passedId ? ' is-passed' : ''}`}
-                style={{ left: `${at(marker.time)}%` }}
-              >
-                {text}
-              </span>
-            );
-          })}
-        </div>
-
-        <div className="part-staff-rules">
-          {[0, 1, 2, 3, 4].map((line) => (
-            <span key={line} className="part-staff-line" style={{ top: `${line * 25}%` }} />
-          ))}
-          {record.movements.map((movement) => (
-            <span
-              key={movement.id}
-              className="part-staff-bar"
-              style={{ left: `${at(movement.start)}%` }}
-            />
-          ))}
-          <span className="part-staff-playhead" style={{ left: `${played}%` }} />
-        </div>
-
-        <div className="part-staff-movements">
-          {segments.map((segment) => (
-            <span
-              key={segment.movement?.id ?? 'lead'}
-              className="part-staff-movement"
-              style={{ flexGrow: Math.max(segment.end - segment.start, 0.001) }}
-            >
-              {segment.movement === null ? '' : segment.name}
-            </span>
-          ))}
-        </div>
-
-        <div className="part-staff-clock">
-          <span>{formatWholeSeconds(elapsed, duration)}</span>
-          <span>{formatWholeSeconds(duration, duration)}</span>
-        </div>
-      </div>
+      {/* The staff is `PartStave`, not a copy of it: the hybrid carries the
+          same component, and two drawings of one stave drift apart the moment
+          either is touched — the closing bar line, the names on their
+          movements' lines and the boxes are all facts about the stave, and
+          they have to be one fact. */}
+      <PartStave
+        markers={labeled}
+        movements={record.movements}
+        naming={naming}
+        duration={duration}
+        currentTime={playback.currentTime}
+        passedId={passedId}
+        onSeek={(time) => controller.seek(time)}
+      />
 
       <div className="part-part">
         {segments.map((segment) => (

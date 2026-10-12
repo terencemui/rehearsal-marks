@@ -626,8 +626,9 @@ html[data-direction='console'] .app-page:has(.console-player) {
   padding-bottom: 8px;
 }
 
-/* The public view's back link sits directly above the player, on the console's
-   own ground, so it has to read as part of the instrument. */
+/* The public view's back link is left on its error card, and that card sits on
+   the console's own ground, so the link has to read as part of the
+   instrument. */
 html[data-direction='console'] .public-project-back {
   color: #9aa1ab;
   font-family: 'Archivo', system-ui, sans-serif;

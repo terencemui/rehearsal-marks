@@ -113,6 +113,34 @@
   background: var(--ink);
 }
 
+/* The final barline — how a score ends a piece, which is not a bar line drawn
+   at the end: a hairline stroke, a breath, then a heavy one, the heavy stroke
+   flush with the stave's right edge. Pinned to that edge rather than placed at
+   a percentage, too: the recording ends where the staff lines stop, and 100%
+   of the stave is a line and a half past where they stop.
+
+   Stroke and gap are the engraver's proportions for this stave: the heavy
+   stroke half a space (the 34px stave is four spaces, so 4px), the hairline
+   the thinnest mark the screen draws, the gap twice the hairline. The heavy
+   stroke is the element and the hairline its `::before`, whose `right` is
+   measured from the heavy stroke's own right edge — 6px, less that stroke's
+   4px, is the 2px gap. */
+.part-staff-bar.is-final {
+  left: auto;
+  right: 0;
+  width: 4px;
+}
+
+.part-staff-bar.is-final::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 6px;
+  width: 1px;
+  background: var(--ink);
+}
+
 /* The playhead is a pencil rule: it runs through the marks band and the
    stave both, so the box it is passing is unambiguous. */
 .part-staff-playhead {
@@ -130,11 +158,30 @@
   color: var(--ink-2);
 }
 
-/* Grown proportionally to each movement's share of the recording, so a name
-   sits under the stretch it names and can never overlap its neighbour. */
+/* Sized to each movement's share of the recording — the share arrives from the
+   component as a `flex-basis`, and nothing grows or shrinks it — so a name
+   sits under the stretch it names and can never overlap its neighbour.
+
+   The name's own inset is carried by the span *inside* this one, not by the
+   item's padding, and that is a measurement, not tidiness: a box may not be
+   narrower than its own padding, so 14px of padding on the item makes every
+   stretch under 14px at least 14px wide — the stretch before the first
+   movement is 9.6px on the Part's 860px measure, and every name after it
+   lands 4.4px to the right of the line it names. The item is left with no
+   padding at all, so it is exactly its share, and the name inside it keeps
+   clear of the name beside. */
 .part-staff-movement {
-  flex: 1 1 0;
+  flex: none;
   min-width: 0;
+}
+
+/* The name in its stretch: as wide as the stretch, less the 14px of air that
+   keeps it off the next movement's name, and cut with an ellipsis when it
+   does not fit — the one thing proportional sizing cannot give a name. */
+.part-staff-movement-name {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   padding-right: 14px;
   overflow: hidden;
   white-space: nowrap;
@@ -596,11 +643,12 @@ html:is([data-direction='part'], [data-direction='hybrid']) .user-status button:
 }
 
 /* The public view's own back link is shell chrome the direction doesn't own,
-   but it sits directly above the player and has to belong to it. Recolouring
-   it was not enough: it keeps its own pill — a 1px grey border on a 6px radius,
-   hovering to a teal fill — so a pencil-blue label sat inside a teal-hovering
-   lozenge an inch from square chrome. The direction has to take the shape too,
-   or the first thing above the player is today's placeholder UI. */
+   and on the view itself it is gone — the player opens straight onto the
+   recording. What is left is the error card's copy of it, which is the one
+   surface that still has to belong to a direction. Recolouring it was not
+   enough: it keeps its own pill — a 1px grey border on a 6px radius, hovering
+   to a teal fill — so a pencil-blue label sat inside a teal-hovering lozenge
+   an inch from square chrome. The direction has to take the shape too. */
 html:is([data-direction='part'], [data-direction='hybrid']) .public-project-back {
   border: 0;
   border-radius: 0;

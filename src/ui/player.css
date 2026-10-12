@@ -201,12 +201,18 @@ the recording. */
 
 /* The panel's heading row: the label with the markings page's way in (T55)
    flush right, so the door sits with the list it opens onto. Quiet — a small
-   teal link, never a button — because the panel's job is the marks. */
+   teal link, never a button — because the panel's job is the marks.
+
+   The row carries the frame's side inset itself. The panel's padding is the
+   frame's top and nothing else (see `.player-markers`), because the sides are
+   already the list's own 8px: padding the panel on the sides too would double
+   them and walk the rows and the scrollbar in off the geometry they have. */
 .player-markers-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+  padding: 0 8px;
 }
 
 .player-markings-open {
@@ -220,22 +226,115 @@ the recording. */
   text-decoration: underline;
 }
 
+/* The panel is a **boxed window** rather than an open run of rows, and the
+   scrollbar in it is drawn rather than left to the platform. Both are one fix
+   for one reading: a capped list whose rows simply stop is indistinguishable
+   from a list that has ended — the last visible row and the last row are the
+   same thing to the eye — so the band is ruled round to say the viewport ends
+   here and the list does not, and the bar says the same thing in the margin.
+   An overlay scrollbar is exactly the bar that cannot carry that second
+   statement: it is invisible until it is scrolled, which is the moment the
+   reader has already stopped asking. Styling its parts is what replaces it
+   with a classic one, which is why the rules below exist.
+
+   The frame is the *panel's*, not the list's, because "Markers" is the
+   window's title: a title outside the box it names is a label on the page,
+   and the box it heads is left without a head. The list is what scrolls
+   inside it, so the panel adds only the frame's top inset — the sides are the
+   list's own 8px, and its bottom is the list's own 8px — and the head carries
+   the side inset itself.
+
+   The 8px is also the radius, and that is not a coincidence: the content's
+   corners are square — a tint band, a hover pill, a hairline ruled across the
+   window — and a square corner inside a rounded one fills it, so a band flush
+   to the edge turns the frame's rounded corner square and the box stops
+   reading as a box. At 8px the content's corner begins exactly where the arc
+   ends. */
+.player-markers {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 0 0;
+}
+
 /* The list scrolls within its band. In the side-by-side split the player
    measures that band against the video's bottom and caps the list inline, so
    a marker-heavy project never outruns the recording. In the stacked layout
    the player measures the viewport instead (the list sits below the video,
    with no bottom to stay within) — this fixed cap is the ceiling that keeps
    the panel at the design's tallest, plus the first paint before the geometry
-   is known. */
+   is known.
+
+   `border-box` because the frame is not the reader's to pay for: `max-height`
+   is what the player measures against the video's bottom (RecordingSurface),
+   and a declared height has to be the height the band takes up or the frame
+   rides 2px past the bound it was set to.
+
+   The top of the inset is the first row's *margin*, not the list's padding,
+   and that is the one part of this that is not a styling choice. A sticky
+   movement header (ADR-0005) can never leave its containing block, and its
+   containing block is this list's content box: put the 8px on `padding-top`
+   and a pinned header stops 8px short of the list's top edge, leaving the row
+   sliding past underneath it visible in the gap — measured, in ink, with the
+   boxed letters of one movement's last mark showing above the next movement's
+   pinned band. On the first row's margin the content box begins at the list's
+   edge, the header pins flush against it, and the gap never exists. The bottom
+   inset stays padding: nothing scrolls below the last row to be seen there. */
 .player-marker-list {
   list-style: none;
   margin: 0;
-  padding: 0 4px 0 0;
+  padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   max-height: 320px;
   overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.player-marker-list > :first-child {
+  margin-top: 8px;
+}
+
+/* Styling the bar's *parts* is what makes it a classic scrollbar — drawn,
+   space-taking and always present — rather than the overlay the platform
+   hides until it is scrolled. An overlay bar is precisely the one thing
+   nothing can style, so asking to style it is the same request as asking for
+   it to stay. */
+.player-marker-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.player-marker-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The thumb paints a pixel in from each edge of the track it runs in: the
+   transparent border reserves the space and `background-clip` keeps the colour
+   out of it. At the track's full 10px the bar is a slab standing beside a
+   column of 15px text; at 8 it is a hairline, which is what a margin note
+   should be. Only the paint narrows — the track keeps its width, so the band's
+   measured geometry does not move with it, and the thumb keeps a 10px-wide
+   target to grab. `background-clip` comes after the shorthand that would
+   otherwise reset it. */
+.player-marker-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 1px solid transparent;
+  background-clip: content-box;
+  border-radius: 5px;
+}
+
+/* A browser with no `::-webkit-scrollbar` gets the standard pair instead.
+   That pair is deliberately *not* set unconditionally: where a browser has
+   both, the standard properties win and hand back the overlay bar the rules
+   above exist to replace — which is what Chrome does, measured, in the very
+   direction this panel is styled for. Guarded on the selector rather than on
+   the properties, since supporting the properties is not what takes the
+   override away. */
+@supports not selector(::-webkit-scrollbar) {
+  .player-marker-list {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
 }
 
 /* Rows: label — alias on the left, the timestamp flush right in the shared

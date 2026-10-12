@@ -58,6 +58,43 @@ export function PartStave({
   /** A time's position along the recording, as a percentage of its width. */
   const at = (time: number): number => (duration > 0 ? (time / duration) * 100 : 0);
 
+  /** The stretches the row divides into, one per movement, in time order. */
+  const named = segments.map((segment) => ({
+    id: segment.movement?.id ?? 'lead',
+    name: segment.movement === null ? '' : segment.name,
+    start: segment.start,
+    end: segment.end,
+  }));
+
+  /**
+   * The row's stretches tile the recording from zero, and that is the whole
+   * of the alignment: a stretch starting at its movement's start puts the
+   * name's left edge on the position the stave rules that movement's bar line
+   * at, which is where the movement's first mark sits in its box.
+   *
+   * `movementSegments` drops the stretch before the first movement when
+   * nothing is marked in it — a heading over an empty run of a recording is
+   * noise — and that is a rule about the *list*. Read onto the row it is a
+   * bug: shares of what is left begin at zero, so the first name starts at
+   * the stave's left edge, a movement's start to the left of the line it
+   * names. The lead goes back in here, nameless and unmarked.
+   */
+  const stretches =
+    named[0] !== undefined && named[0].start > 0
+      ? [{ id: 'lead', name: '', start: 0, end: named[0].start }, ...named]
+      : named;
+
+  /**
+   * A stretch's share of the row's width. Before the recording's length is
+   * known there is nothing to divide by — every position on the stave is zero
+   * anyway — so the names divide the row evenly rather than all collapsing to
+   * nothing.
+   */
+  const share = (stretch: { start: number; end: number }): string => {
+    const span = at(stretch.end) - at(stretch.start);
+    return `${span > 0 ? span : 100 / stretches.length}%`;
+  };
+
   /** A click anywhere on the stave seeks to that point of the recording. */
   function handleSeek(event: MouseEvent<HTMLDivElement>): void {
     if (duration <= 0) return;
@@ -105,19 +142,30 @@ export function PartStave({
             style={{ left: `${at(movement.start)}%` }}
           />
         ))}
+        {/* The final barline: a hairline stroke and a heavy one, the mark a
+            score closes a piece with, at the recording's end rather than at a
+            time — a stave that simply stops reads as a drawing that was cut
+            off, not as a recording that has ended. Both strokes are drawn by
+            the one rule; see `prototypePart.css`. */}
+        <span className="part-staff-bar is-final" />
         <span className="part-staff-playhead" style={{ left: `${played}%` }} />
       </div>
 
-      {/* Each name grown to its movement's share, so it can never overlap the
-          name beside it. */}
+      {/* Each name takes its movement's share of the width, so it can never
+          overlap the name beside it. A share, not a growth: a growing item's
+          own size is added to the share it grows into, so every boundary
+          after the first lands its padding to the right of the line it names.
+          Given as a basis the item is exactly its share wide — and the name
+          inside it is what keeps clear of the name beside, so that the share
+          is the only thing the item's size is made of. */}
       <div className="part-staff-movements">
-        {segments.map((segment) => (
+        {stretches.map((stretch) => (
           <span
-            key={segment.movement?.id ?? 'lead'}
+            key={stretch.id}
             className="part-staff-movement"
-            style={{ flexGrow: Math.max(segment.end - segment.start, 0.001) }}
+            style={{ flexBasis: share(stretch) }}
           >
-            {segment.movement === null ? '' : segment.name}
+            <span className="part-staff-movement-name">{stretch.name}</span>
           </span>
         ))}
       </div>
