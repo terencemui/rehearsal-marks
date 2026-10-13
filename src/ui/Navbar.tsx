@@ -4,6 +4,13 @@ import { UserControl } from './UserControl';
 import './navbar.css';
 
 export interface NavbarProps {
+  /**
+   * The rail the page under this navbar takes (T74) — the shell's own class
+   * string, handed in rather than decided here, so the navbar and the page it
+   * heads are always the same width. Decided separately, they disagreed on
+   * every player route: the page widened and the navbar did not.
+   */
+  railClass: string;
   /** The user session — the same state the workspace's create gate reads. */
   authState: AuthState;
   onSignIn: () => void;
@@ -20,10 +27,16 @@ export interface NavbarProps {
  * is retired, and the navbar links are the only navigation. The gallery is
  * the front door at `/` (T50); the owner's workspace lives at `/projects`.
  */
-export function Navbar({ authState, onSignIn, onSignOut, onDeleteAccount }: NavbarProps) {
+export function Navbar({
+  railClass,
+  authState,
+  onSignIn,
+  onSignOut,
+  onDeleteAccount,
+}: NavbarProps) {
   return (
     <nav className="app-nav" aria-label="Primary">
-      <div className="page-rail app-nav-inner">
+      <div className={`${railClass} app-nav-inner`}>
         <h1 className="app-name">Rehearsal Marks</h1>
         <NavLink to="/" end className="app-nav-link">
           Gallery
