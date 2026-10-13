@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { MemoryRouter } from 'react-router';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -12,6 +13,13 @@ import { marker } from './test/marker-fixture';
 import { serverProject } from './test/server-project-fixture';
 import { waitForPlayerSettled } from './test/settle-player';
 import App from './App';
+
+// jsdom computes no layout, so the navbar's one layout fact — that its own
+// stylesheet never caps the rail the shell hands it — is read off the
+// stylesheet text. Vitest stubs CSS imports, raw or not, to an empty string,
+// so the file is read from disk (Player.test.tsx reads the rails themselves
+// the same way).
+const navbarCss = readFileSync('src/ui/navbar.css', 'utf8');
 
 /** The navbar's sign-in control — the landing's own button is a second, distinct one. */
 function navSignIn(): HTMLElement {
@@ -879,22 +887,74 @@ describe('App route-as-session project page (T45)', () => {
     expect(api.get('p1')).toEqual(expect.objectContaining({ markers: project.markers }));
   });
 
-  it('gives a player page the wide rail, and no other page', async () => {
+  it('the navbar heads the page with that page’s own rail — wide or narrow', async () => {
+    // The defect this closes (T74): the page took the wide rail on a player
+    // route and the navbar did not, so on a wide window the frame was narrower
+    // than the content it headed, and on a short one it was wider. The two are
+    // one shared rail, so the agreement is asserted as one thing — whatever
+    // rail the page takes, the navbar takes — across every kind of route the
+    // shell serves, the player routes' own not-found arm included: a rail
+    // follows the route pattern, not the surface's luck. This test is also
+    // where the page's own rail is pinned, and it is the only one that pins
+    // the navbar's.
     const api = fakeProjectsApi();
     api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
     const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
     const { container, navigateTo } = renderApp({ api, controller, initialEntry: '/projects/p1' });
     await waitForPlayerSettled();
 
-    // The routed page's own rail — the navbar's div shares .page-rail, so the
-    // selector names both classes rather than matching it first.
-    expect(container.querySelector('.page-rail-wide.app-page')).toBeInTheDocument();
+    // The rail classes as the DOM actually carries them, rather than a restated
+    // expectation: a rule that named the classes again could pass while the two
+    // elements disagreed on them. Sorted, because the class attribute's order
+    // is not a thing the page and the navbar are agreeing about — only which
+    // rail they take is.
+    const railOf = (selector: string): string[] =>
+      [...container.querySelector(selector)!.classList]
+        .filter((name) => name.startsWith('page-rail'))
+        .sort();
 
-    // The text pages keep the reading measure the rail was built for.
+    // The owner's player: the wide rail runs the navbar's full width too.
+    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
+    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+
+    // The text pages keep the reading measure the rail was built for, above
+    // and below the frame alike.
     await navigateTo('/help');
     expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
-    expect(container.querySelector('.page-rail-wide.app-page')).toBeNull();
-    expect(container.querySelector('.page-rail.app-page')).toBeInTheDocument();
+    expect(railOf('.app-nav-inner')).toEqual(['page-rail']);
+    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+
+    // The read-only public view is a player too, and widens with it.
+    await navigateTo('/gallery/p1');
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    await waitForPlayerSettled();
+    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
+    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+
+    // The markings page is the third player route — it widens the same way.
+    await navigateTo('/projects/p1/markings');
+    await waitForPlayerSettled();
+    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
+    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+
+    // And a player route that names no row: the URL is still a player route,
+    // so the dead-URL surface is as wide as the page it heads.
+    await navigateTo('/projects/no-such-project');
+    expect(
+      await screen.findByRole('heading', { name: 'This project could not be found' }),
+    ).toBeInTheDocument();
+    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
+    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+  });
+
+  it('lets nothing in the navbar’s own stylesheet cap the rail it is handed', () => {
+    // jsdom computes no layout, so this is a stylesheet-source fact, pinned the
+    // way the rail's own definitions are (Player.test.tsx). The navbar's inner
+    // element takes its width from the class the shell hands it; a max-width
+    // declared here — or any rule more specific than .page-rail-wide, which a
+    // `.app-nav .app-nav-inner` selector would be — silently beats the wide
+    // rail while the test above still sees the right class names on both.
+    expect(navbarCss).not.toMatch(/\.app-nav-inner[^{]*\{[^}]*\b(?:max-)?width\s*:/);
   });
 
   it('widens the read-only public view too — it is the same player', async () => {

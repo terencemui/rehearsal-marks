@@ -261,15 +261,26 @@ function WiredApp({
     matchPath(MARKINGS_ROUTE, location.pathname) !== null ||
     matchPath('/gallery/:id', location.pathname) !== null;
 
+  /**
+   * The rail the navbar and the routed page both take (T74). A player page
+   * escapes the text rail's reading measure, and the navbar heads that page —
+   * so it takes the same rail. The two used to be decided separately, and
+   * disagreed on every player route: the page widened and the navbar did not,
+   * leaving the frame narrower than the content it headed on a wide window and
+   * wider on a short one. One value, read twice, cannot disagree.
+   */
+  const railClass = `page-rail${isPlayerPage ? ' page-rail-wide' : ''}`;
+
   return (
     <main>
       <Navbar
+        railClass={railClass}
         authState={authState}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         onDeleteAccount={handleDeleteAccount}
       />
-      <div className={`page-rail app-page${isPlayerPage ? ' page-rail-wide' : ''}`}>
+      <div className={`${railClass} app-page`}>
         <Routes>
           {/* The front door (T50): the public gallery. The api is created on
               mount (T51's "first factory wins" rule); the null guard below is
