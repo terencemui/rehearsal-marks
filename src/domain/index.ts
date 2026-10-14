@@ -7,7 +7,7 @@ export { DomainError, errorMessage } from './errors';
 export type { DomainErrorCode } from './errors';
 export { newId } from './id';
 export { deriveLabels, labelForRank } from './labels';
-export { NAMINGS, markerIdentity, markerName, markerTitle } from './naming';
+export { NAMINGS, markerIdentity, markerName, markerReading, markerTitle } from './naming';
 export type { Naming } from './naming';
 export { FRAME_EPSILON, nextMarker, previousMarker } from './navigation';
 export { movementForTime } from './movement';

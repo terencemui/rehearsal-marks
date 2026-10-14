@@ -36,13 +36,14 @@ starts scrolling under a tall panel. */
   .player-practice-split {
     grid-template-columns: minmax(0, 1fr);
   }
-
-  /* On a stacked phone-width console the 48px headline is out of proportion;
-  the metro readout stays calm at 40px. */
-  .player-practice-now {
-    font-size: 40px;
-  }
 }
+
+/* The readout's size is not in here, and deliberately: a `font-size: 40px` on
+   `.player-practice-now` used to sit in the block above, but it was written
+   before the base rule's `font` shorthand and lost to it at equal specificity,
+   so the headline measured 48px at every width. It is gone rather than
+   restated here, where it would read as live. A narrow override, if the
+   direction wants one, belongs after the base rule and not before it. */
 
 /* The split's left pane: the recording fills its column. The audio layer
 loads the embed into the .player-ruler container inside (the class an
@@ -64,7 +65,18 @@ rule is scoped to the player. */
 /* The practice readout (T36): the metro console — the passed marker in large
 display type on the left, the next marker right-aligned beside it on the same
 line, the two captions on the row above the values, and the anchor times in
-whole seconds under the bar's two ends. */
+whole seconds under the bar's two ends.
+
+It wears the direction (T73). The readout is the smallest complete surface the
+practice player alone renders, so this is where the fold establishes the
+style: the tokens are declared once in the shell stylesheet (app.css) and
+consumed by name here, and the rehearsal mark is drawn the way a score draws
+it — a letter in a ruled box, filled where the playhead has passed it and
+hollow where it is still ahead. Every later surface of the fold draws the mark
+this file establishes.
+
+Start and End are not marks: they name the recording's boundaries, so they
+take no box and stay a step back in the secondary ink. */
 .player-practice-readout {
   display: flex;
   flex-direction: column;
@@ -88,56 +100,119 @@ of shoving the next marker off) and the next hugging its content. */
 settled at 48px rather than the earlier 72 — the readout is the side column's
 top, and a headline that tall consumed the video's height, leaving the
 markers below it nothing to fit in. The smaller face keeps the current
-marker prominent while the markers keep a real scroll band. */
+marker prominent while the markers keep a real scroll band.
+
+The leading is 1.45 rather than the face's natural 1: the mark's box below
+adds its rule and padding to a 48px glyph, and a tighter line box would let
+the box paint over the progress bar under it. It grows the readout by the
+same amount, which is why the leading carries it and no margin below. */
 .player-practice-now {
   min-width: 0;
-  font: 700 48px/1 system-ui, sans-serif;
-  color: #0f172a;
-  letter-spacing: -0.03em;
+  font: 600 48px/1.45 var(--serif);
+  color: var(--ink);
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 
-/* The next marker's value: smaller, anchored to the headline's right edge. */
+/* The direction's signature: a rehearsal mark drawn the way a score draws it,
+a name in a ruled box. It is the only place the direction spends boldness.
+
+The box takes the *mark*, and the mark is its own element — not a
+`::first-letter`, which reaches only the first character and would box the `A`
+of `AA` and the `1` of `12`, drawing a different mark. The alias that follows
+in the reading stays outside the box, which is what a score does.
+
+`display: inline-block` is what gives the box the mark's own edges, and it is
+also why the leading is tightened here: an inline-block sizes itself from its
+own line box, so at the headline's 1.45 the box would stand taller than the
+line it sits in and paint over the bar below. 1.2 holds it inside, which is
+what the headline's leading is carrying. */
+.player-practice-mark {
+  display: inline-block;
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  padding: 0 6px 2px;
+  margin-right: 4px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* The mark the playhead has passed: the pencil has gone over it, so its box is
+ruled in the pencil and filled with it, the mark showing in the sheet's
+paper. Blue at display size is the loudest thing this direction does, and it
+is spent on the one object the app is named after. */
+.player-practice-now .player-practice-mark {
+  border: 2px solid var(--pencil);
+  background: var(--pencil);
+  color: var(--paper);
+  padding: 2px 10px 4px;
+}
+
+/* The next marker's value: smaller, anchored to the headline's right edge,
+and the mark still ahead — so its box is drawn hollow, in base ink. The two
+slots are then told apart without reading, which is the difference a score
+draws. It is also what makes the signature visible on arrival: before playback
+the passed slot reads Start, a boundary, so without this no box would appear
+until the first mark had gone by. */
 .player-practice-next {
-  font: 500 26px/34px system-ui, sans-serif;
-  color: #475569;
+  font: 400 24px/1.6 var(--serif);
+  color: var(--ink-2);
   overflow-wrap: anywhere;
 }
 
-/* Start and End are slots, not markers: the accent reads as a real mark, and
-these name the recording's boundaries instead. */
-.player-practice-now.practice-placeholder {
-  color: #64748b;
-}
+/* Start and End are boundaries, not marks: the component draws no mark element
+for them, so there is no box to draw. They also step back out of the display
+face — the heavy 600 weight is a real mark's, and a boundary only names where
+the recording begins and ends.
 
-.player-practice-next.practice-placeholder {
-  color: #94a3b8;
+Only the passed slot needs a rule for that. Its base rule carries the 600
+weight, so `font-weight: 400` here is load-bearing and has to be stated. The
+next slot is already at 400 in the secondary ink (`.player-practice-next`
+above), so a `.practice-placeholder` modifier for it would restate the base
+rule exactly and change nothing — which is why there is none, and why the
+judged direction's `opacity: 0.65` on it is not carried over: it composited
+`--ink-2` over the paper at roughly 2.9:1, under the 3:1 type this size asks.
+Both boundaries read alike instead. */
+.player-practice-now.practice-placeholder {
+  font-weight: 400;
+  color: var(--ink-2);
 }
 
 /* The bar is a seek surface like the timeline's (T38): a click jumps to the
-   clicked position within the span it draws. */
+   clicked position within the span it draws. Squared, like everything the
+   direction draws, and ruled rather than filled — the track is the sheet's
+   wash inside a hairline, so the readout carries one rule and one accent and
+   not a tinted band. */
 .player-practice-bar {
   position: relative;
   height: 8px;
-  border-radius: 4px;
-  background: #e2e8f0;
+  border-radius: 0;
+  background: var(--wash);
+  box-shadow: inset 0 0 0 1px var(--rule);
   overflow: hidden;
   cursor: pointer;
 }
 
+/* What the playhead has passed, pencilled in — the direction's one accent,
+   and the same ink the passed mark's box is filled with. */
 .player-practice-bar-fill {
   position: absolute;
   top: 0;
   left: 0;
   bottom: 0;
-  background: #0f766e;
+  background: var(--pencil);
 }
 
+/* The anchor times under the bar's two ends, in the content face. Tabular
+   figures because this is a live clock: proportional ones would jitter the
+   row's width as the seconds tick. */
 .player-practice-times {
   display: flex;
   justify-content: space-between;
+  font-family: var(--serif);
   font-size: 12px;
-  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
 }
 
 /* The recording's clock (the remade bottom timeline) and the markers panel. */

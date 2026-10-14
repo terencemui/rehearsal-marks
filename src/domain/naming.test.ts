@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markerIdentity, markerName, markerTitle } from './naming';
+import { NAMINGS, markerIdentity, markerName, markerReading, markerTitle } from './naming';
 import type { LabeledMarker } from './marker';
 
 /** A marker already carrying its derived label — the shape every surface reads. */
@@ -24,6 +24,36 @@ describe('markerName', () => {
     // it is not shown at all here.
     expect(markerName(labeled('D', ['17']), 'measures')).toBe('17');
     expect(markerName(labeled('D'), 'measures')).toBe('');
+  });
+});
+
+describe('markerReading', () => {
+  it('divides the reading where a surface draws a box around the mark', () => {
+    // The mark and the alias apart, because the box a score draws takes the
+    // whole mark and none of the alias — and a mark whose own label carries a
+    // dash must not be split on the separator the joined reading uses.
+    expect(markerReading(labeled('A', ['Recap']), 'letters')).toEqual({
+      mark: 'A',
+      alias: 'Recap',
+    });
+    expect(markerReading(labeled('3'), 'numbers')).toEqual({ mark: '3', alias: null });
+  });
+
+  it('reads the alias as the mark itself under measures, with nothing beside it', () => {
+    expect(markerReading(labeled('D', ['17']), 'measures')).toEqual({ mark: '17', alias: null });
+    // An unnamed mark has no mark of its own — a blank name area the surfaces
+    // that must say something fill from `markerIdentity`.
+    expect(markerReading(labeled('D'), 'measures')).toEqual({ mark: '', alias: null });
+  });
+
+  it('joins back into exactly the reading `markerName` shows', () => {
+    // The two cannot drift: `markerName` is these parts, joined.
+    for (const naming of NAMINGS) {
+      for (const m of [labeled('A', ['Recap']), labeled('A'), labeled('12', ['Bar 12'])]) {
+        const { mark, alias } = markerReading(m, naming);
+        expect(markerName(m, naming)).toBe(alias === null ? mark : `${mark} — ${alias}`);
+      }
+    }
   });
 });
 

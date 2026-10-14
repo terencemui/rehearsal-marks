@@ -22,6 +22,37 @@ import { Player } from './Player';
 // rail moved to the shell stylesheet (T44), so the rail's fact is read there.
 const playerCss = readFileSync('src/ui/player.css', 'utf8');
 const appCss = readFileSync('src/ui/app.css', 'utf8');
+// The document is where the two faces are *requested* — the one fact about
+// them that is not a stylesheet fact.
+const indexHtml = readFileSync('index.html', 'utf8');
+
+/**
+ * Every declaration block whose selector is exactly `selector`, joined — the
+ * text a stylesheet pin matches against.
+ *
+ * The selector is matched whole, at the start of a line, so a pin on
+ * `.player-practice-mark` reads the base rule and not the descendant rule
+ * `.player-practice-now .player-practice-mark` that follows it: the two differ
+ * in exactly the declarations a pin is asking about, and a substring match
+ * would merge them and pass on the wrong rule's text.
+ *
+ * A selector that was never written throws rather than yielding the empty
+ * string. A negative pin (`expect(box).not.toContain('background:')`) would
+ * otherwise pass on nothing at all, and would keep passing after the fold
+ * dropped the rule entirely — the failure this reader exists to catch.
+ */
+function ruleText(stylesheet: string, selector: string): string {
+  const needle = `\n${selector} {`;
+  const bodies: string[] = [];
+  for (let at = stylesheet.indexOf(needle); at !== -1; at = stylesheet.indexOf(needle, at + 1)) {
+    const open = at + needle.length - 1;
+    const close = stylesheet.indexOf('}', open);
+    if (close === -1) throw new Error(`Unterminated rule: ${selector}`);
+    bodies.push(stylesheet.slice(open + 1, close));
+  }
+  if (bodies.length === 0) throw new Error(`No rule for ${selector} in the stylesheet`);
+  return bodies.join('\n');
+}
 
 /**
  * The autosave every player test runs on. Save is a spy: persistence is the
@@ -254,7 +285,12 @@ describe('Player — the practice console (T36)', () => {
     act(() => controller.emitPlayback({ currentTime: 15 }));
 
     const region = readout();
-    expect(within(region).getByText('A — Recap')).toBeInTheDocument();
+    // The slot reads `A — Recap`: the mark in its own element, so the box the
+    // direction rules around it (player.css) takes the whole mark, with the
+    // alias running beside it outside the rule.
+    const passed = region.querySelector('.player-practice-now');
+    expect(passed?.textContent).toBe('A — Recap');
+    expect(passed?.querySelector('.player-practice-mark')?.textContent).toBe('A');
     expect(within(region).getByText('B')).toBeInTheDocument();
   });
 
@@ -389,6 +425,190 @@ describe('Player — the practice console (T36)', () => {
 
     const region = readout();
     expect(within(region).queryByText(/\.\d{3}/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Player — the readout wears the direction (T73)', () => {
+  // The readout is the smallest complete surface the practice player alone
+  // renders, so the direction is established on it: the tokens here are the
+  // ones every later surface of the fold consumes, and the boxed mark
+  // established here is the mark they all draw.
+  //
+  // jsdom computes no layout, so the box the direction rules around a mark is
+  // a stylesheet fact and is pinned as source text — the convention the
+  // console and split tests above already use. Which mark the box is drawn on
+  // is a DOM fact, though, and is asserted directly: the mark is its own
+  // element, so what it holds can be read.
+
+  it('declares the direction’s tokens once, and consumes them by name', () => {
+    // The palette and the two type roles, each declared exactly once: a token
+    // spelled twice is a token that can drift, and the fold's rule is that no
+    // surface in scope repeats a hex value.
+    const declared = [
+      '--paper: #fcfcfa;',
+      '--ink: #14161a;',
+      '--ink-2: #5a6068;',
+      '--rule: #d8dce1;',
+      '--wash: #ecedef;',
+      '--pencil: #1f4fa8;',
+      '--editorial: #8c2f2f;',
+    ];
+    for (const declaration of declared) {
+      expect(appCss.split(declaration)).toHaveLength(2);
+    }
+
+    // The direction's two type roles, each with the fallback stack that
+    // catches a face which never arrives.
+    expect(appCss).toContain("--serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;");
+    expect(appCss).toContain("--sans: 'Public Sans', system-ui, -apple-system, sans-serif;");
+  });
+
+  it('requests both faces in the document, with swap and both hosts preconnected', () => {
+    // A criterion of its own: the faces are *loaded*, not merely named in a font
+    // stack — so the document has to ask for them. Whether the request arrives
+    // is the network's business and is deliberately not asserted; the fallback
+    // stack beside each face is the guarantee that nothing moves if it does not,
+    // and no geometry is derived from a face, so nothing can. What is asserted
+    // is that the request exists at all: delete the link and the app ships on
+    // fallbacks with every other test still green.
+    const fonts = indexHtml.match(
+      /<link[^>]+href="(https:\/\/fonts\.googleapis\.com\/css2\?[^"]+)"/,
+    )?.[1];
+    expect(fonts).toBeDefined();
+    const request = new URL(fonts!);
+    const families = request.searchParams.getAll('family').join(' & ');
+    expect(families).toContain('Public Sans');
+    expect(families).toContain('Source Serif 4');
+    // Swap, so an unarrived face never holds its text invisible while it loads.
+    expect(request.searchParams.get('display')).toBe('swap');
+    // Both hosts are preconnected — the stylesheet's, then the second origin
+    // the face files themselves come from.
+    expect(indexHtml).toContain('<link rel="preconnect" href="https://fonts.googleapis.com" />');
+    expect(indexHtml).toContain('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />');
+  });
+
+  it('boxes the passed mark, filled, with the mark knocked out', () => {
+    // The direction's signature, and the only place it spends boldness: the
+    // mark the playhead has passed sits in a box ruled in the pencil and
+    // filled with it, the mark showing in the sheet's paper.
+    const box = ruleText(playerCss, '.player-practice-now .player-practice-mark');
+    expect(box).toContain('border: 2px solid var(--pencil);');
+    expect(box).toContain('background: var(--pencil);');
+    expect(box).toContain('color: var(--paper);');
+  });
+
+  it('boxes the mark still ahead as a hollow box in ink', () => {
+    // The two states are told apart without reading, which is the difference
+    // a score draws: passed filled, ahead hollow. The box is drawn on the mark
+    // element alone — the alias runs beside it, outside the rule, because a
+    // score boxes the mark, not the name.
+    const box = ruleText(playerCss, '.player-practice-mark');
+    expect(box).toContain('border: 1.5px solid var(--ink);');
+    expect(box).not.toContain('background:');
+  });
+
+  it('leaves Start and End unboxed — they name boundaries, not marks', async () => {
+    // A boundary takes no box, and no box can be drawn for one: the component
+    // emits no mark element in a placeholder slot, so there is nothing for the
+    // box rule to match. That is a DOM fact and is read as one — a pin on an
+    // absent modifier rule would pass on nothing at all.
+    const { controller } = await renderLoadedPlayer(
+      serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
+    );
+
+    // Before the first mark: the passed slot reads Start, and the one ahead is
+    // a real mark, so exactly one box is drawn.
+    act(() => controller.emitPlayback({ currentTime: 4 }));
+    const readout = () => screen.getByRole('region', { name: 'Practice readout' });
+    const now = readout().querySelector('.player-practice-now');
+    expect(now?.textContent).toBe('Start');
+    expect(now?.querySelector('.player-practice-mark')).toBeNull();
+    expect(readout().querySelectorAll('.player-practice-mark')).toHaveLength(1);
+    expect(now?.className).toContain('practice-placeholder');
+
+    // After the last mark: the passed slot is a real mark and the next slot
+    // reads End, so again exactly one box is drawn — now the filled one.
+    act(() => controller.emitPlayback({ currentTime: 25, duration: 40 }));
+    const next = readout().querySelector('.player-practice-next');
+    expect(next?.textContent).toBe('End');
+    expect(next?.querySelector('.player-practice-mark')).toBeNull();
+    expect(readout().querySelector('.player-practice-now .player-practice-mark')).not.toBeNull();
+
+    // Start is named in the display type's own rule, so it has to be taken out
+    // of that weight by a rule of its own — this one is load-bearing. End needs
+    // none: the next slot's base rule is already the body weight in the
+    // secondary ink, which is what a boundary reads in.
+    const start = ruleText(playerCss, '.player-practice-now.practice-placeholder');
+    expect(start).toContain('font-weight: 400;');
+    expect(start).toContain('color: var(--ink-2);');
+    expect(() => ruleText(playerCss, '.player-practice-next.practice-placeholder')).toThrow();
+    expect(ruleText(playerCss, '.player-practice-next')).toContain('font: 400 24px/1.6 var(--serif);');
+  });
+
+  it('boxes a mark of more than one character whole', async () => {
+    // A movement past 26 marks letters Z, AA, AB (bijective base-26) and a
+    // numbered score counts 1, 2, … 12, so a mark is not one character. The
+    // box takes the whole mark: it is drawn on the mark's own element, not on
+    // a `::first-letter`, which reaches only the first character and would
+    // draw `A` boxed with the last `A` beside it — a different mark.
+    //
+    // 27 markers carry the labels of a movement past Z: the 27th is `AA`.
+    const markers = Array.from({ length: 27 }, (_, index) =>
+      marker(`m${index}`, 10 + index * 10),
+    );
+    const { controller } = await renderLoadedPlayer(serverProject({ markers, duration: 400 }));
+    const region = screen.getByRole('region', { name: 'Practice readout' });
+    const boxed = (slot: string) => region.querySelector(`${slot} .player-practice-mark`)?.textContent;
+
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+    expect(boxed('.player-practice-now')).toBe('A');
+
+    // Just past the 26th mark: the one ahead is the 27th, and its label is two
+    // characters, so the hollow box is the one being tested here.
+    act(() => controller.emitPlayback({ currentTime: 265 }));
+    expect(boxed('.player-practice-next')).toBe('AA');
+
+    // Past it, the whole two-character mark sits in the filled box.
+    act(() => controller.emitPlayback({ currentTime: 275 }));
+    expect(boxed('.player-practice-now')).toBe('AA');
+  });
+
+  it('sets the readout in the two type roles of the direction', () => {
+    // Content is the document's: the headline, the next mark and the anchor
+    // times all read in the engraving serif, and the headline is display
+    // size — the readout is legible from a stand at arm's length.
+    expect(ruleText(playerCss, '.player-practice-now')).toContain('font: 600 48px/1.45 var(--serif);');
+    expect(ruleText(playerCss, '.player-practice-next')).toContain('font: 400 24px/1.6 var(--serif);');
+    expect(ruleText(playerCss, '.player-practice-times')).toContain('font-family: var(--serif);');
+  });
+
+  it('squares the readout’s bar and draws the passed run in pencil', () => {
+    // No rounded corner, tinted band or teal accent survives on the readout:
+    // the track is squared and ruled in the sheet's own rule colour, and what
+    // the playhead has passed is pencilled rather than tealed.
+    const track = ruleText(playerCss, '.player-practice-bar');
+    expect(track).toContain('border-radius: 0;');
+    expect(track).toContain('background: var(--wash);');
+    expect(ruleText(playerCss, '.player-practice-bar-fill')).toContain('background: var(--pencil);');
+    // The readout's own rules carry no literal colour at all — every ink and
+    // rule on it is a token.
+    const readoutRules = playerCss.slice(
+      playerCss.indexOf('.player-practice-readout {'),
+      playerCss.indexOf('.player-timeline-bar {'),
+    );
+    expect(readoutRules).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  });
+
+  it('refuses to read a rule whose selector was never written', () => {
+    // The reader above is only as good as this: a pin on a rule the fold
+    // dropped must fail loudly rather than read as empty text a negative pin
+    // would pass on, and the reader must not settle for a rule that merely
+    // contains the selector.
+    expect(() => ruleText(playerCss, '.player-practice-not-a-rule')).toThrow(
+      'No rule for .player-practice-not-a-rule',
+    );
+    expect(() => ruleText(playerCss, 'player-practice-mark')).toThrow();
+    expect(ruleText(playerCss, '.player-practice-bar')).not.toBe('');
   });
 });
 

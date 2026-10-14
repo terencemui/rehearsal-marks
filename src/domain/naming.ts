@@ -18,8 +18,35 @@ export type Naming = 'letters' | 'numbers' | 'measures';
 export const NAMINGS: readonly Naming[] = ['letters', 'numbers', 'measures'];
 
 /**
+ * The two parts a surface draws a name in: **the mark itself**, and the alias
+ * that runs beside it.
+ *
+ * They are named apart because a surface may draw the mark and not the alias:
+ * the practice readout and the panel's rows box the mark, and the box takes
+ * the whole of it and none of the alias. Splitting `markerName` on its em dash
+ * would make the separator load-bearing, and a mark with a dash in its own
+ * label would break; this is the same reading, divided where it divides.
+ *
+ * `mark` may be empty — an unnamed mark under `measures` has no name of its
+ * own, a blank name area rather than a row the app talks to itself in. Callers
+ * that must say *something* (the accessibility names, the practice readout)
+ * use `markerIdentity` instead, which falls back to the derived label.
+ */
+export function markerReading(
+  marker: LabeledMarker,
+  naming: Naming,
+): { mark: string; alias: string | null } {
+  // Under `measures` the alias *is* the mark, so there is nothing beside it.
+  if (naming === 'measures') return { mark: marker.aliases[0] ?? '', alias: null };
+  return { mark: marker.label, alias: marker.aliases[0] ?? null };
+}
+
+/**
  * What a surface *shows* for a mark: `label — alias` (or the bare label) where
  * the derived label names the mark, and the alias alone under `measures`.
+ *
+ * These are the parts above, joined — so the reading and the parts a boxed
+ * mark is drawn from cannot drift apart.
  *
  * The result may be empty — an unnamed mark under `measures` shows nothing, a
  * blank name area rather than a row the app talks to itself in. Callers that
@@ -27,8 +54,8 @@ export const NAMINGS: readonly Naming[] = ['letters', 'numbers', 'measures'];
  * `markerIdentity` instead.
  */
 export function markerName(marker: LabeledMarker, naming: Naming): string {
-  if (naming === 'measures') return marker.aliases[0] ?? '';
-  return marker.aliases.length === 0 ? marker.label : `${marker.label} — ${marker.aliases[0]}`;
+  const { mark, alias } = markerReading(marker, naming);
+  return alias === null ? mark : `${mark} — ${alias}`;
 }
 
 /**

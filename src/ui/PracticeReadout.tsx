@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react';
 import type { LabeledMarker, Naming } from '../domain';
-import { markerIdentity, markerName, practiceReadout } from '../domain';
+import { markerIdentity, markerReading, practiceReadout } from '../domain';
 import { formatWholeSeconds } from '../domain/time';
 
 export interface PracticeReadoutProps {
@@ -67,8 +67,13 @@ export function PracticeReadout({
   // where the derived label names the marks, the alias alone under `measures` —
   // with the label standing in where that name would be blank, so an unnamed
   // `measures` mark still says which mark the playhead has reached.
-  const passedLabel =
-    passed === null ? START : markerName(passed, naming) || markerIdentity(passed, naming);
+  // The mark and the alias render apart (T73) because the box the direction
+  // draws takes the whole mark and none of the alias. The mark is never blank:
+  // under `measures` an unnamed mark has no name of its own, and the derived
+  // label stands in for it.
+  const passedMark =
+    passed === null ? START : markerReading(passed, naming).mark || markerIdentity(passed, naming);
+  const passedAlias = passed === null ? null : markerReading(passed, naming).alias;
   // The next slot stays bare: it is the mark being headed for, not the one the
   // playhead is on, and the alias belongs to the mark you have reached.
   const nextLabel = next === null ? END : markerIdentity(next, naming);
@@ -95,14 +100,25 @@ export function PracticeReadout({
             passed === null ? 'player-practice-now practice-placeholder' : 'player-practice-now'
           }
         >
-          {passedLabel}
+          {passed === null ? (
+            START
+          ) : (
+            <>
+              <span className="player-practice-mark">{passedMark}</span>
+              {passedAlias === null ? null : ` — ${passedAlias}`}
+            </>
+          )}
         </span>
         <span
           className={
             next === null ? 'player-practice-next practice-placeholder' : 'player-practice-next'
           }
         >
-          {nextLabel}
+          {/* The box is the mark's, so it takes the whole of it — and the mark
+              is its own element rather than its first letter, which is all a
+              `::first-letter` box could reach: a movement past 26 marks
+              letters Z, AA, AB, and a numbered score counts 1, 2, … 12. */}
+          {next === null ? END : <span className="player-practice-mark">{nextLabel}</span>}
         </span>
       </div>
       <div
