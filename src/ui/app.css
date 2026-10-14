@@ -1,5 +1,39 @@
-/* App shell chrome: the shared page rail and the routed page wrapper. The
-   navbar's own styles live in navbar.css. */
+/* App shell chrome: the direction's tokens, the shared page rail and the
+   routed page wrapper. The navbar's own styles live in navbar.css. */
+
+/* The direction's tokens (T73): declared once, here, and consumed by name
+   everywhere the fold reaches — no rule repeats a hex value, and no surface
+   re-spells a face.
+
+   The sheet is score-white and the ink is near-black; rules are hairlines and
+   corners are square. Content is set in an engraving serif and chrome in a
+   neutral grotesque — the two faces the app actually loads (index.html) —
+   with the fallback stacks named beside them, so a face that never arrives
+   degrades to a face the reader has and moves nothing.
+
+   The whole palette is declared here because it is one decision and the fold's
+   tickets share it: this ticket's surface is the practice readout, which is
+   all content and therefore consumes `--serif` alone, while `--sans` is the
+   chrome face the navbar and the panels take up as the fold reaches them.
+   `--editorial` is the direction's alert red, and is likewise declared ahead
+   of its consumer — the failure card still carries its own literal reds
+   (`#fca5a5`, `#fef2f2`, `#7f1d1d`, player.css) and is not this ticket's
+   surface, so the token is deliberately not yet the same red as that card.
+
+   Declaring a token changes no surface on its own: the fold's rules are what
+   consume them, one surface per ticket. */
+:root {
+  --paper: #fcfcfa;
+  --ink: #14161a;
+  --ink-2: #5a6068;
+  --rule: #d8dce1;
+  --wash: #ecedef;
+  --pencil: #1f4fa8;
+  --editorial: #8c2f2f;
+
+  --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --sans: 'Public Sans', system-ui, -apple-system, sans-serif;
+}
 
 /* The shared page rail: a maximum content width, centred, with fluid side
    padding. Applied consistently to the navbar's contents and to the page

@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rehearsal Marks</title>
+    <!--
+      The direction's two faces (T73). Source Serif 4 is the content face — an
+      engraving serif carrying the readout's marks and times — and Public Sans
+      is the chrome face, a neutral grotesque, so the two jobs are two faces a
+      reader can tell apart.
+
+      Served from Google Fonts: the app has no font pipeline of its own, and a
+      hosted stylesheet is what the judged prototype used. `display=swap` plus
+      the fallback stacks the shell stylesheet names (`--serif` / `--sans`,
+      app.css) is the degradation path — a face that never arrives leaves the
+      fallbacks in place, and no geometry is derived from the faces, so the
+      layout is the same either way.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400..700&family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap"
+    />
   </head>
   <body>
     <div id="root"></div>

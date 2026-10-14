@@ -1167,3 +1167,56 @@ describe('App create-from-link lands on the markings page (T63, amending T46)', 
     expect(await api.listMyProjects()).toHaveLength(1);
   });
 });
+
+describe('App — one code path (T73)', () => {
+  /**
+   * The prototype's wiring, named so a guard can look for it: `?variant=` was
+   * how a direction was chosen, `data-direction` was how the shell marked the
+   * one it was wearing, and the switcher was the dev-only control that set it.
+   * The fold ships one code path — the direction is simply the app's style —
+   * so all three must stay gone, and this is the test that says so.
+   */
+  const PROTOTYPE = ['[data-direction]', '[class*="prototype"]'];
+
+  function expectNoPrototype(container: HTMLElement): void {
+    for (const selector of PROTOTYPE) {
+      expect(container.querySelector(selector)).toBeNull();
+    }
+    // The direction attribute was set on the document, not on a node inside
+    // the app — so the shell itself is checked too.
+    expect(document.documentElement.getAttribute('data-direction')).toBeNull();
+  }
+
+  it('ignores a variant parameter at a player URL', async () => {
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    // A variant the prototype would have honoured.
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1?variant=console' });
+
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    // The one page, whole: the readout is the surface the direction is
+    // established on, and it renders without a parameter choosing for it.
+    expect(screen.getByRole('region', { name: 'Practice readout' })).toBeInTheDocument();
+    expectNoPrototype(container);
+    await waitForPlayerSettled();
+  });
+
+  it('ignores a variant parameter on the gallery, where the switcher first lived', async () => {
+    // The strongest reading of "one code path": a parameter the prototype would
+    // have honoured does not merely fail to set an attribute — it changes
+    // nothing at all. The page a `?variant=` URL draws is the page the plain
+    // URL draws, byte for byte. The gallery's empty state is the surface to say
+    // that on because it renders no clock and no async content, so the two
+    // readings are comparable.
+    const plain = renderApp({ initialEntry: '/' });
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    const withoutParam = plain.container.innerHTML;
+    plain.unmount();
+
+    const variant = renderApp({ initialEntry: '/?variant=part' });
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(variant.container.innerHTML).toBe(withoutParam);
+    expectNoPrototype(variant.container);
+  });
+});
