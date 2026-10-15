@@ -1280,3 +1280,48 @@ describe('App — one code path (T73)', () => {
     expectNoPrototype(variant.container);
   });
 });
+
+describe('App — the panel wears the direction on the practice surfaces only (T78)', () => {
+  it('frames the panel on the player and the public view, and not on the markings page', async () => {
+    // The panel is one component on two surfaces, and the fold's one hook is
+    // the distinction it already takes: a surface that passes `authoring` gets
+    // the authoring panel, a practice surface gets the direction's. This is
+    // where the two readings are compared on the same project, in the DOM the
+    // app actually renders — the route each surface is reached by, the class on
+    // the panel's root, the boxed mark, and the head each one carries.
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, auth, navigateTo } = renderApp({ api, controller });
+    await signIn(user, auth);
+
+    // The owner's practice surface: the framed panel, with the door into the
+    // markings page inside the frame with the heading it belongs to.
+    await navigateTo('/projects/p1');
+    await waitForPlayerSettled();
+    const owner = container.querySelector('.player-markers-practice');
+    expect(owner).not.toBeNull();
+    expect(owner!.querySelector('.player-markers-head .player-markings-open')).not.toBeNull();
+    expect(owner!.querySelector('.player-marker-row .player-marker-mark')).not.toBeNull();
+
+    // The read-only public view is a practice surface too — the same panel,
+    // worn the same way.
+    await navigateTo('/gallery/p1');
+    await waitForPlayerSettled();
+    expect(container.querySelector('.player-markers-practice')).not.toBeNull();
+    expect(container.querySelector('.player-marker-mark')).not.toBeNull();
+
+    // The markings page's column is the authoring one: the same panel and the
+    // same rows, with the add controls in place of the door — and neither the
+    // frame nor the box, which is the whole of what this ticket did to it.
+    await navigateTo('/projects/p1/markings');
+    await waitForPlayerSettled();
+    const authoring = container.querySelector('.player-markers');
+    expect(authoring).not.toBeNull();
+    expect(authoring).not.toHaveClass('player-markers-practice');
+    expect(authoring!.querySelector('.markings-add-controls')).not.toBeNull();
+    expect(authoring!.querySelector('.player-markings-open')).toBeNull();
+    expect(container.querySelector('.player-marker-mark')).toBeNull();
+  });
+});

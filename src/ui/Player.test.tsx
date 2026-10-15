@@ -612,6 +612,256 @@ describe('Player — the readout wears the direction (T73)', () => {
   });
 });
 
+describe('Player — the markers panel wears the direction (T78)', () => {
+  // The panel is one component on two surfaces: the practice player and the
+  // public view on one side, the markings page's authoring column on the other.
+  // The direction's panel is the practice one's — the authoring page keeps
+  // ADR-0007's settled row anatomy, its clock slot and its trash glyph,
+  // unchanged — so the fold needs exactly one hook, and it is the distinction
+  // the component already takes: whether it was handed an `authoring` surface.
+  // That distinction is carried as one class on the panel's root, and every
+  // rule that could reach either surface is keyed on it. Rules whose selector
+  // can only ever match practice markup (`.player-markings-open`,
+  // `.player-marker-row`, `.player-marker-mark`) need no hook and are written
+  // where they belong.
+  //
+  // jsdom computes no layout, so what a rule *draws* is a stylesheet fact and
+  // is pinned as source text — the convention the tests above already use.
+  // Which element the rules are drawn on is a DOM fact, and is asserted
+  // directly.
+
+  it('frames the panel in the sheet’s own rule colour, squared', () => {
+    // The panel is a boxed window rather than an open run of rows: the heading
+    // and the door are the window's title, so they render inside the frame the
+    // title names. The frame is a hairline in the rule colour — one rule among
+    // the hairlines it encloses — and it has no rounded corner, because the
+    // direction has none anywhere.
+    const frame = ruleText(playerCss, '.player-markers-practice');
+    expect(frame).toContain('border: 1px solid var(--rule);');
+    expect(frame).not.toContain('border-radius');
+  });
+
+  it('puts the panel’s heading inside the frame — the panel’s own head, not the list’s', async () => {
+    const { container } = await renderLoadedPlayer();
+    const panel = container.querySelector('.player-markers-practice');
+    expect(panel).not.toBeNull();
+    // The head is the panel's child: the frame is drawn around the title, not
+    // around the list with the title left outside it.
+    const head = panel!.querySelector('.player-markers-head');
+    expect(head?.parentElement).toBe(panel);
+    expect(head!.querySelector('.player-markers-heading')?.textContent).toBe('Markers');
+  });
+
+  it('keeps the list’s own inset, cap, scroll and sticky headers', () => {
+    // The frame is the panel's, so the list is not restyled to make room for
+    // it: its inset, its cap and its scrolling are today's, and the sticky
+    // movement headers are still the list's own bands. The one thing the
+    // practice hook says about the list is that its rows close up — the rules
+    // between them do the separating now, so there is no daylight to add.
+    const list = ruleText(playerCss, '.player-marker-list');
+    expect(list).toContain('padding: 0 4px 0 0;');
+    expect(list).toContain('max-height: 320px;');
+    expect(list).toContain('overflow-y: auto;');
+    const practice = ruleText(playerCss, '.player-markers-practice .player-marker-list');
+    expect(practice).toContain('gap: 0;');
+    expect(practice).not.toContain('padding');
+    expect(practice).not.toContain('max-height');
+    expect(ruleText(playerCss, '.player-marker-movement')).toContain('position: sticky;');
+  });
+
+  it('boxes a row’s mark, and leaves the alias outside the box', async () => {
+    const { container } = await renderLoadedPlayer(
+      serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
+    );
+
+    const rows = markerRows(container);
+    // The reading is the one it was — the mark, the em dash, the alias — so a
+    // pin on the row's text still reads the row.
+    const title = rows[0].querySelector('.player-marker-title')!;
+    expect(title.textContent).toBe('A — Recap');
+    // The box is drawn on the mark alone: the mark is its own element and the
+    // alias runs after it, outside the rule, which is what a score does.
+    expect(title.querySelector('.player-marker-mark')?.textContent).toBe('A');
+    expect(title.querySelectorAll('.player-marker-mark')).toHaveLength(1);
+    // A mark without an alias is a bare box.
+    expect(rows[1].querySelector('.player-marker-title')!.textContent).toBe('B');
+    expect(rows[1].querySelector('.player-marker-mark')?.textContent).toBe('B');
+
+    const box = ruleText(playerCss, '.player-marker-list .player-marker-mark');
+    expect(box).toContain('display: inline-block;');
+    expect(box).toContain('border: 1.25px solid var(--ink);');
+    expect(box).toContain('font-weight: 600;');
+    // Ahead, the box is hollow: the two states are told apart without reading.
+    expect(box).not.toContain('background:');
+  });
+
+  it('fills the box of the mark the playhead has gone by, and brings the row to full ink', async () => {
+    const { container, controller } = await renderLoadedPlayer(
+      serverProject({ markers: [marker('m1', 10, ['Recap']), marker('m2', 20)] }),
+    );
+    const rows = markerRows(container);
+
+    act(() => controller.emitPlayback({ currentTime: 15 }));
+    expect(rows[0].closest('li')).toHaveClass('passed');
+    expect(rows[1].closest('li')).not.toHaveClass('passed');
+
+    // The row: no tinted band and no pill — the ink comes up, and that is the
+    // whole of the passed state.
+    const passed = ruleText(playerCss, '.player-marker-list li.passed .player-marker-row');
+    expect(passed).toContain('color: var(--ink);');
+    expect(passed).not.toContain('background');
+
+    // The box: the pencil has gone over it, so it is filled with the pencil and
+    // the mark shows in the sheet's paper. It is the same object the practice
+    // readout draws at display size — the panel's active row and the strip's
+    // passed mark reading as one thing.
+    const filled = ruleText(playerCss, '.player-marker-list li.passed .player-marker-mark');
+    expect(filled).toContain('border-color: var(--pencil);');
+    expect(filled).toContain('background: var(--pencil);');
+    expect(filled).toContain('color: var(--paper);');
+  });
+
+  it('rules the rows with a hairline, squares them, and gives the last one up', () => {
+    // The rule between two rows is the structure, so the row is not a pill: it
+    // is square, it carries a hairline under it, and hovering brings the ink up
+    // to the pencil rather than filling anything.
+    const row = ruleText(playerCss, '.player-marker-list .player-marker-row');
+    expect(row).toContain('border-bottom: 1px solid var(--rule);');
+    expect(row).toContain('border-radius: 0;');
+    expect(row).toContain('font: 400 15px/24px var(--serif);');
+    expect(row).toContain('color: var(--ink-2);');
+    const hover = ruleText(playerCss, '.player-marker-list .player-marker-row:hover');
+    expect(hover).toContain('color: var(--pencil);');
+    expect(hover).not.toContain('background');
+
+    // The frame's bottom rule closes the list, so the last row's own rule would
+    // land on it and read as one heavier line. The list keeps today's inset —
+    // which has no bottom padding to hold them apart — so the last row is what
+    // gives its rule up.
+    expect(
+      ruleText(playerCss, '.player-marker-list > li:last-child .player-marker-row'),
+    ).toContain('border-bottom: 0;');
+  });
+
+  it('boxes a mark of more than one character whole', async () => {
+    // A movement past 26 marks letters Z, AA, AB (bijective base-26) and a
+    // numbered score counts 1, 2, … 12, so a mark is not one character. The box
+    // takes the whole mark: it is drawn on the mark's own element, not on a
+    // `::first-letter`, which reaches only the first character and would box
+    // the `A` of `AA` with the last `A` standing beside it — a different mark.
+    const markers = Array.from({ length: 27 }, (_, index) => marker(`m${index}`, 10 + index * 10));
+    const { container } = await renderLoadedPlayer(serverProject({ markers, duration: 400 }));
+
+    const rows = markerRows(container);
+    expect(rows).toHaveLength(27);
+    expect(rows[0].querySelector('.player-marker-mark')?.textContent).toBe('A');
+    expect(rows[26].querySelector('.player-marker-mark')?.textContent).toBe('AA');
+
+    // No rule in the stylesheet boxes a mark by its first letter. The comments
+    // are stripped first: the panel's own rules say in prose why they do not.
+    expect(playerCss.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain('::first-letter');
+  });
+
+  it('squares the panel’s scrollbar and draws it in the rule colour', () => {
+    // A capped list whose rows simply stop is indistinguishable from a list
+    // that has ended — the last visible row and the last row are the same thing
+    // to the eye — so the bar is drawn rather than left to the platform.
+    // Styling its parts is what replaces an overlay scrollbar (invisible until
+    // it is scrolled, which is the moment the reader has stopped asking) with a
+    // classic one. Squared, and in the sheet's own rule colour, so the bar
+    // reads as one of the hairlines it runs beside.
+    expect(
+      ruleText(playerCss, '.player-markers-practice .player-marker-list::-webkit-scrollbar'),
+    ).toContain('width: 10px;');
+    expect(
+      ruleText(playerCss, '.player-markers-practice .player-marker-list::-webkit-scrollbar-track'),
+    ).toContain('background: transparent;');
+    const thumb = ruleText(
+      playerCss,
+      '.player-markers-practice .player-marker-list::-webkit-scrollbar-thumb',
+    );
+    expect(thumb).toContain('background: var(--rule);');
+    expect(thumb).toContain('border-radius: 0;');
+    // The paint is kept off the transparent border that reserves its inset, and
+    // the `background-clip` comes after the shorthand that would reset it.
+    expect(thumb).toContain('background-clip: content-box;');
+
+    // A browser without the webkit pseudo-element gets the standard pair
+    // instead — and only there: where a browser has both, the standard
+    // properties win and hand back the overlay bar these rules exist to
+    // replace. Guarded on the selector, not on the properties.
+    const guarded = playerCss.match(
+      /@supports not selector\(::-webkit-scrollbar\) \{[\s\S]*?\n\}/,
+    )?.[0];
+    expect(guarded).toBeDefined();
+    expect(guarded).toContain('scrollbar-width: thin;');
+    expect(guarded).toContain('scrollbar-color: var(--rule) transparent;');
+  });
+
+  it('keeps the movement band inside the list, padding and all', () => {
+    // Found by rendering the panel: the list was showing a *horizontal*
+    // scrollbar. The orphan divider over the marks before the first movement is
+    // a `div`, and the app sets no global `box-sizing`, so the band's own rule
+    // — `width: 100%` and 10px of side padding — put its padding outside its
+    // width and made it 20px wider than the list it is in. The shipped band's
+    // other variant is a `button`, which the UA stylesheet already makes
+    // `border-box`, so the two disagreed. A list with `overflow-y: auto` has
+    // `overflow-x: auto` computed alongside it, so those 20px came back as a
+    // second scrollbar under the rows, in plain sight inside the frame.
+    expect(
+      ruleText(
+        playerCss,
+        '.player-markers-practice .player-marker-movement .player-movement-header',
+      ),
+    ).toContain('box-sizing: border-box;');
+    // The band is meant to span its group, so its padding is inside it: the
+    // band's own opaque paper and ink rule are what the practice rule is for.
+    const band = ruleText(
+      playerCss,
+      '.player-markers-practice .player-marker-movement .player-movement-header',
+    );
+    expect(band).toContain('background: var(--paper);');
+    expect(band).toContain('border-bottom: 1px solid var(--ink);');
+  });
+
+  it('holds the band at paper under the pointer, against a heavier shipped selector', () => {
+    // The shipped hover tints the band by `#e2e8f0`, and its selector carries
+    // `button` — (0, 3, 1) — which outranks the practice band's own rule at
+    // (0, 3, 0). So the hover rule here has to restate the paper; dropping it
+    // as redundant hands the tint back. It reads as a duplicate and is not.
+    const hover = ruleText(
+      playerCss,
+      '.player-markers-practice .player-marker-movement button.player-movement-header:hover',
+    );
+    expect(hover).toContain('background: var(--paper);');
+    expect(hover).toContain('color: var(--pencil);');
+    expect(ruleText(playerCss, '.player-marker-movement button.player-movement-header:hover')).toContain(
+      'background: #e2e8f0;',
+    );
+  });
+
+  it('leaves the markings page’s own rules alone', () => {
+    // The assertion this ticket did not reach the markings page with: the panel
+    // is shared, so the hook has to be the only thing separating the two
+    // surfaces. Everything the panel's unhooked rules say is the authoring
+    // page's — the weight a passed row's title takes, the clock's colour, the
+    // heading's tracked capitals, the movement name's ink — and none of it
+    // moved. MarkingsPage.test.tsx pins the page itself; this is the negative
+    // space that keeps those pins true.
+    expect(ruleText(playerCss, '.player-markers-heading')).toContain('text-transform: uppercase;');
+    expect(ruleText(playerCss, '.player-markers-heading')).toContain('color: #94a3b8;');
+    expect(ruleText(playerCss, '.player-marker-time')).toContain('color: #64748b;');
+    expect(ruleText(playerCss, '.player-marker-list li.passed .player-marker-title')).toContain(
+      'font-weight: 700;',
+    );
+    expect(ruleText(playerCss, '.player-movement-name')).toContain('color: #0f172a;');
+    // And the new look exists nowhere but the practice panel: the frame and the
+    // box are not rules of their own for the authoring page to fall into.
+    expect(playerCss).not.toContain('\n.player-markers {');
+    expect(playerCss).not.toContain('\n.player-marker-mark {');
+  });
+});
+
 describe('Player navigation — arrow jumps', () => {
   it('jumps ↓ to the next marker, ↑ back, wrapping at both ends', async () => {
     const user = userEvent.setup();

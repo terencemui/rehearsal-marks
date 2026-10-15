@@ -3,7 +3,7 @@ import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { LabeledMarker } from '../domain';
 import type { Movement, Naming } from '../domain';
-import { markerIdentity, markerName, markerTitle, movementForTime } from '../domain';
+import { markerIdentity, markerReading, markerTitle, movementForTime } from '../domain';
 import { formatTime, formatWholeSeconds } from '../domain/time';
 import type { NudgeControl } from './nudgeControls';
 import { nudgeControls } from './nudgeControls';
@@ -660,7 +660,20 @@ export function MarkersPanel({
   const groups = groupMarkers(markers, movements);
 
   return (
-    <section className="player-markers" aria-label="Markers">
+    // The panel is one component on two surfaces (T78): the practice surfaces
+    // — the owner's player and the read-only public view — and the markings
+    // page's authoring column. The direction is the practice panel's and the
+    // authoring page is explicitly out of it (it keeps ADR-0007's settled row
+    // anatomy), so the stylesheet needs one hook to tell them apart — and the
+    // hook is the distinction this component already takes: a surface that
+    // passes `authoring` is the authoring one. One class on the root, no
+    // attribute and no second mechanism.
+    <section
+      className={
+        authoring === undefined ? 'player-markers player-markers-practice' : 'player-markers'
+      }
+      aria-label="Markers"
+    >
       <MarkersHead>
         {authoring !== undefined ? (
           // The page's own controls (T56, T58): the head of the column the mark
@@ -1372,6 +1385,14 @@ function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authori
    * unnamed mark falls back to its label rather than announcing nothing.
    */
   const identity = markerIdentity(marker, naming);
+  /**
+   * The mark as the browsing row reads it (T78) — the mark and the alias
+   * beside it, as two parts rather than one string, because the direction's
+   * box is drawn around the mark alone. It is the same reading the practice
+   * readout draws its own boxed mark from, so the row and the strip above it
+   * cannot name the same mark differently.
+   */
+  const reading = markerReading(marker, naming);
   const aliasError =
     authoring !== undefined && authoring.aliasError?.markerId === marker.id
       ? authoring.aliasError.message
@@ -1432,7 +1453,17 @@ function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authori
           // does not use.
           title={markerTitle(marker, naming)}
         >
-          <span className="player-marker-title">{markerName(marker, naming)}</span>
+          <span className="player-marker-title">
+            {/* The mark is its own element, so the box the direction rules
+                around a mark takes the whole of it (T78) — a `::first-letter`
+                would reach only the first character and box the `A` of `AA`.
+                The alias that follows stays outside the box, which is what a
+                score does. Both parts come from the one reading the rest of
+                the app names marks by, so the row and the readout cannot
+                drift. */}
+            {reading.mark !== '' && <span className="player-marker-mark">{reading.mark}</span>}
+            {reading.alias === null ? null : ` — ${reading.alias}`}
+          </span>
           <span className="player-marker-time">{clock}</span>
         </button>
       ) : (
