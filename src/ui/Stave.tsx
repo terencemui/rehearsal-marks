@@ -1,5 +1,6 @@
 import type { MouseEvent } from 'react';
-import type { Movement } from '../domain';
+import type { LabeledMarker, Movement, Naming } from '../domain';
+import { markerReading } from '../domain';
 import { formatWholeSeconds } from '../domain/time';
 
 /** The lead stretch's identity — the run before the first movement, which no movement names. */
@@ -22,6 +23,24 @@ interface Stretch {
 
 export interface StaveProps {
   /**
+   * The marks, already labelled — the same read the markers panel groups, so
+   * the strip and the panel draw the same marks in the same order (T80).
+   */
+  markers: readonly LabeledMarker[];
+  /**
+   * How the project names its marks (CONTEXT.md) — what a box holds. The
+   * reading is the domain's own (`markerReading`), which is the whole of what
+   * keeps the strip and the panel from naming one mark two ways.
+   */
+  naming: Naming;
+  /**
+   * The mark the playhead has last passed, or null before the first one — the
+   * recording's start is not a mark. It is the reading the panel tints its
+   * passed row by and the readout fills its passed slot from, so the strip,
+   * the panel and the readout agree on where the playhead is.
+   */
+  passedId: string | null;
+  /**
    * The recording's movements (ADR-0005); the stave rules a heavier bar line at
    * each one's start. Empty means a recording with no boundaries, which draws
    * the five hairlines and nothing to divide them.
@@ -39,21 +58,35 @@ export interface StaveProps {
  * The practice surface's bottom strip, drawn as the stave (T79) — the timeline
  * the recording's clock has been since T38, in the shape the judged direction
  * gives it: five hairlines ruled across the recording's whole length, a heavier
- * bar line where each movement begins, a pencil rule for the playhead, and each
- * movement's name under the stretch it names.
+ * bar line where each movement begins, the project's marks in boxes at the
+ * positions they occupy (T80), a pencil rule for the playhead, each movement's
+ * name under the stretch it names, and a final barline at the end.
  *
  * It stands in the shared surface's *timeline slot* (`RecordingSurface`), which
  * is the one thing that makes "the player only" true of it: the markings page
  * passes no timeline and keeps the shipped bar, so the authoring surface is not
  * half-restyled under the student (ADR-0007, spec #172).
  *
- * What it does **not** carry yet, and deliberately: the marks. Drawing them
- * here reverses ADR-0003's rule that they are not drawn on the strip, and that
- * reversal is T80's ticket — so the band above the hairlines is drawn empty
- * today and the marks land in it there. It is drawn anyway because the
- * playhead's height is measured from it (see `player.css`): the rule runs tall
- * enough to reach the band, so the box it is passing is unambiguous once there
- * is one.
+ * **It carries the marks** (T80), and that is the reversal ADR-0003 recorded:
+ * the strip was ruled to carry no marks, and the band above the hairlines —
+ * drawn by T79 for the playhead to reach into — is where they go. One box per
+ * mark at the position it occupies, holding the name the project reads its
+ * marks by, filled once the playhead has gone over it and hollow while it is
+ * still ahead. The playhead's height is measured from that band's top edge
+ * (see `player.css`), so the pencil crosses the box it is passing and passes
+ * it unambiguously.
+ *
+ * The panel is not replaced by any of this and is not meant to be: it keeps
+ * the complete, named, movement-grouped list, and it is where a mark is
+ * clicked to be jumped to. The strip's job is the piece's *shape* — which is
+ * why its boxes may overlap on a crowded recording rather than being thinned
+ * or moved aside, and why they drop altogether on a window too narrow to draw
+ * them legibly. Nothing is lost when they do: the list still carries every one.
+ *
+ * The strip also closes itself with a **final barline** (T80) — a hairline, a
+ * breath, then a heavy stroke flush with the right edge — because a stave that
+ * simply stops reads as a drawing that was cut off rather than as a recording
+ * that has ended.
  *
  * The clock stays: the elapsed time reads under the left end and the total
  * duration under the right, exactly as it did on the bar — the strip is what
@@ -74,6 +107,9 @@ export interface StaveProps {
  * added, removed or rebound by this fold.
  */
 export function Stave({
+  markers,
+  naming,
+  passedId,
   // Records saved before movements existed (ADR-0005) read the field back as
   // undefined — default it to the empty, ungrouped set the contract describes,
   // as the markers panel does. A recording with no boundaries is the ordinary
@@ -123,9 +159,32 @@ export function Stave({
     // on the clock seeks as surely as one on the hairlines does. The slider is
     // the stave's own band rather than this wrapper: see the class comment.
     <div className="player-stave" onClick={handleSeek}>
-      {/* The band the marks are drawn in (T80) — empty on this ticket, and
-          drawn because the playhead's height is measured from its top. */}
-      <div className="player-stave-marks" />
+      {/* The marks, in boxes, at the positions they occupy in the recording —
+          centred on their times, so a box names the moment it sits on. */}
+      <div className="player-stave-marks">
+        {markers.map((marker) => {
+          // What the box holds, from the reading the panel's rows and the
+          // readout's passed slot are drawn from: the derived label where the
+          // project letters or numbers its marks, the owner's own measure
+          // where it counts them in bars.
+          const reading = markerReading(marker, naming);
+          // A mark the owner left unnamed under `measures` has no name to
+          // draw, and draws no box — an empty box would be the app saying a
+          // mark is called nothing. The panel shows the same blank.
+          if (reading.mark === '') return null;
+          return (
+            <span
+              key={marker.id}
+              // The one the playhead has gone over is filled; every box still
+              // ahead of it is hollow, so "where I am" reads without reading.
+              className={`player-stave-box${marker.id === passedId ? ' passed' : ''}`}
+              style={{ left: `${percentAt(marker.time, duration)}%` }}
+            >
+              {reading.mark}
+            </span>
+          );
+        })}
+      </div>
 
       {/* The five hairlines, the movement bar lines and the playhead — and the
           slider the strip exposes, in the same slot the bar's track occupied:
@@ -148,6 +207,13 @@ export function Stave({
             style={{ left: `${percentAt(movement.start, duration)}%` }}
           />
         ))}
+        {/* The final barline: the mark a score closes a piece with, at the
+            recording's end rather than at a time — a hairline stroke, a gap,
+            then a heavy one, all three drawn by the one rule and its
+            `::before` (see `player.css`). Drawn after the hairlines, so its
+            heavy stroke covers their ends and the stave reads as closed, and
+            before the playhead, which goes over the closed stave. */}
+        <span className="player-stave-final-bar" />
         <span className="player-stave-playhead" style={{ left: `${played}%` }} />
       </div>
 

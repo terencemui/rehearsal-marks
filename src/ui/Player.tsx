@@ -58,11 +58,12 @@ export interface PlayerProps {
  *
  * The recording's clock below the split is the stave (T79) — the piece's shape
  * rather than a flat bar: five hairlines across its whole length, a heavier
- * line where each movement begins, the playhead a pencil rule, and each
- * movement's name under the stretch it names. It carries no marks yet (T80
- * draws them); the complete, named, movement-grouped list stays the markers
- * panel, a scrollable list in the side column where each marker is a row —
- * timestamp, then `label — alias` — and the passed marker's row is highlighted.
+ * line where each movement begins, the project's marks in boxes at the
+ * positions they occupy, a final barline closing the piece (T80), the playhead
+ * a pencil rule, and each movement's name under the stretch it names. The
+ * complete, named, movement-grouped list stays the markers panel, a scrollable
+ * list in the side column where each marker is a row — timestamp, then
+ * `label — alias` — and the passed marker's row is highlighted.
  * A click on the stave seeks; a marker row click jumps to that marker. When the
  * recording has movements (ADR-0005) the rows group under sticky movement
  * headers that jump to the movement's start, and the rehearsal letters
@@ -112,6 +113,14 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
     controller.seek(time);
   }
 
+  /**
+   * The mark the playhead has last passed, or null before the first one — read
+   * once, because two surfaces draw it: the stave fills the box it belongs to
+   * and the panel tints the row (T80). One reading, so the strip and the list
+   * cannot disagree about where the playhead is.
+   */
+  const passedId = passedMarker?.id ?? null;
+
   return (
     <RecordingSurface
       practiceSurface
@@ -127,6 +136,9 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
       // fold's reversal of ADR-0003 on the player alone.
       timeline={
         <Stave
+          markers={labeled}
+          naming={naming}
+          passedId={passedId}
           movements={record.movements}
           duration={duration}
           currentTime={playback.currentTime}
@@ -147,7 +159,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
             movements={record.movements}
             naming={naming}
             duration={duration}
-            passedId={passedMarker?.id ?? null}
+            passedId={passedId}
             onSeek={handleMarkerSeek}
             onSeekMovement={handleMovementSeek}
             maxHeight={markersMaxHeight ?? undefined}
