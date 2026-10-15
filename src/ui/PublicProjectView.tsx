@@ -110,9 +110,10 @@ export function PublicProjectView({ api, controllerFactory }: PublicProjectViewP
 
   return (
     <div className="public-project">
-      <Link to="/" className="public-project-back">
-        ← Back to Gallery
-      </Link>
+      {/* No way back above the player (T75): a shared link is a way in, and a
+          visitor's first sight of it should be the recording they came for.
+          The surfaces whose whole job is to get someone out — the error card
+          above, the not-found page — keep theirs. */}
       {/* Keyed by the session's own project, not the routed id: during a
           gallery-id swap the old session is still in state, and a player
           keyed by the new id would mount on the old session's record. The

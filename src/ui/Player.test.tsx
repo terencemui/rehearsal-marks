@@ -27,31 +27,64 @@ const appCss = readFileSync('src/ui/app.css', 'utf8');
 const indexHtml = readFileSync('index.html', 'utf8');
 
 /**
- * Every declaration block whose selector is exactly `selector`, joined — the
- * text a stylesheet pin matches against.
+ * The opening brace of every rule whose selector list names `selector`, in the
+ * order the stylesheet names them.
  *
  * The selector is matched whole, at the start of a line, so a pin on
  * `.player-practice-mark` reads the base rule and not the descendant rule
  * `.player-practice-now .player-practice-mark` that follows it: the two differ
  * in exactly the declarations a pin is asking about, and a substring match
- * would merge them and pass on the wrong rule's text.
+ * would merge them and pass on the wrong rule's text. Whole means the name
+ * stands alone on its line — what follows it is the next comma of the selector
+ * list or the rule's own brace, never more selector text — which is what lets a
+ * grouped rule (the fold's focus rule groups all of its stops on one block) be
+ * found the same way a rule with one selector is.
  *
  * A selector that was never written throws rather than yielding the empty
  * string. A negative pin (`expect(box).not.toContain('background:')`) would
  * otherwise pass on nothing at all, and would keep passing after the fold
  * dropped the rule entirely — the failure this reader exists to catch.
  */
-function ruleText(stylesheet: string, selector: string): string {
-  const needle = `\n${selector} {`;
-  const bodies: string[] = [];
+function ruleOpens(stylesheet: string, selector: string): number[] {
+  const needle = `\n${selector}`;
+  const opens: number[] = [];
   for (let at = stylesheet.indexOf(needle); at !== -1; at = stylesheet.indexOf(needle, at + 1)) {
-    const open = at + needle.length - 1;
-    const close = stylesheet.indexOf('}', open);
-    if (close === -1) throw new Error(`Unterminated rule: ${selector}`);
-    bodies.push(stylesheet.slice(open + 1, close));
+    const after = at + needle.length;
+    if (!/^(,|[ \t]*\{)/.test(stylesheet.slice(after))) continue;
+    const open = stylesheet.indexOf('{', after);
+    if (open === -1) throw new Error(`Unterminated rule: ${selector}`);
+    opens.push(open);
   }
-  if (bodies.length === 0) throw new Error(`No rule for ${selector} in the stylesheet`);
-  return bodies.join('\n');
+  if (opens.length === 0) throw new Error(`No rule for ${selector} in the stylesheet`);
+  return opens;
+}
+
+/** The declaration blocks `ruleOpens` found, joined — the text a pin matches. */
+function ruleText(stylesheet: string, selector: string): string {
+  return ruleOpens(stylesheet, selector)
+    .map((open) => {
+      const close = stylesheet.indexOf('}', open);
+      if (close === -1) throw new Error(`Unterminated rule: ${selector}`);
+      return stylesheet.slice(open + 1, close);
+    })
+    .join('\n');
+}
+
+/**
+ * The whole selector list of the first rule naming `selector`, in the order the
+ * stylesheet names it — so a grouped rule that lost one of its stops fails a
+ * pin, rather than passing on the stops that are left.
+ */
+function ruleSelectors(stylesheet: string, selector: string): string[] {
+  const open = ruleOpens(stylesheet, selector)[0];
+  const before = stylesheet.slice(0, open);
+  const start = Math.max(before.lastIndexOf('}'), before.lastIndexOf('{')) + 1;
+  return before
+    .slice(start)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
 }
 
 /**
@@ -835,9 +868,11 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     );
     expect(hover).toContain('background: var(--paper);');
     expect(hover).toContain('color: var(--pencil);');
-    expect(ruleText(playerCss, '.player-marker-movement button.player-movement-header:hover')).toContain(
-      'background: #e2e8f0;',
+    const shipped = ruleText(
+      playerCss,
+      '.player-marker-movement button.player-movement-header:hover',
     );
+    expect(shipped).toContain('background: #e2e8f0;');
   });
 
   it('leaves the markings page’s own rules alone', () => {
@@ -859,6 +894,169 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     // box are not rules of their own for the authoring page to fall into.
     expect(playerCss).not.toContain('\n.player-markers {');
     expect(playerCss).not.toContain('\n.player-marker-mark {');
+  });
+});
+
+/** The first of the focus rule's stops — the selector the rule is read by. */
+const FOCUS_STOP = '.practice-surface .player-marker-list .player-marker-row:focus-visible';
+
+describe('Player — the surface wears the direction (T77)', () => {
+  // The ground and the band. The surface both player routes render is the same
+  // surface the markings page hosts (T55), so the fold needs one thing to key
+  // on, and it is the distinction the two hosts already carry: a practice
+  // surface is on the page, or it is not. The markup says so once
+  // (RecordingSurface), and every rule here hangs off it — which is why the
+  // Markings page's own pins are the other half of the claim and are left
+  // untouched.
+
+  /**
+   * Every rule this ticket adds, as its declarations — the surface's own text,
+   * read for the two negative claims below (no literal ink, nothing that
+   * moves). Rules are named here rather than sliced out of the file by offset,
+   * so a rule that was dropped fails the reader instead of quietly leaving the
+   * slice short. The focus rule is read like the rest: the reader above finds a
+   * grouped rule by any of its stops, so none of this text lives twice.
+   */
+  function surfaceRules(): string[] {
+    return [
+      ruleText(playerCss, 'body:has(.practice-surface)'),
+      ruleText(playerCss, '.practice-surface .player-title'),
+      ruleText(playerCss, '.practice-surface .player-youtube-error'),
+      ruleText(playerCss, '.practice-surface .player-youtube-error a'),
+      ruleText(playerCss, '.practice-surface .player-youtube-error button'),
+      ruleText(playerCss, FOCUS_STOP),
+    ];
+  }
+
+  it('marks the practice surface, and only the practice surface', async () => {
+    // The class is the fold's one hook: the band, the failure card and the
+    // ground all hang off it, and the markings page — which renders this same
+    // surface — must carry none of them (its own pins are that claim's other
+    // half; App.test.tsx drives the three routes).
+    const { container } = await renderLoadedPlayer();
+
+    const surface = container.querySelector('.practice-surface');
+    expect(surface).not.toBeNull();
+    // The band and the recording are inside the marked subtree, not beside it:
+    // a class on a sibling would leave the rules matching nothing.
+    expect(surface?.querySelector('.player-title')).not.toBeNull();
+    expect(surface?.querySelector('.player-practice-split')).not.toBeNull();
+  });
+
+  it('grounds the page in the sheet, while a practice surface is on it', () => {
+    // The ground belongs to the page and not to the surface's box: the rail's
+    // side padding, the page's own padding and the navbar's strip — which is
+    // transparent (navbar.css), so the body's ground shows through it — are all
+    // the one sheet. So the rule is the page's, keyed on the surface's presence
+    // rather than on a document attribute: the prototype set one
+    // (`data-direction`) and the fold ships no such thing.
+    expect(ruleText(playerCss, 'body:has(.practice-surface)')).toContain(
+      'background: var(--paper);',
+    );
+  });
+
+  it('sets the project’s name in the document’s face over a heavy rule', () => {
+    // The page opens like a part and not like a dashboard: the name is content,
+    // so it takes the document's face, and the band under it is the one rule on
+    // the page drawn heavy rather than hairline — 2px of ink, where every other
+    // rule on the surface is 1px of the sheet's own rule colour.
+    const band = ruleText(playerCss, '.practice-surface .player-title');
+    expect(band).toContain('font: 600 27px/1.12 var(--serif);');
+    expect(band).toContain('letter-spacing: -0.015em;');
+    expect(band).toContain('color: var(--ink);');
+    expect(band).toContain('padding-bottom: 14px;');
+    expect(band).toContain('border-bottom: 2px solid var(--ink);');
+  });
+
+  it('draws the failure card as an editorial note in the alert colour', () => {
+    // The recording's own failure is the document's business too: a note in the
+    // direction's alert red, squared and un-filled, rather than the rounded
+    // pink alert it has been. Its copy is chrome rather than content, so it
+    // takes the chrome face.
+    const card = ruleText(playerCss, '.practice-surface .player-youtube-error');
+    expect(card).toContain('border: 1px solid var(--editorial);');
+    expect(card).toContain('border-radius: 0;');
+    expect(card).toContain('background: none;');
+    expect(card).toContain('color: var(--editorial);');
+    expect(card).toContain('font-family: var(--sans);');
+
+    // The way out keeps the card's ink — the URL and the retry are the card's
+    // own contents, not a second surface — and the retry is squared and ruled
+    // in it rather than left a rounded button in an inherited grey.
+    expect(ruleText(playerCss, '.practice-surface .player-youtube-error a')).toContain(
+      'color: var(--editorial);',
+    );
+    const retry = ruleText(playerCss, '.practice-surface .player-youtube-error button');
+    expect(retry).toContain('border: 1px solid currentColor;');
+    expect(retry).toContain('border-radius: 0;');
+    expect(retry).toContain('color: inherit;');
+  });
+
+  it('still offers its way out when the recording cannot play', async () => {
+    // The card is restyled, not emptied: the URL stays reachable and Retry
+    // still re-runs the load, so a video that comes back recovers without the
+    // project being rebuilt. Asserted as behaviour because that is what the
+    // styling could silently cost — a `display: none` on the way out would
+    // leave every stylesheet pin above still green.
+    const controller = mockController({
+      load: vi.fn(async () => {
+        throw new Error('media element failed');
+      }),
+    });
+    const record = serverProject();
+    const { autosave } = testAutosave(record);
+
+    render(<Player autosave={autosave} controller={controller} />);
+
+    const card = await screen.findByRole('alert');
+    expect(within(card).getByRole('link')).toHaveAttribute(
+      'href',
+      canonicalYouTubeUrl(record.videoId),
+    );
+    expect(within(card).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('draws focus as an inset pencil rule, never the browser’s glow', () => {
+    // Every stop is keyed on the fold's one hook, and that keying is the claim
+    // this test is really making. One of the names in the list is not the
+    // player's alone: the leading group's divider is a `player-movement-header`
+    // on the authoring page too (MarkersPanel draws it for both panels), and it
+    // is harmless there only while it stays an unfocusable `aria-hidden` div. A
+    // bare selector would put a pencil rule on the Markings page the day that
+    // div became a button — so the list is pinned whole, and every line of it
+    // has to carry the class. Inset, because the rule is drawn inside the
+    // control it marks rather than ringing it; the declarations are read out of
+    // the stylesheet like every other rule on the surface.
+    const focus = ruleText(playerCss, FOCUS_STOP);
+    expect(focus).toContain('outline: 2px solid var(--pencil);');
+    expect(focus).toContain('outline-offset: -2px;');
+    expect(ruleSelectors(playerCss, FOCUS_STOP)).toEqual([
+      FOCUS_STOP,
+      '.practice-surface .player-movement-header:focus-visible',
+      '.practice-surface .player-markings-open:focus-visible',
+      '.practice-surface .player-youtube-error button:focus-visible',
+    ]);
+  });
+
+  it('adds no transition, animation or reveal', () => {
+    // A reader who has asked for reduced motion is owed this much: the fold is
+    // a restyle, and nothing on it may move on its own. The claim is about the
+    // rules this ticket adds — every one of them, so a motion arriving under a
+    // selector the list above forgot still fails here.
+    for (const body of surfaceRules()) {
+      expect(body).not.toMatch(/transition|animation/i);
+    }
+  });
+
+  it('spends no literal hex or colour function on the surface — every ink is a token', () => {
+    // The tokens are declared once in the shell (app.css) and consumed by name
+    // here. A hex or a colour function in one of these rules is a value that can
+    // drift from the direction without any other test noticing — which is all
+    // the two spellings the check names. (A colour's name is a third way to
+    // spend one, and is not what this looks for.)
+    for (const body of surfaceRules()) {
+      expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
+    }
   });
 });
 
