@@ -254,6 +254,131 @@ in the side column is where the marks show. */
   font-variant-numeric: tabular-nums;
 }
 
+/* --------------------------------------------------------------------------
+   The stave (T79)
+
+   The practice surface's strip, drawn as the piece's shape rather than as a
+   flat bar: five hairlines ruled across the recording's whole length, a heavier
+   line where each movement begins, the playhead a pencil rule, each movement's
+   name under the stretch it names, and the clock still reading at the two ends.
+
+   Every selector here can only ever match practice markup — the strip is built
+   by `Stave` and handed to the shared surface's timeline slot, which the
+   markings page passes nothing to — so none of it is keyed on the fold's one
+   hook, exactly as the panel's own practice-only rules are not (T78). The bar
+   above is what the authoring page keeps, and these rules sit beside it rather
+   than replacing it for the same reason.
+   -------------------------------------------------------------------------- */
+
+/* The strip: the air under the recording today's bar kept, and one click
+   surface for the whole drawing. `user-select` because a drag across the strip
+   is a seek and never a text selection of the movement names under it. */
+.player-stave {
+  position: relative;
+  margin-top: 24px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The band the marks are drawn in (T80) — empty on this ticket, and drawn
+   anyway because the playhead's height is measured from its top edge: the rule
+   runs from here down through the stave, so the box it is passing is
+   unambiguous once there is one. This height and the playhead's `top` are one
+   number and have to move together. */
+.player-stave-marks {
+  position: relative;
+  height: 26px;
+}
+
+/* The stave itself: a 34px band the five hairlines are ruled across. */
+.player-stave-rules {
+  position: relative;
+  height: 34px;
+}
+
+/* The five hairlines. The stave is a drawing and not a table rule, so its lines
+   sit a step darker than the sheet's own hairline — see `--stave-line`, the one
+   colour the drawing spends. */
+.player-stave-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--stave-line);
+}
+
+/* The heavier line where a movement begins — the bar line a score rules. It
+   spans the stave's whole height, which is what makes the movements read as
+   stretches of the piece rather than as ticks on a track. */
+.player-stave-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--ink);
+}
+
+/* The playhead: a pencil rule at the elapsed fraction, run tall enough to
+   reach the marks band above the stave — the whole of the `-26px`, which is
+   that band's height. It is drawn last, so the pencil goes over the stave it
+   crosses rather than under it. */
+.player-stave-playhead {
+  position: absolute;
+  top: -26px;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--pencil);
+}
+
+/* The name row: each movement's name under the stretch it names. */
+.player-stave-movements {
+  display: flex;
+  margin-top: 8px;
+  font: 400 12.5px/1.45 var(--serif);
+  color: var(--ink-2);
+}
+
+/* Sized to each movement's share of the recording — the share arrives from the
+   component as a `flex-basis`, and nothing grows or shrinks it — so a name sits
+   under the stretch it names and can never overlap its neighbour.
+
+   The item carries no padding of its own, and that is a measurement rather than
+   tidiness: a box may not be narrower than its own padding, so 14px of it would
+   make every stretch under 14px at least 14px wide — the lead stretch is a few
+   pixels of a short run-in — and every name after it would land to the right of
+   the line it names. The air between two names is the inner span's, which is
+   the thing that can also be cut with an ellipsis. */
+.player-stave-movement {
+  flex: none;
+  min-width: 0;
+}
+
+/* The name in its stretch: as wide as the stretch, less the 14px of air that
+   keeps it off the name beside it, and cut with an ellipsis when it does not
+   fit — the one thing proportional sizing cannot give a name. */
+.player-stave-movement-name {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding-right: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The clock at the strip's two ends: elapsed left, total duration right, in the
+   content face. Tabular figures because this is a live clock — proportional
+   ones would jitter as the seconds tick — and the shorthand resets
+   `font-variant-numeric`, so it is restated after it. */
+.player-stave-clock {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font: 400 13px/1.45 var(--serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
 /* The player's side column: the practice console above the markers panel. */
 .player-side-column {
   min-width: 0;

@@ -67,6 +67,21 @@ export interface RecordingSurfaceProps {
    * than measuring for itself.
    */
   side: (markersMaxHeight: number | null) => ReactNode;
+  /**
+   * The recording's clock below the split, when the caller has one of its own.
+   * Absent — the markings page, which passes nothing — the surface draws the
+   * full-width click-to-seek bar it has always drawn, so this prop changes
+   * nothing for a caller that does not pass it.
+   *
+   * It is a slot rather than a second prop telling the surface which clock to
+   * draw, and that is what makes "the player only" true of the stave (T79): the
+   * practice surface builds its own strip (`Stave`) and hands it over, while
+   * the markings page passes nothing and keeps the shipped bar untouched. A
+   * stave also *needs* to be a slot — it is elements at positions, structure no
+   * stylesheet can invent from a flat bar — so the swap has to happen at the
+   * surface that owns the slot rather than by restyling what the bar renders.
+   */
+  timeline?: ReactNode;
 }
 
 /**
@@ -82,11 +97,14 @@ export interface RecordingSurfaceProps {
  * the 16:9 video takes the width the window leaves it, rather than the text
  * rail's reading measure.
  *
- * The recording's clock is a single filled bar below the split (T38),
- * spanning the full content width — a click-to-seek progress track with the
- * elapsed time under its left end and the total duration under its right. It
- * carries no marks. The video column keeps only the recording (the audio
- * layer's own ruler band is hidden with CSS).
+ * The recording's clock is a single strip below the split (T38), spanning the
+ * full content width — a click-to-seek surface with the elapsed time under its
+ * left end and the total duration under its right. What that strip is *drawn*
+ * as is the caller's (`timeline`): the markings page draws the filled bar this
+ * surface has always drawn, and the practice surface draws the stave (T79).
+ * Either way the marks are not in it — the panel is where they show (the
+ * practice surface restores them to the strip in T80). The video column keeps
+ * only the recording (the audio layer's own ruler band is hidden with CSS).
  *
  * A settled-state marker on the root (`data-settled`) signals that the load
  * has resolved. It means *settled*, not *playable*: it is set on both the
@@ -102,6 +120,7 @@ export function RecordingSurface({
   onRetryLoad,
   practiceSurface = false,
   side,
+  timeline,
 }: RecordingSurfaceProps) {
   /** The practice split — the measurement effect observes it for size changes. */
   const splitRef = useRef<HTMLDivElement>(null);
@@ -254,23 +273,25 @@ export function RecordingSurface({
         </div>
         <div className="player-side-column">{side(markersMaxHeight)}</div>
       </div>
-      <div className="player-timeline-bar">
-        <div
-          className="player-timeline-track"
-          role="slider"
-          aria-label="Recording timeline"
-          aria-valuemin={0}
-          aria-valuemax={duration}
-          aria-valuenow={Math.round(elapsed)}
-          onClick={handleTrackSeek}
-        >
-          <div className="player-timeline-fill" style={{ width: `${playheadPercent}%` }} />
+      {timeline ?? (
+        <div className="player-timeline-bar">
+          <div
+            className="player-timeline-track"
+            role="slider"
+            aria-label="Recording timeline"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={Math.round(elapsed)}
+            onClick={handleTrackSeek}
+          >
+            <div className="player-timeline-fill" style={{ width: `${playheadPercent}%` }} />
+          </div>
+          <div className="player-timeline-times">
+            <span>{formatWholeSeconds(elapsed, duration)}</span>
+            <span>{formatWholeSeconds(duration, duration)}</span>
+          </div>
         </div>
-        <div className="player-timeline-times">
-          <span>{formatWholeSeconds(elapsed, duration)}</span>
-          <span>{formatWholeSeconds(duration, duration)}</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

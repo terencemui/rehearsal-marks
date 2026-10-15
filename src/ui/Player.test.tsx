@@ -103,8 +103,8 @@ function testAutosave(record: ServerProject): { autosave: Autosave; save: Return
  * the same render the marking tests use, surfaced with the autosave handle
  * for the tests that only need the controller and the view.
  */
-async function renderLoadedPlayer(record = serverProject()) {
-  const { autosave, ...rest } = await renderSettledPlayer(record);
+async function renderLoadedPlayer(record = serverProject(), seconds = RECORD_SECONDS) {
+  const { autosave, ...rest } = await renderSettledPlayer(record, seconds);
   return { ...rest, autosave };
 }
 
@@ -257,17 +257,19 @@ describe('Player — playback-only (T39)', () => {
     expect(screen.queryByText(/Playing from YouTube/)).not.toBeInTheDocument();
   });
 
-  it('grows the timeline fill with playback time', async () => {
+  it('moves the strip’s playhead with playback time', async () => {
+    // The strip is the stave now (T79), so what grows with the playhead is the
+    // pencil rule rather than a fill — the same fact, drawn the direction's way.
     const { controller, container } = await renderLoadedPlayer();
-    const fill = container.querySelector('.player-timeline-fill') as HTMLElement;
-    expect(fill).not.toBeNull();
-    expect(fill.style.width).toBe('0%');
+    const playhead = container.querySelector('.player-stave-playhead') as HTMLElement;
+    expect(playhead).not.toBeNull();
+    expect(playhead.style.left).toBe('0%');
 
     act(() => controller.emitPlayback({ currentTime: 5, duration: 10 }));
-    expect(fill.style.width).toBe('50%');
+    expect(playhead.style.left).toBe('50%');
 
     act(() => controller.emitPlayback({ currentTime: 15 }));
-    expect(fill.style.width).toBe('100%');
+    expect(playhead.style.left).toBe('100%');
   });
 
   it('toggles with Space, except while a button has focus', async () => {
@@ -1064,6 +1066,307 @@ describe('Player — the surface wears the direction (T77)', () => {
   });
 });
 
+describe('Player — the stave replaces the timeline (T79)', () => {
+  // The strip below the split is the piece's shape now, and not a flat bar:
+  // five hairlines ruled across the recording's whole length, a heavier line
+  // where each movement begins, the playhead a pencil rule, and each movement's
+  // name under the stretch it names. This is the drawing ADR-0003's reversal is
+  // made of — the marks themselves reach the strip one ticket later (T80) — and
+  // it reaches the surface through the *timeline slot*, which is the whole of
+  // what keeps the markings page on the shipped bar.
+  //
+  // jsdom computes no layout, so what a rule draws is a stylesheet fact and is
+  // pinned as source text, the convention the fold's other surfaces are pinned
+  // by; every position on the stave is an inline percentage, and is read off
+  // the DOM the player actually renders.
+
+  /** The stave's own rules, as their declarations — every one this ticket adds. */
+  function staveRules(): string[] {
+    return [
+      ruleText(playerCss, '.player-stave'),
+      ruleText(playerCss, '.player-stave-marks'),
+      ruleText(playerCss, '.player-stave-rules'),
+      ruleText(playerCss, '.player-stave-line'),
+      ruleText(playerCss, '.player-stave-bar'),
+      ruleText(playerCss, '.player-stave-playhead'),
+      ruleText(playerCss, '.player-stave-movements'),
+      ruleText(playerCss, '.player-stave-movement'),
+      ruleText(playerCss, '.player-stave-movement-name'),
+      ruleText(playerCss, '.player-stave-clock'),
+    ];
+  }
+
+  const stave = () => document.querySelector('.player-stave') as HTMLElement;
+  /** The stave's parts, in the order the strip draws them. */
+  const parts = (selector: string) =>
+    Array.from(stave().querySelectorAll(selector)) as HTMLElement[];
+
+  /**
+   * A recording a hundred seconds long with two movements in it. Every
+   * position on the stave is then the movement's own start — 25 and 60 — so
+   * what the test reads off the DOM is the arithmetic the alignment rests on
+   * rather than a rounded version of it.
+   */
+  function divided() {
+    return serverProject({
+      movements: [
+        { id: 'mv1', name: 'I. Allegro', start: 25 },
+        { id: 'mv2', name: 'II. Adagio', start: 60 },
+      ],
+    });
+  }
+
+  it('rules five hairlines across the recording’s whole length', async () => {
+    const { container } = await renderLoadedPlayer(divided(), 100);
+    const lines = Array.from(container.querySelectorAll('.player-stave-line')) as HTMLElement[];
+
+    // Five, because that is what a stave is: the five lines the notes are
+    // written on, ruled evenly across the band.
+    expect(lines).toHaveLength(5);
+    expect(lines.map((line) => line.style.top)).toEqual(['0%', '25%', '50%', '75%', '100%']);
+    // And across the whole width of the strip, which is what makes them a stave
+    // rather than ticks at the recording's ends.
+    const rule = ruleText(playerCss, '.player-stave-line');
+    expect(rule).toContain('left: 0;');
+    expect(rule).toContain('right: 0;');
+    expect(rule).toContain('height: 1px;');
+  });
+
+  it('stands a heavier bar line where each movement begins', async () => {
+    const { container } = await renderLoadedPlayer(divided(), 100);
+    const bars = Array.from(container.querySelectorAll('.player-stave-bar')) as HTMLElement[];
+
+    // One per movement, at that movement's start.
+    expect(bars.map((bar) => bar.style.left)).toEqual(['25%', '60%']);
+    // Heavier than the hairlines by both measures the drawing has: thicker, and
+    // ruled in the ink rather than in the stave's own lighter line colour. It
+    // spans the band's full height, so a movement reads as a stretch of the
+    // piece rather than as a tick on a track.
+    const rule = ruleText(playerCss, '.player-stave-bar');
+    expect(rule).toContain('width: 1.5px;');
+    expect(rule).toContain('background: var(--ink);');
+    expect(rule).toContain('top: 0;');
+    expect(rule).toContain('bottom: 0;');
+  });
+
+  it('draws the playhead as a pencil rule at the elapsed fraction, tall enough to reach the marks band', async () => {
+    const { controller } = await renderLoadedPlayer(divided(), 100);
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+
+    expect(parts('.player-stave-playhead')[0].style.left).toBe('25%');
+
+    // The height is the claim that needs the band to exist: the rule starts at
+    // the marks band's top edge and runs to the stave's bottom, so the box it
+    // is passing is unambiguous once T80 draws one. The band's height and the
+    // playhead's `top` are one number, stated twice and here read together.
+    expect(ruleText(playerCss, '.player-stave-marks')).toContain('height: 26px;');
+    const playhead = ruleText(playerCss, '.player-stave-playhead');
+    expect(playhead).toContain('top: -26px;');
+    expect(playhead).toContain('bottom: 0;');
+    expect(playhead).toContain('background: var(--pencil);');
+  });
+
+  it('puts each movement’s name under the stretch it names, its left edge on that movement’s bar line', async () => {
+    const { container } = await renderLoadedPlayer(divided(), 100);
+    const stretches = Array.from(
+      container.querySelectorAll('.player-stave-movement'),
+    ) as HTMLElement[];
+    const bars = Array.from(container.querySelectorAll('.player-stave-bar')) as HTMLElement[];
+
+    // The row tiles the recording from zero: the lead, then the two movements —
+    // each item exactly its own stretch of the hundred seconds.
+    expect(stretches.map((stretch) => stretch.style.flexBasis)).toEqual(['25%', '35%', '40%']);
+    expect(stretches.map((stretch) => stretch.textContent)).toEqual([
+      '',
+      'I. Allegro',
+      'II. Adagio',
+    ]);
+
+    // The alignment itself, in the two numbers the DOM carries: the shares
+    // ahead of a movement's own stretch sum to exactly where that movement's
+    // bar line is ruled — which is why the name's left edge lands on the line,
+    // with nothing between the two but the arithmetic.
+    let edge = 0;
+    for (const [index, bar] of bars.entries()) {
+      edge += Number.parseFloat(stretches[index].style.flexBasis);
+      expect(`${edge}%`).toBe(bar.style.left);
+    }
+
+    // And the layout the arithmetic rests on: a flex row whose items are their
+    // share and never grow — a growing item's own size is added to the share it
+    // grows into, which would put every name after the first a padding to the
+    // right of the line it names.
+    expect(ruleText(playerCss, '.player-stave-movements')).toContain('display: flex;');
+    const item = ruleText(playerCss, '.player-stave-movement');
+    expect(item).toContain('flex: none;');
+    expect(item).toContain('min-width: 0;');
+  });
+
+  it('cuts a narrow movement’s name with an ellipsis rather than overlapping the name beside it', () => {
+    // The one thing proportional sizing cannot give a name: a stretch narrower
+    // than the name in it. The name is cut, so two names are never drawn over
+    // each other however narrow the window gets.
+    const name = ruleText(playerCss, '.player-stave-movement-name');
+    expect(name).toContain('overflow: hidden;');
+    expect(name).toContain('white-space: nowrap;');
+    expect(name).toContain('text-overflow: ellipsis;');
+    // The item ends at its share: the 14px of air that keeps two names apart is
+    // the inner span's, because a box may not be narrower than its own padding
+    // — padding on the item would widen every narrow stretch, and put every
+    // name after it to the right of the line it names.
+    expect(ruleText(playerCss, '.player-stave-movement')).not.toContain('padding');
+    expect(name).toContain('padding-right: 14px;');
+  });
+
+  it('draws the stretch before the first movement nameless, so the first name starts at its own bar line', async () => {
+    // The list's own grouping drops a lead that holds no marks, and read onto
+    // the strip that rule is a bug: shares of what is left begin at zero, so
+    // the first name would start at the strip's left edge — a movement's start
+    // to the left of the line that names it.
+    const { container } = await renderLoadedPlayer(divided(), 100);
+    const stretches = Array.from(
+      container.querySelectorAll('.player-stave-movement'),
+    ) as HTMLElement[];
+
+    expect(stretches[0].textContent).toBe('');
+    expect(stretches[0].style.flexBasis).toBe('25%');
+    // The name is not merely empty in the DOM: nothing is drawn for the lead at
+    // all, so the row carries no heading over a stretch nothing names.
+    expect(stretches).toHaveLength(3);
+  });
+
+  it('draws no lead stretch when the recording begins at its first movement', async () => {
+    // There is nothing between the strip's left edge and that bar line to hold
+    // open, and the movement's own line is ruled at zero — so the name starts
+    // at the left edge because that is where its line is.
+    const { container } = await renderLoadedPlayer(
+      serverProject({ movements: [{ id: 'mv1', name: 'I. Allegro', start: 0 }] }),
+      100,
+    );
+    const stretches = Array.from(
+      container.querySelectorAll('.player-stave-movement'),
+    ) as HTMLElement[];
+
+    expect(stretches).toHaveLength(1);
+    expect(stretches[0].style.flexBasis).toBe('100%');
+    expect(stretches[0].textContent).toBe('I. Allegro');
+  });
+
+  it('seeks to a click anywhere on the strip', async () => {
+    const { container, controller } = await renderLoadedPlayer(divided(), 100);
+    stubTrackBounds(container, 200);
+
+    // Three quarters across a hundred seconds. The click lands on the stave
+    // itself — the names, the rules and the clock are inside it — so anywhere
+    // on the drawing is the seek surface.
+    fireEvent.click(stave(), { clientX: 150 });
+    expect(controller.seek).toHaveBeenLastCalledWith(75);
+
+    fireEvent.click(parts('.player-stave-movement-name')[1], { clientX: 0 });
+    expect(controller.seek).toHaveBeenLastCalledWith(0);
+  });
+
+  it('reads the elapsed time at the left end and the total duration at the right', async () => {
+    const { controller } = await renderLoadedPlayer(divided(), 100);
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+
+    expect(parts('.player-stave-clock span').map((span) => span.textContent)).toEqual([
+      '00:25',
+      '01:40',
+    ]);
+  });
+
+  it('exposes the slider the timeline bar exposed, in the slot the bar exposed it in', async () => {
+    // One control, with the bar's own role, name and values — a screen reader
+    // hears the same thing it heard before the drawing changed. And it sits
+    // where the bar's did: on the strip's own band, with the clock and the
+    // movement names *beside* it rather than wrapped up in it, because a
+    // slider's children are presentational and a slider around the whole stack
+    // would flatten the duration and every name out of the tree — the exact
+    // loss the swap is meant not to cost.
+    const { controller } = await renderLoadedPlayer(divided(), 100);
+    act(() => controller.emitPlayback({ currentTime: 25 }));
+
+    const slider = screen.getByRole('slider', { name: 'Recording timeline' });
+    expect(slider).toHaveClass('player-stave-rules');
+    expect(slider.closest('.player-stave')).toBe(stave());
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '100');
+    expect(slider).toHaveAttribute('aria-valuenow', '25');
+
+    // Readable, not swallowed: the clock and the names are outside the slider.
+    expect(slider.contains(parts('.player-stave-clock')[0])).toBe(false);
+    expect(slider.contains(parts('.player-stave-movement-name')[1])).toBe(false);
+
+    // And it is a pointer surface rather than a tab stop, exactly as the bar
+    // was: the fold adds no key, removes none and rebinds none.
+    expect(slider).not.toHaveAttribute('tabindex');
+  });
+
+  it('draws every position inside the strip, however the record reads', async () => {
+    // Two degenerate records the drawing still has to survive: a boundary at
+    // the recording's very end (its stretch is nothing), and one past the end
+    // this render knows — a boundary authored against a longer read of the
+    // recording than the fallback the strip is dividing by. Neither may paint
+    // outside the strip, and neither may break the shares' tiling, which is
+    // what the names' alignment rests on: a stretch that has collapsed to
+    // nothing takes a share of nothing.
+    const { container } = await renderLoadedPlayer(
+      serverProject({
+        movements: [
+          { id: 'mv1', name: 'I. Allegro', start: 25 },
+          // A boundary placed at the recording's very end: its stretch is
+          // nothing, and its name has nowhere to be drawn.
+          { id: 'mv2', name: 'II. Adagio', start: 100 },
+          // And one past the end this render knows.
+          { id: 'mv3', name: 'III. Finale', start: 150 },
+        ],
+      }),
+      100,
+    );
+    const stretches = Array.from(
+      container.querySelectorAll('.player-stave-movement'),
+    ) as HTMLElement[];
+    const bars = Array.from(container.querySelectorAll('.player-stave-bar')) as HTMLElement[];
+
+    // 25 + 75 + 0 + 0: the row is the recording's own width and no further.
+    expect(stretches.map((stretch) => stretch.style.flexBasis)).toEqual([
+      '25%',
+      '75%',
+      '0%',
+      '0%',
+    ]);
+    expect(bars.map((bar) => bar.style.left)).toEqual(['25%', '100%', '100%']);
+  });
+
+  it('never draws the playhead before the recording’s start', async () => {
+    // The elapsed time is clamped at the end above; the start needs its own
+    // clamp, or a position below zero is drawn off the strip's left edge.
+    const { controller } = await renderLoadedPlayer(divided(), 100);
+    act(() => controller.emitPlayback({ currentTime: -5 }));
+
+    expect(parts('.player-stave-playhead')[0].style.left).toBe('0%');
+  });
+
+  it('spends the stave’s own line colour, declared once in the shell', () => {
+    // The stave is a drawing and not a table rule, so its five lines are a step
+    // darker than the sheet's hairline — a colour the palette has and no other
+    // surface spends, which is why it is a token and not a hex in this file.
+    expect(appCss.split('--stave-line: #b9bec6;')).toHaveLength(2);
+    for (const body of staveRules()) {
+      expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
+    }
+  });
+
+  it('adds no transition, animation or reveal', () => {
+    // A reader who has asked for reduced motion is owed this much: the strip is
+    // redrawn, and nothing on it moves on its own.
+    for (const body of staveRules()) {
+      expect(body).not.toMatch(/transition|animation/i);
+    }
+  });
+});
+
 describe('Player navigation — arrow jumps', () => {
   it('jumps ↓ to the next marker, ↑ back, wrapping at both ends', async () => {
     const user = userEvent.setup();
@@ -1274,14 +1577,18 @@ const RECORD_SECONDS = 123.456;
 
 /**
  * Renders a settled player — the load has resolved (success path) and its
- * playback duration matches the record. The bar is not geometry-mocked:
- * jsdom reports no layout, so a click-ratio test stubs the track for itself.
+ * playback duration matches the record. The strip is not geometry-mocked:
+ * jsdom reports no layout, so a click-ratio test stubs it for itself.
+ *
+ * `seconds` is the recording's length. A test that divides positions by it
+ * passes a round number rather than the fixture's 123.456, so the stave's
+ * percentages are the whole number the arithmetic says they are (T79).
  */
-async function renderSettledPlayer(record = serverProject()) {
+async function renderSettledPlayer(record = serverProject(), seconds = RECORD_SECONDS) {
   const controller = mockController();
-  controller.load = vi.fn(async () => ({ duration: RECORD_SECONDS }));
-  // Settle the mount duration before the bar draws its fill.
-  controller.emitPlayback({ duration: RECORD_SECONDS });
+  controller.load = vi.fn(async () => ({ duration: seconds }));
+  // Settle the mount duration before the strip draws its positions.
+  controller.emitPlayback({ duration: seconds });
   const { autosave } = testAutosave(record);
   const view = render(<Player autosave={autosave} controller={controller} />);
   await waitForPlayerSettled();
@@ -1317,9 +1624,9 @@ function trackRect(width: number): DOMRect {
   } as DOMRect;
 }
 
-/** Gives the bar's track a fixed box so clicks land at known ratios. */
+/** Gives the strip a fixed box so clicks land at known ratios. */
 function stubTrackBounds(container: HTMLElement, width: number): void {
-  const track = container.querySelector('.player-timeline-track') as HTMLElement;
+  const track = container.querySelector('.player-stave') as HTMLElement;
   Object.defineProperty(track, 'getBoundingClientRect', {
     value: () => trackRect(width),
   });
@@ -1371,70 +1678,75 @@ describe('Player — read-only over markers (T39)', () => {
   });
 });
 
-describe('Player — the timeline bar and markers (T38)', () => {
-  it('moves the clock out of the video column into a full-width bar below the split', async () => {
+describe('Player — the timeline strip and markers (T38)', () => {
+  it('moves the clock out of the video column into a full-width strip below the split', async () => {
     const { container } = await renderLoadedPlayer();
 
     const split = container.querySelector('.player-practice-split') as HTMLElement;
-    const bar = container.querySelector('.player-timeline-bar') as HTMLElement;
-    expect(split.nextElementSibling).toBe(bar);
+    const strip = container.querySelector('.player-stave') as HTMLElement;
+    expect(split.nextElementSibling).toBe(strip);
 
     const videoColumn = split.querySelector('.player-video-column') as HTMLElement;
     expect(videoColumn.querySelector('.player-ruler')).not.toBeNull();
     expect(videoColumn.querySelector('.player-marker-row')).toBeNull();
 
-    // The bar carries no marks and no ruler band: the marks moved to the
-    // markers panel in the side column.
-    expect(bar.querySelector('.rm-ruler')).toBeNull();
-    expect(bar.querySelector('.player-playhead')).toBeNull();
-    expect(bar.querySelectorAll('.player-marker-row')).toHaveLength(0);
+    // The strip carries no marks and no ruler band: the marks moved to the
+    // markers panel in the side column, and T79 draws the strip's shape — the
+    // marks themselves land on it one ticket later (T80).
+    expect(strip.querySelector('.rm-ruler')).toBeNull();
+    expect(strip.querySelector('.player-playhead')).toBeNull();
+    expect(strip.querySelectorAll('.player-marker-row')).toHaveLength(0);
 
     const sideColumn = split.querySelector('.player-side-column') as HTMLElement;
     expect(sideColumn.querySelector('.player-markers')).not.toBeNull();
     expect(sideColumn.querySelectorAll('.player-marker-row')).toHaveLength(2);
   });
 
-  it('draws its seek surface from the bar’s track, clean of ticks', async () => {
+  it('draws its seek surface from the strip, clean of ticks', async () => {
     const { container } = await renderLoadedPlayer();
-    const track = container.querySelector('.player-timeline-track') as HTMLElement;
+    const strip = container.querySelector('.player-stave') as HTMLElement;
 
-    expect(track.getAttribute('role')).toBe('slider');
-    expect(track.getAttribute('aria-label')).toBe('Recording timeline');
-    expect(track.getAttribute('aria-valuemin')).toBe('0');
-    expect(track.getAttribute('aria-valuemax')).toBe(String(RECORD_SECONDS));
-    // The clean-bar decision (no marker dividers, no ticks) — the fill is the
-    // only mark on the track.
-    expect(track.querySelector('.rm-ruler-tick')).toBeNull();
+    // The slider is the strip's own band, as the bar's was its track — with the
+    // clock beyond it rather than inside it, where a slider's presentational
+    // children would swallow it (T79 states the arrangement in full).
+    const slider = within(strip).getByRole('slider', { name: 'Recording timeline' });
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', String(RECORD_SECONDS));
+    // The clean-bar decision (no marker dividers, no ticks) outlives the bar:
+    // the stave rules its own lines, and the ruler engine's ticks reach neither.
+    expect(strip.querySelector('.rm-ruler-tick')).toBeNull();
   });
 
   it('sizes by percentages only — no pixel offsets, no inline widths', async () => {
     const { container } = await renderLoadedPlayer();
 
-    // The strip's surface and marker layers are gone entirely — the bar
-    // carries no surface, no marks, no playhead of its own.
+    // The strip's surface and marker layers are gone entirely — the stave
+    // carries no surface, no marks, and no playhead of the ruler's own.
     expect(container.querySelector('.player-timeline-surface')).toBeNull();
-    expect(container.querySelector('.player-timeline-bar .player-marker-row')).toBeNull();
+    expect(container.querySelector('.player-stave .player-marker-row')).toBeNull();
     expect(container.querySelector('.player-playhead')).toBeNull();
-    expect((container.querySelector('.player-timeline-fill') as HTMLElement).style.width).toMatch(
-      /%$/,
-    );
+    // Every position on the stave is an inline percentage: the five hairlines
+    // by their band share, the bar lines and the playhead by their time.
+    for (const part of container.querySelectorAll('.player-stave-rules > span')) {
+      expect((part as HTMLElement).style.left || (part as HTMLElement).style.top).toMatch(/%$/);
+    }
   });
 
   it('shows the elapsed time under the left end and the duration under the right', async () => {
     const { container, controller } = await renderLoadedPlayer();
     act(() => controller.emitPlayback({ currentTime: 15 }));
 
-    const times = container.querySelector('.player-timeline-times') as HTMLElement;
+    const times = container.querySelector('.player-stave-clock') as HTMLElement;
     expect(
       Array.from(times.querySelectorAll('span')).map((element) => element.textContent),
     ).toEqual(['00:15', '02:03']);
   });
 
-  it('seeks anywhere on the bar, and a marker row click jumps without ever selecting', async () => {
+  it('seeks anywhere on the strip, and a marker row click jumps without ever selecting', async () => {
     const { container, controller } = await renderLoadedPlayer();
     stubTrackBounds(container, 200);
 
-    fireEvent.click(container.querySelector('.player-timeline-track') as HTMLElement, {
+    fireEvent.click(container.querySelector('.player-stave') as HTMLElement, {
       clientX: 50,
     });
     expect(controller.seek).toHaveBeenLastCalledWith((50 / 200) * RECORD_SECONDS);
@@ -1580,7 +1892,7 @@ describe('Player — the timeline bar and markers (T38)', () => {
     expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
 
     fireEvent.click(markerRows(container)[1]);
-    expect((container.querySelector('.player-timeline-bar') as HTMLElement).scrollLeft).toBe(0);
+    expect((container.querySelector('.player-stave') as HTMLElement).scrollLeft).toBe(0);
   });
 
   it('renders the markers even when playback has failed', async () => {
@@ -1594,10 +1906,13 @@ describe('Player — the timeline bar and markers (T38)', () => {
     const { container } = render(<Player autosave={autosave} controller={controller} />);
     await screen.findByRole('alert');
 
-    // The stored duration is the failure state's clock: the bar still draws
-    // its fill, and the markers panel still lists the marks.
+    // The stored duration is the failure state's clock: the strip still draws
+    // the recording's shape from it, and the markers panel still lists the
+    // marks.
     expect(container.querySelectorAll('.player-marker-row')).toHaveLength(2);
     expect(markerRows(container)[0].textContent).toContain('00:10');
+    expect(container.querySelectorAll('.player-stave-line')).toHaveLength(5);
+    expect(container.querySelector('.player-stave-clock')).toHaveTextContent('02:03');
   });
 
   it('caps the list at the video’s bottom, scrolling instead of outrunning it', async () => {
@@ -2128,14 +2443,14 @@ describe('Player — YouTube projects', () => {
     const { container } = await renderYouTubePlayer(200);
 
     const split = container.querySelector('.player-practice-split') as HTMLElement;
-    const bar = container.querySelector('.player-timeline-bar') as HTMLElement;
-    expect(split.nextElementSibling).toBe(bar);
+    const strip = container.querySelector('.player-stave') as HTMLElement;
+    expect(split.nextElementSibling).toBe(strip);
     expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
   });
 
   it('leaves ctrl+scroll to the browser — there is no zoom to gesture at', async () => {
     const { container } = await renderYouTubePlayer(200);
-    const bar = container.querySelector('.player-timeline-bar') as HTMLElement;
+    const strip = container.querySelector('.player-stave') as HTMLElement;
 
     const wheel = new WheelEvent('wheel', {
       deltaY: -300,
@@ -2144,7 +2459,7 @@ describe('Player — YouTube projects', () => {
       cancelable: true,
     });
     act(() => {
-      bar.dispatchEvent(wheel);
+      strip.dispatchEvent(wheel);
     });
 
     expect((container.querySelector('.player-ruler') as HTMLElement).style.width).toBe('');
@@ -2177,7 +2492,7 @@ describe('Player — YouTube projects', () => {
       const split = document.querySelector('.player-practice-split') as HTMLElement;
       expect(split.querySelector('.player-video-column .player-ruler')).not.toBeNull();
       // The clock is a sibling below the split, never inside it.
-      expect(split.querySelector('.player-timeline-bar')).toBeNull();
+      expect(split.querySelector('.player-stave')).toBeNull();
       expect(within(split).getByRole('region', { name: 'Practice readout' })).toBeInTheDocument();
     });
 
@@ -2203,14 +2518,14 @@ describe('Player — YouTube projects', () => {
       expect(within(readout()).getByText('End')).toBeInTheDocument();
     });
 
-    it('confines the marks to the markers panel — the bar carries none', async () => {
+    it('confines the marks to the markers panel — the strip carries none', async () => {
       await renderYouTubePlayer();
 
       const videoColumn = document.querySelector('.player-video-column') as HTMLElement;
-      const bar = document.querySelector('.player-timeline-bar') as HTMLElement;
+      const strip = document.querySelector('.player-stave') as HTMLElement;
       const sideColumn = document.querySelector('.player-side-column') as HTMLElement;
       expect(videoColumn.querySelector('.player-marker-row')).toBeNull();
-      expect(bar.querySelector('.player-marker-row')).toBeNull();
+      expect(strip.querySelector('.player-marker-row')).toBeNull();
       expect(sideColumn.querySelectorAll('.player-marker-row')).toHaveLength(2);
     });
   });
