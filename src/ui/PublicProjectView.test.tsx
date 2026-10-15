@@ -85,6 +85,22 @@ describe('PublicProjectView', () => {
     expect(screen.queryByRole('button', { name: /^[−+][0-9.]+s$/ })).not.toBeInTheDocument();
   });
 
+  it('opens straight onto the recording — the player is the first thing in the view', async () => {
+    // A shared link is a way *in*, not a detour (T75): the first thing a
+    // visitor meets at the address is the recording they came for. Held as
+    // position rather than as an absent label, and as *nothing at all* above
+    // the player rather than no link above it — an exit re-spelled as a
+    // button, or a back control returning under a new name, is the same
+    // detour this forbids.
+    const { container } = renderView(publicProject());
+    await waitForPlayerSettled();
+
+    const view = container.querySelector('.public-project');
+    const player = container.querySelector('[data-settled]');
+    expect(player).not.toBeNull();
+    expect(view?.firstElementChild).toBe(player);
+  });
+
   it('names the marks the way the project does — a stranger reads what the owner reads', async () => {
     // The naming belongs to the project rather than to the viewer, and this is
     // the surface that shows why (T72): a published project kept by measure
