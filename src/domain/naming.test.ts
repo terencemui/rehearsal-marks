@@ -1,31 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { NAMINGS, markerIdentity, markerName, markerReading, markerTitle } from './naming';
+import { markerIdentity, markerReading, markerTitle } from './naming';
 import type { LabeledMarker } from './marker';
 
 /** A marker already carrying its derived label — the shape every surface reads. */
 function labeled(label: string, aliases: string[] = []): LabeledMarker {
   return { id: `m-${label}`, time: 10, aliases, createdAt: 0, label };
 }
-
-describe('markerName', () => {
-  it('reads the label and the first alias in letters, as it always has', () => {
-    expect(markerName(labeled('A', ['Recap']), 'letters')).toBe('A — Recap');
-    // A mark with no name is its bare label.
-    expect(markerName(labeled('A'), 'letters')).toBe('A');
-  });
-
-  it('reads the derived label in decimal under numbers', () => {
-    expect(markerName(labeled('3', ['Intro']), 'numbers')).toBe('3 — Intro');
-    expect(markerName(labeled('3'), 'numbers')).toBe('3');
-  });
-
-  it('reads the alias alone under measures, and nothing when there is none', () => {
-    // The derived label names nothing in a score that boxes bar numbers, so
-    // it is not shown at all here.
-    expect(markerName(labeled('D', ['17']), 'measures')).toBe('17');
-    expect(markerName(labeled('D'), 'measures')).toBe('');
-  });
-});
 
 describe('markerReading', () => {
   it('divides the reading where a surface draws a box around the mark', () => {
@@ -46,14 +26,25 @@ describe('markerReading', () => {
     expect(markerReading(labeled('D'), 'measures')).toEqual({ mark: '', alias: null });
   });
 
-  it('joins back into exactly the reading `markerName` shows', () => {
-    // The two cannot drift: `markerName` is these parts, joined.
-    for (const naming of NAMINGS) {
-      for (const m of [labeled('A', ['Recap']), labeled('A'), labeled('12', ['Bar 12'])]) {
-        const { mark, alias } = markerReading(m, naming);
-        expect(markerName(m, naming)).toBe(alias === null ? mark : `${mark} — ${alias}`);
-      }
-    }
+  it('reads the bare mark under letters and numbers, alias or no alias', () => {
+    // What the panel's box draws. The alias beside it is the row's to add, and
+    // Player.test.tsx pins the row's own text with it there.
+    expect(markerReading(labeled('A', ['Recap']), 'letters').mark).toBe('A');
+    expect(markerReading(labeled('A'), 'letters').mark).toBe('A');
+    expect(markerReading(labeled('3', ['Intro']), 'numbers').mark).toBe('3');
+  });
+
+  it('reads a dash in a mark as part of the mark, not as the separator', () => {
+    // The reason the reading is divided here rather than joined and re-split:
+    // a dash is an ordinary character in a label and in an alias, and joining
+    // first would make it the seam between the two parts.
+    expect(markerReading(labeled('A-1', ['Recap']), 'letters').mark).toBe('A-1');
+    expect(markerReading(labeled('A-1', ['Recap']), 'numbers').mark).toBe('A-1');
+    // Under measures the alias is the mark, so a dash there is the mark's too.
+    expect(markerReading(labeled('D', ['17-19']), 'measures')).toEqual({
+      mark: '17-19',
+      alias: null,
+    });
   });
 });
 
