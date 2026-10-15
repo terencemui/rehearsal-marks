@@ -21,6 +21,61 @@ import App from './App';
 // the same way).
 const navbarCss = readFileSync('src/ui/navbar.css', 'utf8');
 
+// The navbar's sign-in control is its own stylesheet (user.css), reached from
+// nowhere else, and it wears the direction with the rest of the chrome (T76) —
+// so it is read the same way.
+const userCss = readFileSync('src/ui/user.css', 'utf8');
+
+/**
+ * A stylesheet's rules, with the prose taken out. Every reader below is
+ * looking for what a rule *declares*, and a comment that happens to spell
+ * `background:` or `border-radius:` is prose about a rule, not one.
+ */
+function rulesOf(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/**
+ * Every `border-radius` a stylesheet declares, as written. The value runs to
+ * the declaration's `;` or to the block's `}` — a last declaration may legally
+ * omit the semicolon, and a pattern that stopped at `;` would run past the
+ * brace and read the next rule's text as this one's value.
+ */
+function radiiDeclaredIn(css: string): string[] {
+  return [...rulesOf(css).matchAll(/border-radius:\s*([^;}]+)/g)].map((match) => match[1].trim());
+}
+
+/**
+ * Every background a stylesheet declares, as written — the same shape of pin,
+ * for the question "does anything here fill a band?"
+ */
+function backgroundsDeclaredIn(css: string): string[] {
+  return [...rulesOf(css).matchAll(/background(?:-color)?:\s*([^;}]+)/g)].map((match) =>
+    match[1].trim(),
+  );
+}
+
+/**
+ * Every colour a stylesheet assigns, as written: the value of any property
+ * that paints — the colour properties, the `border` edges and shorthands, and
+ * `box-shadow`, with the border metrics (`border-radius`, `border-width`) left
+ * out because they paint nothing.
+ *
+ * A hex-only pattern would pass an `rgb(15, 118, 110)` teal or a `darkcyan`
+ * without noticing, and the fold's claim about these surfaces is that they
+ * consume the direction rather than name colours of their own.
+ */
+function coloursDeclaredIn(css: string): string[] {
+  const paintsColour = (property: string): boolean =>
+    /^(?:color|background|background-color|box-shadow|outline|outline-color|border|border-[a-z-]+)$/.test(
+      property,
+    ) && !/^border-(?:radius|width|style)$|^border-[a-z]+-(?:radius|width|style)$/.test(property);
+  const declarations = /(?:^|[;{\s])([a-z-]+)\s*:\s*([^;}]+)/g;
+  return [...rulesOf(css).matchAll(declarations)]
+    .filter((match) => paintsColour(match[1]))
+    .map((match) => match[2].trim());
+}
+
 /** The navbar's sign-in control — the landing's own button is a second, distinct one. */
 function navSignIn(): HTMLElement {
   return within(screen.getByRole('navigation')).getByRole('button', {
@@ -811,6 +866,98 @@ describe('App pages and the persistent navbar (T44)', () => {
 
     await go(1);
     expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+  });
+});
+
+describe('The navbar wears the direction (T76)', () => {
+  it('makes the wordmark the way home, and its name the app’s name alone', async () => {
+    const user = userEvent.setup();
+    const { auth, currentPath } = renderApp();
+    await signIn(user, auth);
+
+    // The wordmark is the navbar's home link, and `getByRole` matches the
+    // accessible name whole: a mark that leaked into it would read
+    // "R Rehearsal Marks" and match neither this nor the heading below — the
+    // same name the app announces itself by.
+    const home = screen.getByRole('link', { name: 'Rehearsal Marks' });
+    expect(home).toHaveAttribute('href', '/');
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+
+    // And it goes home from wherever the session is, as a link must.
+    await user.click(home);
+    await waitFor(() => expect(currentPath()).toBe('/'));
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+  });
+
+  it('draws the boxed mark as markup, in front of the name, hidden from assistive technology', () => {
+    renderApp();
+    const home = screen.getByRole('link', { name: 'Rehearsal Marks' });
+
+    // Markup rather than the prototype's `content` pseudo-element: the mark is
+    // no longer throwaway, and only a real element can be hidden from
+    // assistive technology — which is the whole point, since the box is the
+    // name's initial and not a second word of it.
+    const mark = home.querySelector('.app-mark')!;
+    expect(mark).toHaveAttribute('aria-hidden', 'true');
+    expect(mark).toHaveTextContent('R');
+
+    // In front of the words, so the box reads as the initial of the name beside
+    // it. The words carry no space of their own — JSX trims it — so what holds
+    // the two apart is the link's flex gap, pinned with the rest of the
+    // stylesheet's facts below.
+    expect(home.firstElementChild).toBe(mark);
+    expect(home.textContent).toMatch(/^R\s*Rehearsal Marks$/);
+  });
+
+  it('paints the navbar in the direction’s tokens: paper, hairline, square, no teal', () => {
+    // The ground is the direction's paper under a hairline, and both are
+    // consumed by name. A rule that spelled its own colour here could drift
+    // from the direction with nothing to notice — so every colour the file
+    // assigns is a token reference, in whatever notation it might be written.
+    expect(navbarCss).toMatch(/\.app-nav\s*\{[^}]*background:\s*var\(--paper\)/);
+    expect(navbarCss).toMatch(/\.app-nav\s*\{[^}]*border-bottom:\s*1px solid var\(--rule\)/);
+    for (const colour of coloursDeclaredIn(navbarCss)) {
+      expect(colour).toContain('var(--');
+    }
+
+    // Square corners throughout: zero is the only radius the chrome declares.
+    expect(radiiDeclaredIn(navbarCss).filter((radius) => radius !== '0')).toEqual([]);
+
+    // The mark is markup now (the test above), so the stylesheet may not draw
+    // one: a second, unannounced mark from `content` would sit beside the real
+    // element and go stale against it.
+    expect(navbarCss).not.toMatch(/content:/);
+  });
+
+  it('sets the name in the document’s face, and marks the current page with a rule', () => {
+    expect(navbarCss).toMatch(/\.app-name\s*\{[^}]*var\(--serif\)/);
+    expect(navbarCss).toMatch(/\.app-nav-link\s*\{[^}]*var\(--sans\)/);
+
+    // The gap between the box and the words. jsdom computes no layout, so the
+    // separation is pinned as the rule that makes it rather than as a
+    // distance: the words in the source carry no space of their own (the test
+    // above), so without this the box would sit flush against the name.
+    expect(navbarCss).toMatch(/\.app-name-link\s*\{[^}]*gap:\s*9px/);
+
+    // Links are unhighlighted — no rule pours a tint behind a label, and there
+    // is no pill here to cancel. The current page is a rule under its own
+    // link, the way a running head is marked, rather than a filled state.
+    expect(backgroundsDeclaredIn(navbarCss)).toEqual(['var(--paper)']);
+    expect(navbarCss).toMatch(/\[aria-current='page'\][^{]*\{[^}]*inset[^;]*var\(--ink\)/);
+  });
+
+  it('squares and ink-outlines the navbar’s sign-in control', () => {
+    expect(userCss).not.toMatch(/#0f766e/);
+    expect(userCss).toMatch(/\.user-status\s*\{[^}]*font-family:\s*var\(--sans\)/);
+    expect(userCss).toMatch(/:where\(\.user-status\) button\s*\{[^}]*var\(--sans\)/);
+    expect(userCss).toMatch(/:where\(\.user-status\) button\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
+    expect(radiiDeclaredIn(userCss).filter((radius) => radius !== '0')).toEqual([]);
+
+    // The `:where()` above is load-bearing and so is what it wraps: the base
+    // rule must carry no class of its own, or it out-specifies the deletion
+    // rules below it and draws the one-way door in ink — see the selector
+    // itself. The door keeps the danger colour as its own single-class rule.
+    expect(userCss).toMatch(/\.user-delete\s*\{[^}]*#b91c1c/);
   });
 });
 

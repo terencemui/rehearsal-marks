@@ -26,6 +26,15 @@ export interface NavbarProps {
  * page, including the project page (T45): the player's own Projects control
  * is retired, and the navbar links are the only navigation. The gallery is
  * the front door at `/` (T50); the owner's workspace lives at `/projects`.
+ *
+ * The wordmark wears the direction (T76): the name is set in the document's
+ * face with the rehearsal mark in its box in front of it, and it is the
+ * navbar's way home — a link rather than a label, so the identity is also a
+ * control. The box is markup carrying `aria-hidden`, not a decorative
+ * pseudo-element as it was on the prototype, since the mark is no longer
+ * throwaway and only a real element can be kept out of the accessible name:
+ * the wordmark is announced as the app's name alone, and the box that draws
+ * its initial adds nothing to read.
  */
 export function Navbar({
   railClass,
@@ -37,7 +46,12 @@ export function Navbar({
   return (
     <nav className="app-nav" aria-label="Primary">
       <div className={`${railClass} app-nav-inner`}>
-        <h1 className="app-name">Rehearsal Marks</h1>
+        <h1 className="app-name">
+          <NavLink to="/" end className="app-name-link">
+            <span className="app-mark" aria-hidden="true">R</span>
+            Rehearsal Marks
+          </NavLink>
+        </h1>
         <NavLink to="/" end className="app-nav-link">
           Gallery
         </NavLink>

@@ -1,26 +1,42 @@
-/* The navbar sign-in surface: status and action, one quiet line. */
+/* The navbar sign-in surface: status and action, one quiet line.
+
+   It wears the direction with the rest of the chrome (T76): the control is
+   square and ink-outlined, and its two lines are set in the chrome face and
+   the direction's inks. The semantic states keep the colours the shell gives
+   them — the account-deletion red and the failed-sign-in notice — because a
+   danger colour is a fact about the action and not a piece of the direction's
+   geometry, and the fold does not repaint them. */
 
 .user-status {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 14px;
-  color: #444;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--ink-2);
 }
 
-.user-status button {
+/* The `:where()` carries no specificity of its own, so this rule is worth one
+   element and not a class: it is a default for the buttons in this control,
+   and the rules below it — the escalation and the refusal's own notice — are
+   single-class and win the cascade unaided. A `.user-status button` here would
+   out-specify them, and the deletion path would be drawn in the same ink as
+   the quiet controls: the prototype's blanket rule did exactly that, and took
+   the white lettering off `Delete forever`'s red ground on the way through. */
+:where(.user-status) button {
   padding: 6px 12px;
-  border: 1px solid #0f766e;
-  border-radius: 6px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
   background: none;
-  color: #0f766e;
+  color: var(--ink);
   cursor: pointer;
-  font-size: 14px;
+  font-family: var(--sans);
+  font-size: 13.5px;
 }
 
-.user-status button:hover {
-  background: #0f766e;
-  color: #fff;
+:where(.user-status) button:hover {
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .user-account {
@@ -37,7 +53,9 @@
 }
 
 /* Account deletion is a one-way door: the action and its confirmation carry
-   the danger color, apart from the quiet teal sign-out. */
+   the danger color, apart from the quiet sign-out. The base rule above is a
+   `:where()` default, so these three rules stay plain single-class selectors
+   and win on their own — see that rule for what the ink alternative costs. */
 .user-delete {
   border-color: #b91c1c;
   color: #b91c1c;
@@ -49,21 +67,21 @@
   color: #fff;
 }
 
-.user-confirm-delete {
-  margin: 0;
-  max-width: 28em;
-  font-size: 13px;
-  color: #444;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
 .user-delete-confirm {
   background: #b91c1c;
   border-color: #b91c1c;
   color: #fff;
+}
+
+.user-confirm-delete {
+  margin: 0;
+  max-width: 28em;
+  font-size: 13px;
+  color: var(--ink-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .user-notice {
