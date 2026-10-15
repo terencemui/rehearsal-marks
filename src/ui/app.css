@@ -12,13 +12,15 @@
    degrades to a face the reader has and moves nothing.
 
    The whole palette is declared here because it is one decision and the fold's
-   tickets share it: this ticket's surface is the practice readout, which is
-   all content and therefore consumes `--serif` alone, while `--sans` is the
-   chrome face the navbar and the panels take up as the fold reaches them.
-   `--editorial` is the direction's alert red, and is likewise declared ahead
-   of its consumer — the failure card still carries its own literal reds
-   (`#fca5a5`, `#fef2f2`, `#7f1d1d`, player.css) and is not this ticket's
-   surface, so the token is deliberately not yet the same red as that card.
+   tickets share it: T73's surface was the practice readout, which is all
+   content and therefore consumes `--serif` alone, while `--sans` is the chrome
+   face the navbar and the panels take up as the fold reaches them.
+   `--editorial` is the direction's alert red, and is declared ahead of its
+   consumer: the failure card's base rule still carries its own literal reds
+   (`#fca5a5`, `#fef2f2`, `#7f1d1d`, player.css), and the token is deliberately
+   not the same red. T77 draws the practice surface's card in the token and
+   leaves that base rule as the authoring page's, so the two cards differ until
+   the fold reaches the markings page — a difference of colour, not of meaning.
 
    Declaring a token changes no surface on its own: the fold's rules are what
    consume them, one surface per ticket. */

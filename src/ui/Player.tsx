@@ -106,6 +106,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
 
   return (
     <RecordingSurface
+      practiceSurface
       controller={controller}
       record={record}
       videoRef={session.containerRef}

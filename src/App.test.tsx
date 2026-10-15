@@ -1427,3 +1427,40 @@ describe('App — one code path (T73)', () => {
     expectNoPrototype(variant.container);
   });
 });
+
+describe('App — the practice surface is the sheet (T77)', () => {
+  it('grounds both routes that render a player, and leaves the authoring page alone', async () => {
+    // The ground and the band are the page's, and the surface they belong to is
+    // the one the markings page hosts too (T55) — so the fold's one hook has to
+    // be a fact about the page, and it is: a practice surface is on it, or it is
+    // not. Asserted at this seam because the class is what every rule of the
+    // fold hangs off, and because "the Markings page renders exactly as it does
+    // today" is only true while the class is absent there — the stylesheet pins
+    // in Player.test.tsx say nothing about which pages carry it.
+    const api = fakeProjectsApi();
+    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, navigateTo } = renderApp({ api, controller, initialEntry: '/projects/p1' });
+    await waitForPlayerSettled();
+
+    // The owner's player: the band is inside the marked surface, so the rules
+    // that key on the class reach it.
+    expect(container.querySelector('.practice-surface .player-title')).not.toBeNull();
+
+    // The read-only public view is the same player, and takes the sheet with it
+    // — the second of the two routes, and the one a rule written against the
+    // owner's page alone would miss.
+    await navigateTo('/gallery/p1');
+    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
+    await waitForPlayerSettled();
+    expect(container.querySelector('.practice-surface .player-title')).not.toBeNull();
+
+    // The authoring page renders the same recording surface and keeps today's
+    // look: the band is there (it is the shared surface's), and the class is
+    // not — which is the whole of what keeps the direction off this page.
+    await navigateTo('/projects/p1/markings');
+    await waitForPlayerSettled();
+    expect(container.querySelector('.player-title')).not.toBeNull();
+    expect(container.querySelector('.practice-surface')).toBeNull();
+  });
+});
