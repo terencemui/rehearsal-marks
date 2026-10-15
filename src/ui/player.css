@@ -443,3 +443,111 @@ stay visible on the stored-duration timeline, and Retry re-runs the load. */
   color: #7f1d1d;
   word-break: break-all;
 }
+
+/* The practice surface wears the direction (T77): the sheet it stands on and the
+   band that opens it.
+
+   The surface is shared — the markings page hosts this same recording, band
+   and failure card (T55) — so every rule below is keyed on the one class that
+   says which surface this is (`.practice-surface`, set by RecordingSurface
+   when the player renders it). The authoring page carries none of it, and the
+   rules above are what it keeps: this fold restyles the player, not the page
+   the marks are authored on.
+
+   The ground could move at all only because it costs no one legibility. The
+   sheet is within a hair of the UA white it replaces, so every ink that read
+   on the old ground still reads on the new one — the panel's quiet time goes
+   from 4.76:1 to 4.63:1, still over the 4.5:1 body text asks — and the
+   direction's own inks are well clear of their thresholds: the ink 17.6:1,
+   the secondary ink 6.2:1, the alert red 8:1, the pencil 7.5:1. (Not asserted
+   anywhere, deliberately: a contrast ratio is a fact about the palette, which
+   is declared once in app.css and pinned there.) */
+
+/* The page ground behind a practice surface is the sheet itself, not a grey
+   box floating on one. The ground belongs to the page rather than to the
+   surface's own box: the rail's side padding, the page's own padding and the
+   navbar's strip — transparent (navbar.css), so the body's ground shows
+   through it — are all the one sheet.
+
+   So the rule is the page's, stated as "this page has a practice surface on
+   it": `:has()` rather than a class on `<body>` or an attribute on the
+   document, because the ground has to follow the surface's presence — appear
+   with the player, and go with it on the authoring page, which renders the
+   same surface without the class. The prototype's own
+   `html[data-direction] body` rule is the thing the fold retires, not the
+   thing it renames. */
+body:has(.practice-surface) {
+  background: var(--paper);
+}
+
+/* The title band: the project's name set in the document's face, over the one
+   heavy rule on the page. Every other rule on the surface is a hairline; this
+   one is 2px of ink, which is what makes the page open like a part rather
+   than like a dashboard. The base rule above stays as the authoring page's
+   band — the same element in the same place, in the face it has today. */
+.practice-surface .player-title {
+  margin: 0 0 22px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--ink);
+  font: 600 27px/1.12 var(--serif);
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+/* The recording's failure card, drawn as an editorial note: the alert red on
+   un-filled paper inside a hairline, squared off. Only the drawing changes —
+   the copy, the URL and the retry are the card's own, and the card is what
+   keeps the marks visible across a failure (T38). A restyle that cost the way
+   out would leave every stylesheet pin here still green, so the way out is
+   asserted as behaviour (Player.test.tsx) rather than trusted to this rule. */
+.practice-surface .player-youtube-error {
+  border: 1px solid var(--editorial);
+  border-radius: 0;
+  background: none;
+  color: var(--editorial);
+  font-family: var(--sans);
+}
+
+.practice-surface .player-youtube-error a {
+  color: var(--editorial);
+}
+
+/* The retry: squared and ruled in the card's own ink, rather than a rounded
+   button left in whatever the browser gives it. */
+.practice-surface .player-youtube-error button {
+  border: 1px solid currentColor;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Focus is a pencil rule drawn inside the control it marks, never the browser's
+   glow — the prototype's rule, kept whole, but keyed on the fold's hook rather
+   than on the direction attribute it scoped its copy with.
+
+   That keying is not cosmetic here. The prototype's stops were the browsing
+   panel's rows and movement headers and the failure card's retry; the last is
+   the surface's alone, but the first two are not, and neither is the class they
+   are named by: the leading group's divider is a `player-movement-header` on
+   *every* surface, because the authoring panel draws it too (MarkersPanel). It
+   is harmless on the Markings page only for as long as it stays an unfocusable
+   `aria-hidden` div — one markup change from putting a pencil rule on the page
+   this fold must not touch. Keyed on the class, it cannot arrive there at all.
+
+   The focus stops this surface actually has are the three the prototype drew,
+   plus the way through to the markings page — the one other focus stop on this
+   screen, which would otherwise be a lone browser glow among pencil rules.
+
+   Inset by the width of the rule, so the mark sits on the control's own edge
+   rather than ringing it. */
+.practice-surface .player-marker-list .player-marker-row:focus-visible,
+.practice-surface .player-movement-header:focus-visible,
+.practice-surface .player-markings-open:focus-visible,
+.practice-surface .player-youtube-error button:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: -2px;
+}
