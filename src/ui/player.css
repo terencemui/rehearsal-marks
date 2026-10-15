@@ -492,13 +492,15 @@ marked where they are. */
 /* --------------------------------------------------------------------------
    The panel on the practice surfaces (T78)
 
-   Every rule below is keyed on `.player-markers-practice`, the one class the
-   panel puts on its root when it was *not* handed an authoring surface. That
-   is the fold's whole scoping hook, and it is not a new mechanism: the
-   component already knows which of the two surfaces it is on — the markings
-   page passes `authoring`, the player and the public view do not — so the
-   class states a distinction the markup was already making. No attribute, no
-   variant, no second way to say it.
+   Every rule below is keyed on `.practice-surface` — the fold's one scoping
+   hook, which T77 put on the surface's own root (`RecordingSurface`). No new
+   mechanism is introduced here: the panel is hosted by that surface on every
+   practice route (the owner's player and the read-only public view), and the
+   markings page hosts the same panel without it, so the hook that separates
+   the two surfaces already separates the two panels. That is why the panel
+   states only what it is, and carries no class of its own saying which
+   surface it is on. (T78 landed after T77 and was re-keyed onto this hook;
+   it had briefly carried its own.)
 
    The split is this: a rule whose selector can only ever match practice markup
    is written in place among the panel's own rules above (the door, the row,
@@ -519,7 +521,7 @@ marked where they are. */
    inset, because the list keeps the inset it has: the last row gives its own
    hairline up instead (above), and the frame's bottom rule is what closes the
    box. */
-.player-markers-practice {
+.practice-surface .player-markers {
   border: 1px solid var(--rule);
   padding: 8px 4px 0;
 }
@@ -529,7 +531,7 @@ marked where they are. */
    Nothing else about the list moves: its inset, its cap and its scroll are the
    list's own (the frame is not the reader's to pay for, and the measured band
    RecordingSurface sets is a height the list has to keep taking up). */
-.player-markers-practice .player-marker-list {
+.practice-surface .player-marker-list {
   gap: 0;
 }
 
@@ -547,11 +549,11 @@ marked where they are. */
 
    Squared, and drawn in the sheet's own rule colour, so the bar reads as one
    of the hairlines it runs beside rather than as a chrome widget. */
-.player-markers-practice .player-marker-list::-webkit-scrollbar {
+.practice-surface .player-marker-list::-webkit-scrollbar {
   width: 10px;
 }
 
-.player-markers-practice .player-marker-list::-webkit-scrollbar-track {
+.practice-surface .player-marker-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -560,7 +562,7 @@ marked where they are. */
    out of it, which is what makes the bar a margin note rather than a slab
    standing beside a column of 15px text. `background-clip` comes after the
    shorthand that would otherwise reset it. */
-.player-markers-practice .player-marker-list::-webkit-scrollbar-thumb {
+.practice-surface .player-marker-list::-webkit-scrollbar-thumb {
   background: var(--rule);
   border: 1px solid transparent;
   background-clip: content-box;
@@ -573,7 +575,7 @@ marked where they are. */
    to replace. Guarded on the selector rather than on the properties, since
    supporting the properties is not what takes the override away. */
 @supports not selector(::-webkit-scrollbar) {
-  .player-markers-practice .player-marker-list {
+  .practice-surface .player-marker-list {
     scrollbar-width: thin;
     scrollbar-color: var(--rule) transparent;
   }
@@ -583,7 +585,7 @@ marked where they are. */
    names. The shipped direction tracked it out in small caps; the direction's
    chrome is a grotesque and its content a serif, and a heading set in the
    serif is a line of the document rather than a label on it. */
-.player-markers-practice .player-markers-heading {
+.practice-surface .player-markers-heading {
   font: 600 12px/16px var(--serif);
   letter-spacing: 0.08em;
   text-transform: none;
@@ -595,7 +597,7 @@ marked where they are. */
    `min-width` and right alignment are the shared slot's (above) and stay — the
    `font` shorthand resets `font-variant-numeric`, so the tabular figures are
    restated after it. */
-.player-markers-practice .player-marker-time {
+.practice-surface .player-marker-time {
   font: 400 13.5px/22px var(--serif);
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
@@ -605,11 +607,11 @@ marked where they are. */
    readout's own passed accent — and the reading beside the box comes down to
    the box's weight: the box is 600, so a passed row is 600 throughout instead
    of the authoring page's 700 sitting against it. */
-.player-markers-practice .player-marker-list li.passed .player-marker-time {
+.practice-surface .player-marker-list li.passed .player-marker-time {
   color: var(--pencil);
 }
 
-.player-markers-practice .player-marker-list li.passed .player-marker-title {
+.practice-surface .player-marker-list li.passed .player-marker-title {
   font-weight: 600;
 }
 
@@ -631,7 +633,7 @@ marked where they are. */
    in the shipped rule because the markings page renders the orphan divider too:
    this is the frame's own corner, and the authoring surface keeps today's
    geometry until its own ticket says otherwise. */
-.player-markers-practice .player-marker-movement .player-movement-header {
+.practice-surface .player-marker-movement .player-movement-header {
   box-sizing: border-box;
   border-bottom: 1px solid var(--ink);
   background: var(--paper);
@@ -639,17 +641,26 @@ marked where they are. */
   color: var(--ink-2);
 }
 
-/* The pointer colours the name and keeps the band paper. Both declarations
-   earn their place: the shipped hover sets a tint on a selector with `button`
-   in it — (0, 3, 1) — which outranks the band's own rule above at (0, 3, 0),
-   so `background` has to be restated here to hold the sheet under the pointer,
-   and `color` is the pencil the pointer is for. */
-.player-markers-practice .player-marker-movement button.player-movement-header:hover {
+/* The pointer moves the name to the pencil. The band stays paper, which the
+   rule above already holds — it is four classes to the shipped tint's three,
+   so `#e2e8f0` cannot show through. `background` is restated here anyway, and
+   deliberately: the hovered band is then stated whole in the one rule that
+   draws it, rather than resting on how two selectors elsewhere in this file
+   happen to compare. The restatement is not free-standing either — the same
+   `background` was load-bearing under the single class this block was first
+   keyed on, where the shipped tint *did* win, so its presence is one
+   re-keying away from being necessary again.
+
+   (That shipped `:hover` is now unreachable, since `button.player-movement-header`
+   is rendered only by the browsing panel and this rule beats it everywhere it
+   can match. It stays as the shipped rule it is; retiring it belongs to
+   whoever owns that selector.) */
+.practice-surface .player-marker-movement button.player-movement-header:hover {
   background: var(--paper);
   color: var(--pencil);
 }
 
-.player-markers-practice .player-movement-name {
+.practice-surface .player-movement-name {
   font-family: var(--serif);
   font-size: 14px;
   font-weight: 600;

@@ -650,13 +650,14 @@ describe('Player — the markers panel wears the direction (T78)', () => {
   // public view on one side, the markings page's authoring column on the other.
   // The direction's panel is the practice one's — the authoring page keeps
   // ADR-0007's settled row anatomy, its clock slot and its trash glyph,
-  // unchanged — so the fold needs exactly one hook, and it is the distinction
-  // the component already takes: whether it was handed an `authoring` surface.
-  // That distinction is carried as one class on the panel's root, and every
-  // rule that could reach either surface is keyed on it. Rules whose selector
-  // can only ever match practice markup (`.player-markings-open`,
-  // `.player-marker-row`, `.player-marker-mark`) need no hook and are written
-  // where they belong.
+  // unchanged — so the fold needs a hook, and it already has one: both hosts
+  // render this panel inside `RecordingSurface` (T55), which carries
+  // `.practice-surface` on the practice surfaces and not on the authoring page
+  // (T77). So every rule here that could reach either surface is keyed on that
+  // hook, and the panel itself carries no second class saying which surface it
+  // is on. Rules whose selector can only ever match practice markup
+  // (`.player-markings-open`, `.player-marker-row`, `.player-marker-mark`) need
+  // no hook and are written where they belong.
   //
   // jsdom computes no layout, so what a rule *draws* is a stylesheet fact and
   // is pinned as source text — the convention the tests above already use.
@@ -669,14 +670,14 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     // title names. The frame is a hairline in the rule colour — one rule among
     // the hairlines it encloses — and it has no rounded corner, because the
     // direction has none anywhere.
-    const frame = ruleText(playerCss, '.player-markers-practice');
+    const frame = ruleText(playerCss, '.practice-surface .player-markers');
     expect(frame).toContain('border: 1px solid var(--rule);');
     expect(frame).not.toContain('border-radius');
   });
 
   it('puts the panel’s heading inside the frame — the panel’s own head, not the list’s', async () => {
     const { container } = await renderLoadedPlayer();
-    const panel = container.querySelector('.player-markers-practice');
+    const panel = container.querySelector('.practice-surface .player-markers');
     expect(panel).not.toBeNull();
     // The head is the panel's child: the frame is drawn around the title, not
     // around the list with the title left outside it.
@@ -695,7 +696,7 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     expect(list).toContain('padding: 0 4px 0 0;');
     expect(list).toContain('max-height: 320px;');
     expect(list).toContain('overflow-y: auto;');
-    const practice = ruleText(playerCss, '.player-markers-practice .player-marker-list');
+    const practice = ruleText(playerCss, '.practice-surface .player-marker-list');
     expect(practice).toContain('gap: 0;');
     expect(practice).not.toContain('padding');
     expect(practice).not.toContain('max-height');
@@ -804,14 +805,14 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     // classic one. Squared, and in the sheet's own rule colour, so the bar
     // reads as one of the hairlines it runs beside.
     expect(
-      ruleText(playerCss, '.player-markers-practice .player-marker-list::-webkit-scrollbar'),
+      ruleText(playerCss, '.practice-surface .player-marker-list::-webkit-scrollbar'),
     ).toContain('width: 10px;');
     expect(
-      ruleText(playerCss, '.player-markers-practice .player-marker-list::-webkit-scrollbar-track'),
+      ruleText(playerCss, '.practice-surface .player-marker-list::-webkit-scrollbar-track'),
     ).toContain('background: transparent;');
     const thumb = ruleText(
       playerCss,
-      '.player-markers-practice .player-marker-list::-webkit-scrollbar-thumb',
+      '.practice-surface .player-marker-list::-webkit-scrollbar-thumb',
     );
     expect(thumb).toContain('background: var(--rule);');
     expect(thumb).toContain('border-radius: 0;');
@@ -844,30 +845,33 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     expect(
       ruleText(
         playerCss,
-        '.player-markers-practice .player-marker-movement .player-movement-header',
+        '.practice-surface .player-marker-movement .player-movement-header',
       ),
     ).toContain('box-sizing: border-box;');
     // The band is meant to span its group, so its padding is inside it: the
     // band's own opaque paper and ink rule are what the practice rule is for.
     const band = ruleText(
       playerCss,
-      '.player-markers-practice .player-marker-movement .player-movement-header',
+      '.practice-surface .player-marker-movement .player-movement-header',
     );
     expect(band).toContain('background: var(--paper);');
     expect(band).toContain('border-bottom: 1px solid var(--ink);');
   });
 
-  it('holds the band at paper under the pointer, against a heavier shipped selector', () => {
-    // The shipped hover tints the band by `#e2e8f0`, and its selector carries
-    // `button` — (0, 3, 1) — which outranks the practice band's own rule at
-    // (0, 3, 0). So the hover rule here has to restate the paper; dropping it
-    // as redundant hands the tint back. It reads as a duplicate and is not.
+  it('keeps the band at paper under the pointer, and moves its name to the pencil', () => {
+    // The shipped hover tints the band by `#e2e8f0`. On a practice band that
+    // tint must not show: the band's own rule carries the fold's hook — four
+    // classes to the shipped selector's three — so the paper holds, and the
+    // hover rule states it anyway so the pointer's appearance is whole in one
+    // rule rather than resting on that comparison.
     const hover = ruleText(
       playerCss,
-      '.player-markers-practice .player-marker-movement button.player-movement-header:hover',
+      '.practice-surface .player-marker-movement button.player-movement-header:hover',
     );
     expect(hover).toContain('background: var(--paper);');
     expect(hover).toContain('color: var(--pencil);');
+    // The shipped tint is still the shipped rule's, for whoever owns that
+    // selector — it is just no longer reachable on a practice band.
     const shipped = ruleText(
       playerCss,
       '.player-marker-movement button.player-movement-header:hover',

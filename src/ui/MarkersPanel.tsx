@@ -664,16 +664,13 @@ export function MarkersPanel({
     // — the owner's player and the read-only public view — and the markings
     // page's authoring column. The direction is the practice panel's and the
     // authoring page is explicitly out of it (it keeps ADR-0007's settled row
-    // anatomy), so the stylesheet needs one hook to tell them apart — and the
-    // hook is the distinction this component already takes: a surface that
-    // passes `authoring` is the authoring one. One class on the root, no
-    // attribute and no second mechanism.
-    <section
-      className={
-        authoring === undefined ? 'player-markers player-markers-practice' : 'player-markers'
-      }
-      aria-label="Markers"
-    >
+    // anatomy), so the stylesheet needs to tell them apart — and it does, with
+    // no help from here: both hosts render this panel inside `RecordingSurface`
+    // (T55), which carries the fold's one hook, `.practice-surface`, on the
+    // practice surfaces and not on the authoring page. So the panel states only
+    // what it is, and which surface it is on is already the surface's own to
+    // say.
+    <section className="player-markers" aria-label="Markers">
       <MarkersHead>
         {authoring !== undefined ? (
           // The page's own controls (T56, T58): the head of the column the mark
