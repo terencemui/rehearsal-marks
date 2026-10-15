@@ -150,6 +150,21 @@ describe('HelpTab', () => {
     expect(projects).toHaveTextContent(/Google never sees them/i);
   });
 
+  it('says the marks are drawn on the timeline below the video (T81)', () => {
+    render(<HelpTab />);
+
+    const projects = screen.getByRole('heading', { name: 'Projects' }).closest('section')!;
+    // The strip carries the marks now (T80), which reverses ADR-0003's rule
+    // that it does not. This sentence asserted the marks were on the strip at a
+    // time when the app kept them off it, so it was read against the folded
+    // player and confirmed rather than corrected (T81) — and pinned here so it
+    // cannot be quietly dropped or hedged while the strip still draws them.
+    // What the pin holds is the claim, not the app's agreement with it: no test
+    // in jsdom can see the strip, and this one was green before the fold too.
+    expect(projects).toHaveTextContent(/markers sit on a full-width timeline below the video/i);
+    expect(projects).toHaveTextContent(/click anywhere to seek/i);
+  });
+
   it('walks through the public-project review flow', () => {
     render(<HelpTab />);
 
