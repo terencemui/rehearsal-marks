@@ -102,9 +102,12 @@ export interface RecordingSurfaceProps {
  * left end and the total duration under its right. What that strip is *drawn*
  * as is the caller's (`timeline`): the markings page draws the filled bar this
  * surface has always drawn, and the practice surface draws the stave (T79).
- * Either way the marks are not in it — the panel is where they show (the
- * practice surface restores them to the strip in T80). The video column keeps
- * only the recording (the audio layer's own ruler band is hidden with CSS).
+ * The stave carries the marks (T80) — the practice strip is where they are
+ * drawn now, and the panel stays the complete list beside it — while the
+ * markings page's bar, which no ticket has restyled, carries none: the
+ * authoring surface is not half-restyled under the student. The video column
+ * keeps only the recording (the audio layer's own ruler band is hidden with
+ * CSS).
  *
  * A settled-state marker on the root (`data-settled`) signals that the load
  * has resolved. It means *settled*, not *playable*: it is set on both the

@@ -1071,7 +1071,7 @@ describe('Player — the stave replaces the timeline (T79)', () => {
   // five hairlines ruled across the recording's whole length, a heavier line
   // where each movement begins, the playhead a pencil rule, and each movement's
   // name under the stretch it names. This is the drawing ADR-0003's reversal is
-  // made of — the marks themselves reach the strip one ticket later (T80) — and
+  // made of, and the marks themselves reach the strip one ticket later (T80) —
   // it reaches the surface through the *timeline slot*, which is the whole of
   // what keeps the markings page on the shipped bar.
   //
@@ -1157,8 +1157,9 @@ describe('Player — the stave replaces the timeline (T79)', () => {
 
     // The height is the claim that needs the band to exist: the rule starts at
     // the marks band's top edge and runs to the stave's bottom, so the box it
-    // is passing is unambiguous once T80 draws one. The band's height and the
-    // playhead's `top` are one number, stated twice and here read together.
+    // is passing is unambiguous — which is the band T80 draws them in. The
+    // band's height and the playhead's `top` are one number, stated twice and
+    // here read together.
     expect(ruleText(playerCss, '.player-stave-marks')).toContain('height: 26px;');
     const playhead = ruleText(playerCss, '.player-stave-playhead');
     expect(playhead).toContain('top: -26px;');
@@ -1362,6 +1363,251 @@ describe('Player — the stave replaces the timeline (T79)', () => {
     // A reader who has asked for reduced motion is owed this much: the strip is
     // redrawn, and nothing on it moves on its own.
     for (const body of staveRules()) {
+      expect(body).not.toMatch(/transition|animation/i);
+    }
+  });
+});
+
+describe('Player — the stave carries the marks (T80)', () => {
+  // The strip the marks were kept off (ADR-0003) carries them now: one box per
+  // mark at the position it occupies, named the way the panel names it, filled
+  // once the playhead has passed it — and the strip closes with a final
+  // barline, the mark a score ends a piece with, so a stave that simply stops
+  // is not a drawing that was cut off.
+  //
+  // The panel is untouched and stays the complete list: the strip's job is the
+  // piece's shape, which is why it may overlap a crowded recording's boxes
+  // above the narrow breakpoint and drops them below it.
+
+  // The strip's parts are read off the container each test rendered rather
+  // than off the document, so a test that renders twice — a project read in
+  // letters beside the same marks read in numbers — reads the strip it means.
+  /** The strip's parts, in the order the strip draws them. */
+  const parts = (strip: ParentNode, selector: string): HTMLElement[] =>
+    Array.from(strip.querySelectorAll(selector)) as HTMLElement[];
+
+  /** The marks band's boxes, in the order the strip draws them. */
+  const boxes = (strip: ParentNode): HTMLElement[] => parts(strip, '.player-stave-box');
+
+  /** What each box holds, in the same order. */
+  const boxTexts = (strip: ParentNode): (string | null)[] =>
+    boxes(strip).map((box) => box.textContent);
+
+  /**
+   * Every rule this ticket adds, as its declarations — read for the two
+   * negative claims below, the way the fold's other tickets read their own.
+   * Named here rather than sliced out by offset, so a rule that was dropped
+   * fails the reader instead of quietly leaving the slice short.
+   */
+  function markRules(): string[] {
+    return [
+      ruleText(playerCss, '.player-stave-box'),
+      ruleText(playerCss, '.player-stave-box.passed'),
+      ruleText(playerCss, '.player-stave-final-bar'),
+      ruleText(playerCss, '.player-stave-final-bar::before'),
+    ];
+  }
+
+  /**
+   * A hundred seconds of recording with three marks in it — two close enough
+   * together to overlap on a narrow strip, one out on its own. Every position
+   * on the stave is then the mark's own time, so what the test reads off the
+   * DOM is the arithmetic rather than a rounded version of it.
+   */
+  function marked() {
+    return serverProject({
+      markers: [marker('m1', 10), marker('m2', 20), marker('m3', 45)],
+    });
+  }
+
+  it('draws one box per mark, centred on its time, in the band above the staff lines', async () => {
+    const { container } = await renderLoadedPlayer(marked(), 100);
+    const band = container.querySelector('.player-stave-marks') as HTMLElement;
+
+    // One per mark, each at its own share of the recording's length — which is
+    // what makes a cluster and a sparse passage visible as shapes.
+    expect(boxes(container).map((box) => box.style.left)).toEqual(['10%', '20%', '45%']);
+    // And every one of them in the band above the hairlines: a score puts its
+    // rehearsal marks above the stave, and the band is where the playhead
+    // reaches (T79) — the one place a box can be passed by it.
+    expect(boxes(container).every((box) => box.parentElement === band)).toBe(true);
+    // Centred on the time rather than hung from it, or every box names a
+    // position its own width to the right of.
+    expect(ruleText(playerCss, '.player-stave-box')).toContain('transform: translateX(-50%);');
+  });
+
+  it('holds the label the project derives, in the hand that project writes it', async () => {
+    // A project read in letters letters its marks; one read in numbers counts
+    // them. Both are the derived label, and the strip reads it from the same
+    // place the panel does — so the box over a mark and the row beside it
+    // cannot name it two ways.
+    const letters = await renderLoadedPlayer(marked(), 100);
+    expect(boxTexts(letters.container)).toEqual(['A', 'B', 'C']);
+
+    const numbers = await renderLoadedPlayer(
+      serverProject({ naming: 'numbers', markers: marked().markers }),
+      100,
+    );
+    expect(boxTexts(numbers.container)).toEqual(['1', '2', '3']);
+  });
+
+  it('holds the owner’s own measure for a project read in measures, and draws no box for a mark they left unnamed', async () => {
+    // Under `measures` the bar number *is* the mark's name and the derived
+    // label is a rank the score does not use, so the box holds the alias —
+    // and a mark with no alias has no name to draw. An empty box would be the
+    // app saying a mark is called nothing; drawing none is the honest drawing,
+    // exactly as the panel's row shows the blank its project has.
+    const { container } = await renderLoadedPlayer(
+      serverProject({
+        naming: 'measures',
+        markers: [marker('m1', 10, ['17']), marker('m2', 20), marker('m3', 45, ['42'])],
+      }),
+      100,
+    );
+
+    expect(boxTexts(container)).toEqual(['17', '42']);
+    expect(boxes(container).map((box) => box.style.left)).toEqual(['10%', '45%']);
+  });
+
+  it('fills the mark the playhead has passed, and leaves the mark ahead hollow', async () => {
+    const { container, controller } = await renderLoadedPlayer(marked(), 100);
+    const filled = () => parts(container, '.player-stave-box.passed');
+
+    // Before the first mark the playhead has passed nothing — the recording's
+    // start is not a mark — so every box waits, hollow.
+    expect(filled()).toHaveLength(0);
+
+    act(() => controller.emitPlayback({ currentTime: 30 }));
+    // The last mark behind the playhead, and that one alone: the strip says
+    // where the playhead is, as the panel's passed row and the readout's
+    // passed slot say it. A box that filled for every mark gone by would draw
+    // a progress bar over the piece's shape instead of the mark being passed.
+    expect(filled().map((box) => box.textContent)).toEqual(['B']);
+
+    act(() => controller.emitPlayback({ currentTime: 90 }));
+    expect(filled().map((box) => box.textContent)).toEqual(['C']);
+
+    // Filled with the pencil and the letter knocked out of it — the same three
+    // declarations the panel's passed row spends on its own box, so the
+    // strip's passed mark and the panel's active row are one thing seen twice.
+    const passed = ruleText(playerCss, '.player-stave-box.passed');
+    expect(passed).toContain('border-color: var(--pencil);');
+    expect(passed).toContain('background: var(--pencil);');
+    expect(passed).toContain('color: var(--paper);');
+    // And the mark ahead is a hollow box: the box's own rule draws the ink
+    // rule around the sheet and no fill at all.
+    const box = ruleText(playerCss, '.player-stave-box');
+    expect(box).toContain('border: 1.25px solid var(--ink);');
+    expect(box).toContain('background: var(--paper);');
+  });
+
+  it('closes the strip with a final barline — a hairline, a breath, then a heavy stroke flush with the right edge', async () => {
+    // A stave that simply stops reads as a drawing that was cut off, not as a
+    // recording that has ended: the mark a score closes a piece with is not a
+    // bar line drawn at the end but the engraver's own — a hairline stroke, a
+    // gap, then a heavy one on the strip's right edge.
+    const { container } = await renderLoadedPlayer(
+      serverProject({
+        markers: marked().markers,
+        movements: [{ id: 'mv1', name: 'I. Allegro', start: 25 }],
+      }),
+      100,
+    );
+    const drawn = parts(container, '.player-stave-rules > *');
+    const final = parts(container, '.player-stave-final-bar');
+
+    // One, and the last thing the stave draws but for the playhead: the heavy
+    // stroke covers the hairlines' own ends, and the pencil goes over the
+    // closed stave rather than under it.
+    expect(final).toHaveLength(1);
+    expect(drawn[drawn.length - 2]).toHaveClass('player-stave-final-bar');
+    expect(drawn[drawn.length - 1]).toHaveClass('player-stave-playhead');
+
+    // Flush with the right edge rather than placed at a percentage: the stave
+    // ends where its lines stop, and 100% of the strip is half a stroke past
+    // where they stop.
+    expect(final[0].style.left).toBe('');
+    const rule = ruleText(playerCss, '.player-stave-final-bar');
+    expect(rule).toContain('right: 0;');
+    // The heavy stroke is half a staff space — the 34px stave is four spaces,
+    // so 4px — and it is the ink, as a movement's bar line is.
+    expect(rule).toContain('width: 4px;');
+    expect(rule).toContain('top: 0;');
+    expect(rule).toContain('bottom: 0;');
+    expect(rule).toContain('background: var(--ink);');
+
+    // The hairline ahead of it: the thinnest mark a screen draws, and the gap
+    // twice that — 6px from the heavy stroke's own right edge, less the
+    // stroke's 4px, is the 2px of air between the two.
+    const hairline = ruleText(playerCss, '.player-stave-final-bar::before');
+    expect(hairline).toContain('right: 6px;');
+    expect(hairline).toContain('width: 1px;');
+    expect(hairline).toContain('background: var(--ink);');
+
+    // And the staff lines stop at the heavy stroke rather than trailing past
+    // it, which is what makes the stave read as closed: both run to the same
+    // right edge, so the stroke is the last thing on the staff.
+    expect(ruleText(playerCss, '.player-stave-line')).toContain('right: 0;');
+  });
+
+  it('draws every box where boxes collide rather than thinning a cluster', async () => {
+    // Two marks half a second apart on a hundred-second recording are a tenth
+    // of a percent apart — far closer than a box is wide, so their boxes
+    // overlap. That is accepted on a crowded recording and not corrected: the
+    // panel is the complete list, and the strip's job is the piece's shape, so
+    // a cluster reads as a cluster. Nothing thins it — no mark is dropped,
+    // merged or moved aside to make room.
+    const { container } = await renderLoadedPlayer(
+      serverProject({ markers: [marker('m1', 10), marker('m2', 10.5)] }),
+      100,
+    );
+
+    expect(boxes(container).map((box) => box.style.left)).toEqual(['10%', '10.5%']);
+    expect(boxTexts(container)).toEqual(['A', 'B']);
+  });
+
+  it('drops the boxes below the narrow breakpoint, and keeps everything else', () => {
+    // The one thing on the strip that must stay legible is the stave itself,
+    // so a window too narrow for the boxes loses them and nothing else: the
+    // five hairlines, the movement bar lines, the final barline, the playhead
+    // and the names are all still drawn. Nothing is lost by it either — the
+    // panel's list still carries every box, which is why the strip may drop
+    // them where it cannot draw them legibly.
+    const narrow = playerCss.match(/@media \(max-width: 760px\) \{[\s\S]*?\n\}/)?.[0];
+    expect(narrow).toBeDefined();
+    expect(narrow).toMatch(/\.player-stave-marks\s*\{\s*display:\s*none;/);
+    // The playhead gives up the band it can no longer reach: its height is
+    // measured from the band's top edge (T79), and the band is gone.
+    expect(narrow).toMatch(/\.player-stave-playhead\s*\{\s*top:\s*0;/);
+    // And nothing else about the strip goes with them.
+    for (const kept of [
+      '.player-stave-rules',
+      '.player-stave-line',
+      '.player-stave-bar',
+      '.player-stave-final-bar',
+      '.player-stave-movements',
+      '.player-stave-movement-name',
+      '.player-stave-clock',
+    ]) {
+      expect(narrow).not.toContain(kept);
+    }
+  });
+
+  it('spends no literal hex or colour function on the marks — every ink is a token', () => {
+    // The box is filled and knocked out in the pencil, bordered in the ink and
+    // grounded in the sheet, and every one of those is a token the shell
+    // declares once. A hex in this file is a value that can drift from the
+    // direction with nothing else noticing.
+    for (const body of markRules()) {
+      expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
+    }
+  });
+
+  it('adds no transition, animation or reveal', () => {
+    // The marks arrive as the playhead goes by, and that is the playhead
+    // moving rather than the strip animating: a reader who has asked for
+    // reduced motion is owed nothing new that moves on its own.
+    for (const body of markRules()) {
       expect(body).not.toMatch(/transition|animation/i);
     }
   });
@@ -1690,9 +1936,10 @@ describe('Player — the timeline strip and markers (T38)', () => {
     expect(videoColumn.querySelector('.player-ruler')).not.toBeNull();
     expect(videoColumn.querySelector('.player-marker-row')).toBeNull();
 
-    // The strip carries no marks and no ruler band: the marks moved to the
-    // markers panel in the side column, and T79 draws the strip's shape — the
-    // marks themselves land on it one ticket later (T80).
+    // The strip carries none of the ruler's own drawing, and none of the
+    // panel's rows: the ruler band was retired with the bar (T79), and the
+    // strip draws the marks as its own boxes (T80) rather than as marker rows
+    // — the panel beside it is what keeps the rows.
     expect(strip.querySelector('.rm-ruler')).toBeNull();
     expect(strip.querySelector('.player-playhead')).toBeNull();
     expect(strip.querySelectorAll('.player-marker-row')).toHaveLength(0);
@@ -1721,13 +1968,22 @@ describe('Player — the timeline strip and markers (T38)', () => {
     const { container } = await renderLoadedPlayer();
 
     // The strip's surface and marker layers are gone entirely — the stave
-    // carries no surface, no marks, and no playhead of the ruler's own.
+    // carries no surface, no rows of the panel's, and no playhead of the
+    // ruler's own. The marks it draws are its own boxes (T80), which are not
+    // the panel's rows and are read as such above.
     expect(container.querySelector('.player-timeline-surface')).toBeNull();
     expect(container.querySelector('.player-stave .player-marker-row')).toBeNull();
     expect(container.querySelector('.player-playhead')).toBeNull();
     // Every position on the stave is an inline percentage: the five hairlines
     // by their band share, the bar lines and the playhead by their time.
-    for (const part of container.querySelectorAll('.player-stave-rules > span')) {
+    for (const part of container.querySelectorAll(
+      // The final barline (T80) is the one part with no position to give: it
+      // is pinned to the strip's right edge by the stylesheet rather than
+      // placed at a percentage, because 100% of the stave is half a stroke
+      // past where its lines stop. Its own test states that; here it is the
+      // exception, and named rather than silently dropped from the walk.
+      '.player-stave-rules > span:not(.player-stave-final-bar)',
+    )) {
       expect((part as HTMLElement).style.left || (part as HTMLElement).style.top).toMatch(/%$/);
     }
   });

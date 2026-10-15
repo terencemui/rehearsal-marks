@@ -259,8 +259,10 @@ in the side column is where the marks show. */
 
    The practice surface's strip, drawn as the piece's shape rather than as a
    flat bar: five hairlines ruled across the recording's whole length, a heavier
-   line where each movement begins, the playhead a pencil rule, each movement's
-   name under the stretch it names, and the clock still reading at the two ends.
+   line where each movement begins, the project's marks in boxes above them
+   (T80), a final barline closing the piece (T80), the playhead a pencil rule,
+   each movement's name under the stretch it names, and the clock still reading
+   at the two ends.
 
    Every selector here can only ever match practice markup — the strip is built
    by `Stave` and handed to the shared surface's timeline slot, which the
@@ -280,14 +282,54 @@ in the side column is where the marks show. */
   user-select: none;
 }
 
-/* The band the marks are drawn in (T80) — empty on this ticket, and drawn
-   anyway because the playhead's height is measured from its top edge: the rule
-   runs from here down through the stave, so the box it is passing is
-   unambiguous once there is one. This height and the playhead's `top` are one
-   number and have to move together. */
+/* The band the marks are drawn in (T80): the boxes stand on its floor, which
+   is the stave's top hairline, and the playhead's height is measured from its
+   top edge — the rule runs from here down through the stave, so the pencil
+   crosses the box it is passing rather than stopping under it. This height and
+   the playhead's `top` are one number and have to move together. */
 .player-stave-marks {
   position: relative;
   height: 26px;
+}
+
+/* A rehearsal mark drawn the way a score draws it — a name in a ruled box,
+   centred on the moment it names. The direction's signature, and the panel's
+   own box at strip scale (`.player-marker-mark`): the same idiom in both
+   places, so the strip and the list speak one language.
+
+   `background` because the boxes may overlap on a crowded recording, and an
+   overlap is decided by paint order: each box carries the sheet with it, so
+   the later mark is the one read and the one behind it is occluded rather
+   than showing through.
+
+   `transform` and not a negative margin: the box is centred on its own width,
+   whatever that width turns out to be — a two-character mark is a wider box
+   than a one-character mark, and both name the same instant. */
+.player-stave-box {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 2px;
+  border: 1.25px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: 600 11px/1 var(--serif);
+}
+
+/* The mark the playhead has last gone over — the pencil has been through it,
+   so the box fills and the name shows in the sheet's paper. The same three
+   declarations the panel's passed row spends on its own box, and for the same
+   reason: the strip's filled box, the panel's active row and the readout's
+   passed slot are one fact about the recording, drawn three times. */
+.player-stave-box.passed {
+  border-color: var(--pencil);
+  background: var(--pencil);
+  color: var(--paper);
 }
 
 /* The stave itself: a 34px band the five hairlines are ruled across. */
@@ -315,6 +357,41 @@ in the side column is where the marks show. */
   top: 0;
   bottom: 0;
   width: 1.5px;
+  background: var(--ink);
+}
+
+/* The final barline — how a score ends a piece, which is not a bar line drawn
+   at the end. A hairline stroke, a breath, then a heavy one, the heavy stroke
+   flush with the strip's right edge and pinned to that edge rather than placed
+   at a percentage: the stave ends where its lines stop, and 100% of the strip
+   is half a stroke past where they stop.
+
+   Stroke and gap are the engraver's proportions for this stave: the heavy
+   stroke half a space (the 34px stave is four spaces, so 4px), the hairline
+   the thinnest mark a screen draws, the gap twice the hairline. The heavy
+   stroke is the element and the hairline its `::before`, whose `right` is
+   measured from the heavy stroke's own right edge — 6px, less that stroke's
+   4px, is the 2px of air between them.
+
+   It is drawn after the five hairlines, which is what closes the stave: they
+   run to the same right edge, and this stroke covers the last of them rather
+   than their trailing past it. */
+.player-stave-final-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 4px;
+  background: var(--ink);
+}
+
+.player-stave-final-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 6px;
+  width: 1px;
   background: var(--ink);
 }
 
@@ -377,6 +454,27 @@ in the side column is where the marks show. */
   font: 400 13px/1.45 var(--serif);
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
+}
+
+/* Narrow widths: the boxes would collide into a smear, and the stave is the
+   one thing on the strip that must stay legible. So the boxes go and nothing
+   else does — the five hairlines, the bar lines, the final barline, the
+   playhead and the names are all still drawn.
+
+   Nothing is lost by dropping them: the marks list in the panel still carries
+   every box, at every width, which is what lets the strip give them up here.
+
+   The playhead gives up the band with them: its height is measured from that
+   band's top edge, and a pencil reaching up into a band that is no longer
+   drawn would run off the top of the strip. */
+@media (max-width: 760px) {
+  .player-stave-marks {
+    display: none;
+  }
+
+  .player-stave-playhead {
+    top: 0;
+  }
 }
 
 /* The player's side column: the practice console above the markers panel. */
