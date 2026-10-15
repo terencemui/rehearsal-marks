@@ -32,6 +32,11 @@
   --wash: #ecedef;
   --pencil: #1f4fa8;
   --editorial: #8c2f2f;
+  /* The stave's five hairlines (T79). A step darker than `--rule`, because the
+     stave is a drawing and not a table rule: light enough to stay under the
+     marks that will be drawn above it, dark enough that the staff reads as a
+     staff and not as a smudge. */
+  --stave-line: #b9bec6;
 
   --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --sans: 'Public Sans', system-ui, -apple-system, sans-serif;
@@ -66,15 +71,22 @@
      body's 8px default margin, the navbar and its rule (57px), the page's 24px
      top and 32px bottom padding, the project page's save line (~28px), the
      title band (~52px), and the timeline stack below the video — the embed's
-     margin, the track and its times (~98px). The project page is now the
-     taller of the two stacks: the public view's back link above the player
-     (~50px) went with T75, which left it the shorter of the two and this
-     budget paying for ~22px no page needs.
+     margin and the strip itself (~179px). The project page is now the taller
+     of the two stacks: the public view's back link above the player (~50px)
+     went with T75, which left it the shorter of the two and this budget paying
+     for ~22px no page needs.
+
+     The strip's own part of that last item is the stave (T79) and not the bar:
+     139px against the bar's 58px, which is the 81px this budget moved by when
+     the strip did. The cap is only honest while it pays for what is actually
+     under the recording, and the taller of the two strips is the one that has
+     to be paid for — the markings page keeps the bar and takes the wider rail
+     the taller case buys it, since a rail is one number for both pages.
 
      It is a hand-summed estimate, and its failure direction is chosen: too
      small and the public page scrolls by a few pixels, too large and the
      recording is only slightly narrower than it could be. Bias it upward. */
-  --player-chrome: 274px;
+  --player-chrome: 355px;
 }
 
 /* The player page escapes the text rail's cap. 1600px is a reading measure for

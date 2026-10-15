@@ -4,6 +4,7 @@ import type { Autosave } from '../projects/autosave';
 import { MarkersPanel } from './MarkersPanel';
 import { PracticeReadout } from './PracticeReadout';
 import { RecordingSurface } from './RecordingSurface';
+import { Stave } from './Stave';
 import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
@@ -55,11 +56,14 @@ export interface PlayerProps {
  * recording, and the recording itself is the shared `RecordingSurface` (T55) —
  * the same surface the markings page hosts.
  *
- * The recording's clock is a single filled bar below the split (T38). It
- * carries no marks: the flags left the strip for the markers panel, a
- * scrollable list in the side column where each marker is a row — timestamp,
- * then `label — alias` — and the passed marker's row is highlighted. A
- * click on the bar seeks; a marker row click jumps to that marker. When the
+ * The recording's clock below the split is the stave (T79) — the piece's shape
+ * rather than a flat bar: five hairlines across its whole length, a heavier
+ * line where each movement begins, the playhead a pencil rule, and each
+ * movement's name under the stretch it names. It carries no marks yet (T80
+ * draws them); the complete, named, movement-grouped list stays the markers
+ * panel, a scrollable list in the side column where each marker is a row —
+ * timestamp, then `label — alias` — and the passed marker's row is highlighted.
+ * A click on the stave seeks; a marker row click jumps to that marker. When the
  * recording has movements (ADR-0005) the rows group under sticky movement
  * headers that jump to the movement's start, and the rehearsal letters
  * restart at A within each movement. The panel follows the playhead — the row
@@ -99,8 +103,12 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
     controller.seek(movement.start);
   }
 
-  /** A readout bar click: the readout has already resolved the position. */
-  function handleReadoutSeek(time: number): void {
+  /**
+   * A seek from a surface that resolved the position itself — the readout's own
+   * bar, and the stave's strip. Both hand over a time in seconds rather than a
+   * pointer position, which is why they share the one handler.
+   */
+  function handleTimeSeek(time: number): void {
     controller.seek(time);
   }
 
@@ -113,6 +121,18 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
       settled={session.settled}
       loadFailed={session.loadFailed}
       onRetryLoad={session.retryLoad}
+      // The stave (T79): the practice surface's own drawing of the strip below
+      // the split, handed to the shared surface's timeline slot. The markings
+      // page passes none and keeps the shipped bar, which is what keeps this
+      // fold's reversal of ADR-0003 on the player alone.
+      timeline={
+        <Stave
+          movements={record.movements}
+          duration={duration}
+          currentTime={playback.currentTime}
+          onSeek={handleTimeSeek}
+        />
+      }
       side={(markersMaxHeight) => (
         <>
           <PracticeReadout
@@ -120,7 +140,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
             naming={naming}
             currentTime={playback.currentTime}
             duration={duration}
-            onSeek={handleReadoutSeek}
+            onSeek={handleTimeSeek}
           />
           <MarkersPanel
             markers={labeled}
