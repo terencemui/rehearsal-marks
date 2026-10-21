@@ -119,7 +119,8 @@ and confirm the marks land on it. The review checklist, for each project:
 ### Acting on a row
 
 `moderate_project(row_id, action)` is the only sanctioned state change (execute
-is revoked from PUBLIC — a client role can never call it). The transitions are
+is revoked from PUBLIC, anon, and authenticated — a client role can never call
+it). The transitions are
 strict and scoped to public rows; an invalid move raises instead of silently
 doing nothing:
 
