@@ -18,7 +18,7 @@
 /* The rail itself — the shell's class string, not one of ours (T74): its width
    is set there (app.css), so the navbar is always as wide as the page it heads.
    Nothing here may cap the width: a max-width of our own would silently defeat
-   the player page's wide rail, which is the very thing the shell hands down.
+   the wide frame the shell hands down (T84).
 
    Its height is the other fact the shell reads: the player rail's cap is
    derived from the chrome above and below the recording (app.css), and the

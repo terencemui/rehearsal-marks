@@ -3,9 +3,9 @@
    not-found page, because an unreachable backend is not a missing project.
 
    The view carries no width of its own: it is the same player the owner sees,
-   so the recording escapes the text rail's cap identically (app.css). Only the
-   error card below keeps a reading measure — it is prose, and the rail exists
-   for prose. */
+   so the recording fills the shell's wide frame identically (app.css). Only
+   the error card below keeps a reading measure — it is prose, and the frame
+   exists for the recording. */
 
 /* The error card's own way out (T75): the project itself opens straight onto
    the recording, with nothing above the player to click away from it, so the

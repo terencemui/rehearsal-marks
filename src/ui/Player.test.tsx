@@ -2290,8 +2290,9 @@ describe('Player — the timeline strip and markers (T38)', () => {
     expect(playerCss).toMatch(/\.player-side-column\s*\{\s*min-width:\s*0;/);
   });
 
-  it('derives a player page rail from the window height, so the recording fits the fold', () => {
-    // The player's rail escapes the text pages' 1600px reading measure: it is
+  it('derives the page frame from the window height, so the recording fits the fold', () => {
+    // The page's frame is the player's rail on every route (T84) — no longer
+    // a player-only cap escaping the text pages' 1600px reading measure. It is
     // as wide as the split's 16:9 video may be without outgrowing the window.
     // The cap is only exact while the side column is the SAME expression in
     // the cap and in the split's track — which is why it is one custom
@@ -2302,16 +2303,17 @@ describe('Player — the timeline strip and markers (T38)', () => {
     expect(playerCss).toMatch(/gap:\s*var\(--player-gap\);/);
     // Structural rather than one exact regex: the calc is a wrapped
     // multi-line expression, and pinning its whitespace would break on any
-    // reformat without catching anything real.
-    const wideRail = appCss.match(/\.page-rail-wide\s*\{[^}]*\}/)?.[0] ?? '';
-    expect(wideRail).toContain('100vh');
-    expect(wideRail).toContain('var(--player-chrome)');
-    expect(wideRail).toContain('var(--player-side-column)');
-    expect(wideRail).toContain('var(--player-gap)');
+    // reformat without catching anything real. Keyed off the calc itself, as
+    // `.page-rail` also recurs in the media query below.
+    const rail = appCss.match(/\.page-rail\s*\{[^}]*100vh[^}]*\}/)?.[0] ?? '';
+    expect(rail).toContain('100vh');
+    expect(rail).toContain('var(--player-chrome)');
+    expect(rail).toContain('var(--player-side-column)');
+    expect(rail).toContain('var(--player-gap)');
     // The rail's height bound has no reader once the split stacks — the video
     // is full width there — so the cap lifts at the split's own breakpoint.
     expect(appCss).toMatch(
-      /@media \(max-width: 920px\) \{\s*\.page-rail-wide\s*\{\s*max-width:\s*none;/,
+      /@media \(max-width: 920px\) \{\s*\.page-rail\s*\{\s*max-width:\s*none;/,
     );
   });
 });

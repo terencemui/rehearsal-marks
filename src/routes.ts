@@ -1,12 +1,11 @@
 /**
  * The app's routes that more than one place has to name (T63).
  *
- * A route can be spelled three ways and they must agree: the pattern the route
- * table matches, the pattern the shell matches to decide which rail a page gets,
- * and the address a link or a navigation builds. The markings page is the one
- * where all three exist — the row's action, the create that lands there, and the
- * player's own way through all build its address — so its pattern is written
- * once here and read from everywhere else.
+ * A route can be spelled two ways and they must agree: the pattern the route
+ * table matches and the address a link or a navigation builds. The markings
+ * page is the one where both exist — the row's action, the create that lands
+ * there, and the player's own way through all build its address — so its
+ * pattern is written once here and read from everywhere else.
  *
  * Routes with a single author stay in `App.tsx` beside their element, where the
  * reader can see them whole.
