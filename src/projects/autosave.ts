@@ -60,6 +60,13 @@ export interface Autosave {
    * the record is settled, rejects with the failure if the write fails.
    */
   flush(): Promise<void>;
+  /**
+   * Drops the pending write: the next `flush` writes nothing. The owner chose
+   * to leave the work behind (T83), so the teardown's safety-net retry must
+   * not land it anyway. The record itself is untouched — its caller navigates
+   * away from it.
+   */
+  abandonPendingWrite(): void;
   /** Cancels the pending debounce and stops notifying; in-flight writes finish. */
   dispose(): void;
 }
@@ -199,6 +206,13 @@ export function createAutosave(
       while (currentVersion > savedVersion) {
         await performSave();
       }
+    },
+
+    abandonPendingWrite() {
+      // Nothing left to write: the pending work is no longer the server's to
+      // receive, so a later flush has nothing to do.
+      clearPendingTimer();
+      savedVersion = currentVersion;
     },
 
     dispose() {

@@ -3296,6 +3296,143 @@ describe('leaving with unsaved changes (T60)', () => {
     expect(closeTheTab()).toBe(true);
   });
 
+  it('asks before leaving a project that saves itself when its last write failed (T83)', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    api.failNext('saveProject');
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container, currentPath } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    // The debounce fires and the write is refused: nothing on a clock will
+    // write this record again, so the edit is still only in memory.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/save failed/i);
+
+    // The everyday exit: a link in the navbar, which navigates through the
+    // router rather than through anything this page owns.
+    await user.click(screen.getByRole('link', { name: 'Help' }));
+
+    // A failed save is work to lose in either mode, so the page asks — the
+    // teardown's retry is a safety net, not a promise the work will land.
+    expect(currentPath()).toBe('/projects/p1/markings');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved changes/i);
+
+    // Staying keeps the marks on screen, with the save line's Retry there to
+    // take the work the page just asked about.
+    await user.click(screen.getByRole('button', { name: 'Stay' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(markerRows(container)).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('stops asking once the failed save is retried and lands (T83)', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    api.failNext('saveProject');
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/save failed/i);
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+
+    // The server holds the work again, so there is nothing left to ask about.
+    await navigateTo('/help');
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(currentPath()).toBe('/help');
+  });
+
+  it('discards a failed save when the owner says so — the teardown does not write it (T83)', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    api.failNext('saveProject');
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath, navigateTo } = renderApp({
+      api,
+      controller,
+      initialEntry: '/projects/p1/markings',
+    });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/save failed/i);
+
+    await navigateTo('/help');
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await screen.findByRole('heading', { name: 'Help' });
+    await pastDebounce();
+
+    // Discard means discard: the work the owner chose to leave behind is not
+    // saved on the way out, by a teardown retry or anything else.
+    expect(currentPath()).toBe('/help');
+    expect(api.get('p1')?.markers).toEqual([marker('m1', 10)]);
+  });
+
+  it('stops asking once a newer edit saves the record (T83)', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(
+      project({
+        visibility: 'private',
+        markers: [marker('m1', 10), marker('m2', 20)],
+      }),
+    );
+    api.failNext('saveProject');
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/save failed/i);
+
+    // The next mutation schedules a fresh write, and this one lands.
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+
+    // The server holds the record again, so the exit is a plain link again.
+    await user.click(screen.getByRole('link', { name: 'Help' }));
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(currentPath()).toBe('/help');
+  });
+
+  it('leaves without a word while a save is merely pending, not failed (T83)', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(project({ visibility: 'private', markers: [marker('m1', 10)] }));
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { currentPath } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // The edit is in hand and the debounce has not fired: an autosaving record
+    // settles itself on the way out, so this is not a decision to put to its
+    // owner — only a save that has already failed is.
+    await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
+    expect(api.saveProject).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('link', { name: 'Help' }));
+
+    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(currentPath()).toBe('/help');
+    await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
+  });
+
   it('leaves a project that saves itself without a word when there is nothing pending', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();

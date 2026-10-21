@@ -180,6 +180,7 @@ function readOnlyAutosave(record: ServerProject): Autosave {
     subscribe: () => () => {},
     error: () => null,
     flush: async () => {},
+    abandonPendingWrite: () => {},
     dispose: () => {},
   };
 }
