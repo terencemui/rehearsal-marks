@@ -1,92 +1,234 @@
-/* The navbar sign-in surface: status and action, one quiet line.
+/* The navbar's account control (T86): signed out, the legal line and Sign in
+   in one 32px row; signed in, a named 32px box opening the account menu.
 
-   It wears the direction with the rest of the chrome (T76): the control is
-   square and ink-outlined, and its two lines are set in the chrome face and
-   the direction's inks. The semantic states keep the colours the shell gives
-   them — the account-deletion red and the failed-sign-in notice — because a
-   danger colour is a fact about the action and not a piece of the direction's
-   geometry, and the fold does not repaint them. */
+   It wears the direction with the rest of the chrome: 32px ink-ruled boxes,
+   square corners, the sans for chrome, and tokens for every colour. Hover,
+   focus and open raise the rule and the ink to the pencil rather than filling
+   a pill; the menu is a boxed surface whose rows are unboxed. The editorial
+   red is reserved for the one-way door; the failure notice keeps the
+   secondary ink. */
 
-.user-status {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-family: var(--sans);
-  font-size: 13.5px;
-  color: var(--ink-2);
-}
-
-/* The `:where()` carries no specificity of its own, so this rule is worth one
-   element and not a class: it is a default for the buttons in this control,
-   and the rules below it — the escalation and the refusal's own notice — are
-   single-class and win the cascade unaided. A `.user-status button` here would
-   out-specify them, and the deletion path would be drawn in the same ink as
-   the quiet controls: the prototype's blanket rule did exactly that, and took
-   the white lettering off `Delete forever`'s red ground on the way through. */
-:where(.user-status) button {
-  padding: 6px 12px;
-  border: 1px solid var(--ink);
-  border-radius: 0;
-  background: none;
-  color: var(--ink);
-  cursor: pointer;
-  font-family: var(--sans);
-  font-size: 13.5px;
-}
-
-:where(.user-status) button:hover {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.user-account {
+.user-control {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--ink-2);
 }
 
-.user-account-line {
+/* Signed out: Privacy · Terms to the left of Sign in, one 32px row — so the
+   navbar keeps the same height in both auth states. */
+.user-signed-out {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-/* Account deletion is a one-way door: the action and its confirmation carry
-   the danger color, apart from the quiet sign-out. The base rule above is a
-   `:where()` default, so these three rules stay plain single-class selectors
-   and win on their own — see that rule for what the ink alternative costs. */
-.user-delete {
-  border-color: #b91c1c;
-  color: #b91c1c;
-}
-
-.user-delete:hover,
-.user-delete-confirm:hover {
-  background: #b91c1c;
-  color: #fff;
-}
-
-.user-delete-confirm {
-  background: #b91c1c;
-  border-color: #b91c1c;
-  color: #fff;
-}
-
-.user-confirm-delete {
-  margin: 0;
-  max-width: 28em;
-  font-size: 13px;
-  color: var(--ink-2);
+.user-legal-line {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
 }
 
+/* A legal link is text, not a control: underlined, never boxed. */
+.user-legal-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.user-legal-link:hover,
+.user-legal-link:focus-visible {
+  color: var(--pencil);
+}
+
+/* The two boxes in the bar: the sign-in button and the account trigger. Same
+   32px height, same ink rule at rest, same pencil on hover, focus or open. */
+.user-sign-in,
+.user-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  font: 500 13.5px/1 var(--sans);
+}
+
+.user-sign-in:hover,
+.user-sign-in:focus-visible,
+.user-trigger:hover,
+.user-trigger:focus-visible,
+.user-trigger[aria-expanded='true'] {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+.user-account {
+  position: relative;
+}
+
+/* A display name is user data of unknown length — the controller falls back
+   to the email when Google sends no full name. The box stays a box: the bar
+   caps it and the name ellipsises rather than widening the rail or wrapping
+   out of the 32px row. */
+.user-trigger {
+  max-width: min(220px, 40vw);
+}
+
+.user-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-chevron {
+  flex: none;
+  color: var(--ink-2);
+  transition: transform 120ms ease;
+}
+
+.user-trigger:hover .user-chevron,
+.user-trigger:focus-visible .user-chevron,
+.user-trigger[aria-expanded='true'] .user-chevron {
+  color: var(--pencil);
+}
+
+.user-trigger[aria-expanded='true'] .user-chevron {
+  transform: rotate(180deg);
+}
+
+/* The disclosure: a boxed surface with rule-haired separators, holding links
+   and buttons rather than menu items. */
+.user-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 100;
+  min-width: 232px;
+  padding: 6px 0;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  text-align: left;
+}
+
+.user-menu-item {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 400 13.5px/20px var(--sans);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* The player's rule: hover is the ink coming up to the pencil, never a fill. */
+.user-menu-item:hover,
+.user-menu-item:focus-visible {
+  color: var(--pencil);
+  outline-offset: -2px;
+}
+
+.user-menu-legal {
+  padding: 5px 14px 8px;
+}
+
+.user-menu-sep {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--rule);
+}
+
+.user-menu-danger {
+  color: var(--editorial);
+}
+
+.user-menu-danger:hover,
+.user-menu-danger:focus-visible {
+  color: var(--editorial);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.user-confirm {
+  max-width: 270px;
+  padding: 10px 14px 12px;
+}
+
+.user-confirm p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.user-confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.user-delete-forever,
+.user-cancel {
+  padding: 5px 10px;
+  border: 1px solid;
+  font: 500 12.5px/18px var(--sans);
+  cursor: pointer;
+}
+
+.user-delete-forever {
+  border-color: var(--editorial);
+  background: var(--editorial);
+  color: var(--paper);
+}
+
+.user-delete-forever:hover,
+.user-delete-forever:focus-visible {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.user-cancel {
+  border-color: var(--ink);
+  background: none;
+  color: var(--ink);
+}
+
+.user-cancel:hover,
+.user-cancel:focus-visible {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+/* The failure notice sits beneath the control, outside the popup, so it stays
+   visible whether the menu is open or shut. It takes the secondary ink: the
+   alert role carries the urgency, and the editorial red is the one-way door's
+   alone. */
 .user-notice {
   margin: 0;
   max-width: 24em;
-  font-size: 13px;
-  color: #9a3412;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-chevron {
+    transition: none;
+  }
 }
