@@ -20,8 +20,8 @@ export interface NavbarProps {
 }
 
 /**
- * The one global navbar (T44): the app name, the Gallery, Projects, and Help
- * links with active states, and the user sign-in — the shell chrome that
+ * The one global navbar (T44): the app name, the Gallery and Projects links
+ * with active states, and the user sign-in — the shell chrome that
  * replaced the workspace's header-plus-tabs pair. Renders on every routed
  * page, including the project page (T45): the player's own Projects control
  * is retired, and the navbar links are the only navigation. The gallery is
@@ -57,9 +57,6 @@ export function Navbar({
         </NavLink>
         <NavLink to="/projects" end className="app-nav-link">
           Projects
-        </NavLink>
-        <NavLink to="/help" className="app-nav-link">
-          Help
         </NavLink>
         <div className="app-nav-auth">
           <UserControl

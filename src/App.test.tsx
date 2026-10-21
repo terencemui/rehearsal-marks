@@ -116,10 +116,10 @@ async function waitForWorkspaceRow(name: string): Promise<void> {
 
 /**
  * Drives a link create whose title lookup is held open, then navigates away to
- * Help while it is still in flight — the shared "create lands behind a
- * navigation" setup (T45, T46). Returns the release, which drains the create's
- * continuation (title → server create → token check → list refresh) inside
- * act, so the tests assert only the aftermath.
+ * the privacy policy while it is still in flight — the shared "create lands
+ * behind a navigation" setup (T45, T46). Returns the release, which drains the
+ * create's continuation (title → server create → token check → list refresh)
+ * inside act, so the tests assert only the aftermath.
  */
 async function createBehindNavigation(): Promise<{
   api: FakeProjectsApi;
@@ -135,7 +135,7 @@ async function createBehindNavigation(): Promise<{
   const controller = mockController({
     load: vi.fn(async () => ({ duration: 372 })),
   });
-  const { auth } = renderApp({
+  const { auth, navigateTo } = renderApp({
     api,
     controller,
     fetchTitle: async () => {
@@ -145,9 +145,9 @@ async function createBehindNavigation(): Promise<{
   });
   await signIn(user, auth);
   await pasteLink(user, YOUTUBE_CANONICAL);
-  // The title lookup is still in flight; the user navigates away to Help.
-  await user.click(screen.getByRole('link', { name: 'Help' }));
-  expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+  // The title lookup is still in flight; the user navigates away to a legal page.
+  await navigateTo('/privacy');
+  expect(screen.getByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
   return {
     api,
     controller,
@@ -317,7 +317,6 @@ describe('App Projects workspace', () => {
     expect(screen.getByText(/paste a YouTube link above to start marking/i)).toBeInTheDocument();
     // The Library tab and its browse surface are gone — the link is the only way in.
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Library' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /browse the library/i })).not.toBeInTheDocument();
   });
@@ -471,19 +470,18 @@ describe('App Projects workspace', () => {
     const { auth } = renderApp();
     await signIn(user, auth);
 
-    await user.click(screen.getByRole('link', { name: 'Help' }));
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page');
+    // The front-door link jumps to the public gallery.
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('link', { name: 'Gallery' })).not.toHaveAttribute('aria-current');
 
     await user.click(screen.getByRole('link', { name: 'Projects' }));
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: 'Gallery' })).not.toHaveAttribute('aria-current');
 
-    // The front-door link jumps to the public gallery.
+    // And back out to the gallery, whose active state follows.
     await user.click(screen.getByRole('link', { name: 'Gallery' }));
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
@@ -511,7 +509,7 @@ describe('App Projects workspace', () => {
 
     // The row click navigates to the project page; its record read is slow.
     await user.click(screen.getByRole('button', { name: /^Brahms/ }));
-    await user.click(screen.getByRole('link', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
     await act(async () => {
       releaseRead();
     });
@@ -519,7 +517,7 @@ describe('App Projects workspace', () => {
     // The player must not yank the user off the page they navigated to. The
     // page read is cancelled by the unmount, so the session never builds and
     // the controller is never created in the first place — nothing leaks.
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Brahms Op. 118 No. 2' })).not.toBeInTheDocument();
   });
 
@@ -811,8 +809,8 @@ describe('App durable workspace state (T43)', () => {
     await pasteLink(user, 'not a youtube link');
     expect(await screen.findByRole('alert')).toHaveTextContent(/YouTube video link/);
 
-    await user.click(screen.getByRole('link', { name: 'Help' }));
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Projects' }));
 
     // The guidance is still under the input it explains, and the input still
@@ -831,18 +829,37 @@ describe('App pages and the persistent navbar (T44)', () => {
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
   });
 
-  it('renders the Help page at /help with the same persistent navbar', async () => {
+  it('renders each legal document as its own page, reachable signed out under the persistent navbar', async () => {
+    const { navigateTo } = renderApp();
+
+    await navigateTo('/privacy');
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+
+    // The deletion warning is the paragraph this slice moved off "the header";
+    // it keeps its promise and no longer names a location that will change.
+    const privacy = screen.getByRole('heading', { name: 'Privacy policy' }).closest('section')!;
+    expect(privacy).toHaveTextContent('Delete account');
+    expect(privacy).toHaveTextContent(/every project you've created/i);
+    expect(privacy).not.toHaveTextContent(/in the header/i);
+
+    await navigateTo('/terms');
+    expect(await screen.findByRole('heading', { name: 'Terms' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+  });
+
+  it('sends the retired Help URL to the gallery through the catch-all', async () => {
     const user = userEvent.setup();
-    const { auth } = renderApp();
+    const { auth } = renderApp({ initialEntry: '/help' });
     await signIn(user, auth);
 
-    await user.click(screen.getByRole('link', { name: 'Help' }));
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Help' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
   });
 
   it('lands an unknown path on the front door, the gallery', async () => {
@@ -858,14 +875,14 @@ describe('App pages and the persistent navbar (T44)', () => {
     const { auth, go } = renderApp();
     await signIn(user, auth);
 
-    await user.click(screen.getByRole('link', { name: 'Help' }));
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
 
     await go(-1);
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
 
     await go(1);
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
   });
 });
 
@@ -1027,7 +1044,6 @@ describe('App route-as-session project page (T45)', () => {
     // the page links, and the sign-in all frame it.
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Help' })).toBeInTheDocument();
     expect(container.querySelector('.player-ruler')).toBeInTheDocument();
     await waitForPlayerSettled();
     // A visit writes nothing — the server row is exactly what was read.
@@ -1065,8 +1081,8 @@ describe('App route-as-session project page (T45)', () => {
     expectOneFrame();
 
     // A text page: it keeps its prose measure, but inside the same frame.
-    await navigateTo('/help');
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    await navigateTo('/privacy');
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
     expectOneFrame();
 
     // The gallery, the workspace's anonymous landing, the read-only public
@@ -1320,8 +1336,8 @@ describe('App route-as-session project page (T45)', () => {
     const { api, controller, release } = await createBehindNavigation();
     await release();
 
-    // The project is saved and waiting in the list; the user stays on Help.
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    // The project is saved and waiting in the list; the user stays on the legal page.
+    expect(screen.getByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: VIDEO_TITLE })).not.toBeInTheDocument();
     const projects = await api.listMyProjects();
     expect(projects.map((p) => p.name)).toEqual([VIDEO_TITLE]);
@@ -1362,7 +1378,7 @@ describe('App create-from-link lands on the markings page (T63, amending T46)', 
     await release();
 
     // Not yanked: the user is still where they chose to go.
-    expect(screen.getByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: VIDEO_TITLE })).not.toBeInTheDocument();
 
     // Their own return to Projects finds the saved project in the list.
