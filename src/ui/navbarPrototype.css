@@ -1,0 +1,484 @@
+/*
+ * PROTOTYPE — navbar + search layouts.
+ *
+ * The direction is the app's existing one (T73): score-white paper, near-black
+ * ink, hairlines, square corners, the serif wordmark and a grotesque for
+ * chrome. Every colour and face is consumed by name from app.css; this file
+ * adds no palette of its own.
+ *
+ * The three variants are structurally different, not three skins:
+ *   A  the search arrives on demand, in the row, and drops to row two narrow
+ *   B  the search is permanent, in the row, and drops to row two narrow
+ *   C  the search is a full-width band under a two-part masthead
+ *
+ * Throwaway; it dies with the branch.
+ */
+
+.proto-shell {
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+}
+
+.nb {
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+  font-family: var(--sans);
+}
+
+.nb-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+}
+
+/* Focus is the direction's pencil rule, not a rounded browser ring. */
+.nb button:focus-visible,
+.nb a:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 2px;
+}
+
+/* ---------- the search field, shared ---------- */
+
+.nb-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 32px;
+  border-bottom: 1px solid var(--rule);
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.nb-search:focus-within {
+  border-color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+.nb-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 400 14px/20px var(--sans);
+  appearance: none;
+  outline: none;
+}
+
+.nb-search input::placeholder {
+  color: var(--ink-2);
+  opacity: 0.75;
+}
+
+/* The field draws its own clear control; the native one would double it. */
+.nb-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.nb-search-icon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.nb-clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: 400 17px/1 var(--sans);
+  cursor: pointer;
+}
+
+.nb-clear:hover {
+  color: var(--ink);
+}
+
+.nb-search input:focus-visible {
+  outline: none;
+}
+
+/* The icon that becomes the field (variant A). */
+.nb-search-toggle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.nb-search-toggle:hover {
+  border-color: var(--ink);
+  color: var(--pencil);
+}
+
+/* ---------- the account object, shared ---------- */
+
+.nb-account-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.nb-account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ink);
+  font: 500 13.5px/1 var(--sans);
+  cursor: pointer;
+}
+
+.nb-account-trigger:hover,
+.nb-account-trigger[aria-expanded='true'] {
+  border-color: var(--rule);
+}
+
+.nb-account-trigger[aria-expanded='true'] {
+  border-color: var(--ink);
+}
+
+.nb-chevron {
+  color: var(--ink-2);
+  transition: transform 120ms ease;
+}
+
+.nb-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.nb-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 100;
+  min-width: 232px;
+  padding: 6px 0;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 0 14px 32px rgba(20, 22, 26, 0.14);
+  text-align: left;
+}
+
+.nb-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 400 13.5px/20px var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.nb-menu-item:hover,
+.nb-menu-item:focus-visible {
+  background: var(--wash);
+}
+
+.nb-menu-item:focus-visible {
+  outline-offset: -2px;
+}
+
+.nb-menu-legal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px 8px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+
+.nb-legal-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.nb-legal-link:hover {
+  color: var(--ink);
+}
+
+.nb-menu-sep {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--rule);
+}
+
+.nb-menu-danger {
+  color: var(--editorial);
+}
+
+.nb-menu-danger:hover,
+.nb-menu-danger:focus-visible {
+  background: var(--wash);
+}
+
+.nb-confirm {
+  max-width: 270px;
+  padding: 10px 14px 12px;
+}
+
+.nb-confirm p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.nb-confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.nb-confirm-delete,
+.nb-confirm-cancel {
+  padding: 5px 10px;
+  border: 1px solid;
+  font: 500 12.5px/18px var(--sans);
+  cursor: pointer;
+}
+
+.nb-confirm-delete {
+  border-color: var(--editorial);
+  background: var(--editorial);
+  color: var(--paper);
+}
+
+.nb-confirm-delete:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.nb-confirm-cancel {
+  border-color: var(--ink);
+  background: none;
+  color: var(--ink);
+}
+
+.nb-confirm-cancel:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ---------- signed out ---------- */
+
+.nb-signed-out {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.nb-sign-in {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  background: none;
+  color: var(--ink);
+  font: 500 13.5px/1 var(--sans);
+  cursor: pointer;
+}
+
+.nb-sign-in:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.nb-legal-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-2);
+  font-size: 11.5px;
+  line-height: 14px;
+}
+
+/* ---------- A: the icon becomes the field ---------- */
+
+.nb-a-row {
+  flex-wrap: wrap;
+}
+
+/* The wordmark owns the free space, so the search and the account always sit
+   together at the far end — including when the field drops to row two and the
+   account stays on row one. */
+.nb-a-row .app-name {
+  margin-right: auto;
+}
+
+.nb-a-search {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.nb-a-search.is-open {
+  width: min(320px, 100%);
+}
+
+.nb-a-search .nb-search {
+  flex: 1;
+  animation: nb-field-in 160ms ease-out;
+}
+
+.nb-b-row .nb-account-slot,
+.nb-c-top .nb-account-slot,
+.nb-b-row .nb-signed-out,
+.nb-c-top .nb-signed-out {
+  margin-left: auto;
+}
+
+@keyframes nb-field-in {
+  from {
+    max-width: 0;
+    opacity: 0;
+  }
+  to {
+    max-width: 320px;
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .nb-a-search.is-open {
+    order: 3;
+    flex-basis: 100%;
+    width: 100%;
+    margin-top: 4px;
+    margin-left: 0;
+  }
+
+  .nb-a-search.is-open .nb-search {
+    max-width: none;
+    animation: none;
+  }
+}
+
+/* ---------- B: the field is always in the row ---------- */
+
+.nb-b-row {
+  flex-wrap: wrap;
+}
+
+.nb-b-search {
+  flex: 1 1 220px;
+  max-width: 440px;
+  margin-left: clamp(16px, 4vw, 64px);
+}
+
+@media (max-width: 720px) {
+  .nb-b-search {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+    margin-top: 4px;
+    margin-left: 0;
+  }
+}
+
+/* ---------- C: the catalogue masthead ---------- */
+
+.nb-c-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 10px;
+}
+
+.nb-c-band {
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.nb-c-band-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-block: 8px;
+}
+
+.nb-c-search {
+  flex: 1;
+  max-width: 640px;
+  height: 36px;
+  padding-inline: 10px;
+  border: 1px solid var(--ink);
+}
+
+.nb-c-search:focus-within {
+  border-color: var(--pencil);
+  box-shadow: inset 0 0 0 1px var(--pencil);
+}
+
+.nb-c-count {
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .nb-c-count {
+    display: none;
+  }
+}
+
+/* ---------- the prototype's empty state ---------- */
+
+.nb-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.nb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-search,
+  .nb-chevron {
+    transition: none;
+  }
+
+  .nb-a-search .nb-search {
+    animation: none;
+  }
+}

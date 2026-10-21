@@ -1,6 +1,7 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
+import type { RouteObject } from 'react-router';
 import App from './App.tsx';
 
 /**
@@ -15,7 +16,28 @@ import App from './App.tsx';
  * is a data-router capability. Nothing else changes: no loaders, no actions,
  * no server data loading, exactly as ADR-0004 promised.
  */
-const router = createBrowserRouter([{ path: '*', element: <App /> }]);
+/**
+ * PROTOTYPE — the navbar/search layout switcher (docs/prototypes.md).
+ *
+ * The route exists only in DEV and is loaded through `lazy`, so a production
+ * build serves the app it always served. Throwaway: it dies with the branch.
+ */
+const prototypeRoutes: RouteObject[] = [];
+if (import.meta.env.DEV) {
+  const NavbarPrototypePage = lazy(() =>
+    import('./ui/NavbarPrototype').then((module) => ({ default: module.NavbarPrototypePage })),
+  );
+  prototypeRoutes.push({
+    path: '/prototype/navbar',
+    element: (
+      <Suspense fallback={null}>
+        <NavbarPrototypePage />
+      </Suspense>
+    ),
+  });
+}
+
+const router = createBrowserRouter([...prototypeRoutes, { path: '*', element: <App /> }]);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
