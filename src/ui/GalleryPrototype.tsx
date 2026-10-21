@@ -9,6 +9,7 @@
  *   A — YouTube-literal: facts stacked under the image, duration on the image.
  *   B — Plate: the recording title in a ruled band under the image.
  *   C — Contents: a three-row table of contents under the image.
+ *   D — Title only: the image, its duration, and the recording title. No metadata.
  *
  * The grid, data, ordering, and link behaviour are shared; only the card's
  * anatomy changes. Judged at real widths against the local gallery's four
@@ -22,18 +23,19 @@ import { formatRulerTime } from '../playback/ruler';
 import type { GalleryGroup, PublicProjectSummary } from '../projects';
 import './gallery-prototype.css';
 
-/** The three arrangements this prototype judges. */
-export type PrototypeVariant = 'A' | 'B' | 'C';
+/** The four arrangements this prototype judges. */
+export type PrototypeVariant = 'A' | 'B' | 'C' | 'D';
 
 const VARIANTS: { key: PrototypeVariant; name: string }[] = [
   { key: 'A', name: 'YouTube-literal' },
   { key: 'B', name: 'Plate' },
   { key: 'C', name: 'Contents' },
+  { key: 'D', name: 'Title only' },
 ];
 
-/** Whether a URL's `?variant=` names one of the three arrangements. */
+/** Whether a URL's `?variant=` names one of the four arrangements. */
 export function isPrototypeVariant(value: string | null): value is PrototypeVariant {
-  return value === 'A' || value === 'B' || value === 'C';
+  return value === 'A' || value === 'B' || value === 'C' || value === 'D';
 }
 
 /** The project a recording's card opens: its oldest published set. */
@@ -134,6 +136,20 @@ function VariantC({ group }: { group: GalleryGroup }) {
   );
 }
 
+/** D — title only: the image, its duration, and the recording title. */
+function VariantD({ group }: { group: GalleryGroup }) {
+  const project = defaultProject(group);
+  return (
+    <Link className="proto-card proto-card--d" to={`/gallery/${project.id}`}>
+      <span className="proto-image">
+        <Thumbnail videoId={group.videoId} />
+        <DurationBadge duration={group.duration} />
+      </span>
+      <h3 className="proto-d-title">{group.recordingTitle}</h3>
+    </Link>
+  );
+}
+
 /** The floating bar that flips variants; arrows and ←/→ cycle it. */
 function Switcher({
   current,
@@ -208,7 +224,8 @@ export function GalleryPrototype({
         {groups.map((group) => {
           if (variant === 'A') return <VariantA key={group.videoId} group={group} />;
           if (variant === 'B') return <VariantB key={group.videoId} group={group} />;
-          return <VariantC key={group.videoId} group={group} />;
+          if (variant === 'C') return <VariantC key={group.videoId} group={group} />;
+          return <VariantD key={group.videoId} group={group} />;
         })}
       </div>
       <Switcher current={variant} onChange={show} />

@@ -171,6 +171,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* D — Title only: the image, its duration chip, and the recording's title.
+   No metadata line at all. */
+.proto-card--d .proto-d-title {
+  margin: 10px 0 0;
+  font: 600 16px/1.25 var(--serif);
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.proto-card--d:hover .proto-d-title,
+.proto-card--d:focus-visible .proto-d-title {
+  color: var(--pencil);
+}
+
 /* The switcher is deliberately unlike the page: a high-contrast pill, so it
    is never mistaken for part of the design being judged. */
 .proto-switcher {
