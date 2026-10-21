@@ -1,7 +1,8 @@
-/* The public gallery (T50): the app's front door. Recording-title groups in
-   the workspace's list idiom — a heading per recording, entries as button
-   rows (the shell's accent + the list's card border), so the gallery reads
-   like the Projects list the app already had. */
+/* The public gallery (T88): the app's front door wears the player's direction
+   — a serif page on the sheet's paper, ink rules, square rule-separated rows,
+   and the pencil as the one interaction accent. Every colour and face is
+   consumed by name from the shell's tokens (app.css); this file names none of
+   its own. */
 
 .gallery {
   max-width: 720px;
@@ -9,88 +10,121 @@
 
 .gallery h2 {
   margin: 0 0 4px;
-  font: 700 20px/1.2 system-ui, sans-serif;
-  color: #0f172a;
+  font: 600 27px/1.12 var(--serif);
+  letter-spacing: -0.015em;
+  color: var(--ink);
 }
 
 .gallery-intro {
-  margin: 0 0 16px;
-  font-size: 14px;
-  color: #555;
+  margin: 0 0 20px;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-2);
 }
 
 .gallery-group {
-  margin: 0 0 20px;
+  margin: 0 0 28px;
 }
 
+/* A recording's title is a heading over the entries it names: serif content
+   above an ink hairline, the page's table of contents. */
 .gallery-recording {
-  margin: 0 0 8px;
-  font: 600 16px/1.3 system-ui, sans-serif;
-  color: #0f172a;
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ink);
+  font: 600 17px/1.3 var(--serif);
+  color: var(--ink);
 }
 
 .gallery-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+}
+
+/* Entries are rows in a ruled list, not cards: the rule between two rows is
+   the list's, so the first starts under the recording's own heavier rule with
+   no second box around it. */
+.gallery-list li + li {
+  border-top: 1px solid var(--rule);
 }
 
 .gallery-entry {
   width: 100%;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  border: none;
+  border-radius: 0;
   background: none;
-  padding: 8px 12px;
-  font: inherit;
-  color: inherit;
+  padding: 10px 0;
+  font: 400 15px/1.4 var(--serif);
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
 }
 
-.gallery-entry:hover {
-  border-color: #0f766e;
-  background: #f0fdfa;
+/* Hover is the ink coming up to the pencil, never a tint behind the row. */
+.gallery-entry:hover .gallery-name,
+.gallery-entry:hover .gallery-count,
+.gallery-entry:focus-visible .gallery-name,
+.gallery-entry:focus-visible .gallery-count {
+  color: var(--pencil);
+}
+
+/* The pencil is the only focus accent, so the keyboard ring is ours rather
+   than the platform's second colour — the player draws its controls the same
+   way. */
+.gallery-entry:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: -2px;
 }
 
 .gallery-name {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--ink);
 }
 
 .gallery-count {
-  font-size: 13px;
-  color: #555;
+  flex: none;
+  font: 400 13px/1.4 var(--serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
 }
 
 .gallery-error {
-  margin: 0 0 8px;
-  color: #9f1239;
+  margin: 0 0 12px;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--editorial);
 }
 
 .gallery-empty {
-  margin: 0;
-  font-size: 14px;
-  color: #555;
+  margin: 0 0 12px;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-2);
 }
 
+/* Retry and Clear search are chrome: one square 32px ink box, the pencil on
+   hover or focus, never a fill. */
 .gallery-action {
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
   background: none;
-  padding: 6px 12px;
-  font: 600 14px/20px system-ui, sans-serif;
-  color: #0f766e;
+  font: 600 14px/1 var(--sans);
+  color: var(--ink);
   cursor: pointer;
 }
 
-.gallery-action:hover {
-  background: #0f766e;
-  color: #fff;
+.gallery-action:hover,
+.gallery-action:focus-visible {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+.gallery-action:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 1px;
 }

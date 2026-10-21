@@ -26,6 +26,10 @@ const navbarCss = readFileSync('src/ui/navbar.css', 'utf8');
 // so it is read the same way.
 const userCss = readFileSync('src/ui/user.css', 'utf8');
 
+// The gallery wears the same direction (T88), and jsdom computes no layout, so
+// the direction facts are read off its stylesheet text too.
+const galleryCss = readFileSync('src/ui/gallery.css', 'utf8');
+
 /**
  * A stylesheet's rules, with the prose taken out. Every reader below is
  * looking for what a rule *declares*, and a comment that happens to spell
@@ -1372,6 +1376,75 @@ describe('The gallery search (T87)', () => {
     await navigateTo('/terms');
     expect(gallerySearch()).toHaveValue('');
     expect(currentSearch()).toBe('');
+  });
+});
+
+describe('The gallery wears the player’s direction (T88)', () => {
+  it('sets the title, introduction, recording titles, and prose in the serif', () => {
+    // The gallery is the front door and where the search lives, so its content
+    // takes the document's face as the player's does.
+    expect(galleryCss).toMatch(/\.gallery h2\s*\{[^}]*var\(--serif\)/);
+    expect(galleryCss).toMatch(/\.gallery-intro\s*\{[^}]*var\(--serif\)/);
+    expect(galleryCss).toMatch(/\.gallery-recording\s*\{[^}]*var\(--serif\)/);
+    expect(galleryCss).toMatch(/\.gallery-empty\s*\{[^}]*var\(--serif\)/);
+    expect(galleryCss).toMatch(/\.gallery-error\s*\{[^}]*var\(--serif\)/);
+  });
+
+  it('rules a recording title in ink and separates entries with hairlines, not boxes', () => {
+    expect(galleryCss).toMatch(
+      /\.gallery-recording\s*\{[^}]*border-bottom:\s*1px solid var\(--ink\)/,
+    );
+
+    // A row carries no box of its own; the rule between two rows is the
+    // list's, so the first starts under the recording's own heavier rule.
+    const entryRule = rulesOf(galleryCss).match(/\.gallery-entry\s*\{([^}]*)\}/)![1];
+    expect(entryRule).toMatch(/border:\s*none/);
+    expect(entryRule).toMatch(/background:\s*none/);
+    expect(galleryCss).toMatch(
+      /\.gallery-list li \+ li\s*\{[^}]*border-top:\s*1px solid var\(--rule\)/,
+    );
+  });
+
+  it('gives project names ink 600 and counts the serif’s tabular figures', () => {
+    expect(galleryCss).toMatch(/\.gallery-name\s*\{[^}]*font-weight:\s*600/);
+    expect(galleryCss).toMatch(/\.gallery-name\s*\{[^}]*color:\s*var\(--ink\)/);
+    expect(galleryCss).toMatch(/\.gallery-count\s*\{[^}]*var\(--serif\)/);
+    expect(galleryCss).toMatch(/\.gallery-count\s*\{[^}]*font-variant-numeric:\s*tabular-nums/);
+    expect(galleryCss).toMatch(/\.gallery-count\s*\{[^}]*color:\s*var\(--ink-2\)/);
+  });
+
+  it('brings the row and the retry to the pencil, never a fill', () => {
+    // Hover and keyboard focus share the one accent; the platform's ring is
+    // replaced so the pencil stays the only colour that means interaction.
+    expect(galleryCss).toMatch(/\.gallery-entry:hover[^{]*\{[^}]*var\(--pencil\)/);
+    expect(galleryCss).toMatch(/\.gallery-action:hover[^{]*\{[^}]*var\(--pencil\)/);
+    expect(galleryCss).toMatch(
+      /\.gallery-entry:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--pencil\)/,
+    );
+    expect(galleryCss).toMatch(
+      /\.gallery-action:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--pencil\)/,
+    );
+  });
+
+  it('boxes the retry and Clear search in the sans and the direction’s ink', () => {
+    // Retry and Clear search share the rule: chrome is a square 32px ink box,
+    // the same control the navbar carries.
+    expect(galleryCss).toMatch(/\.gallery-action\s*\{[^}]*height:\s*32px/);
+    expect(galleryCss).toMatch(/\.gallery-action\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
+    expect(galleryCss).toMatch(/\.gallery-action\s*\{[^}]*var\(--sans\)/);
+  });
+
+  it('consumes only the shell’s tokens: no raw colour, no teal, no non-zero radius', () => {
+    // `none` paints nothing; a background that ever arrives must be a token.
+    for (const colour of coloursDeclaredIn(galleryCss).filter((value) => value !== 'none')) {
+      expect(colour).toContain('var(--');
+    }
+    expect(galleryCss).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+    expect(radiiDeclaredIn(galleryCss).filter((radius) => radius !== '0')).toEqual([]);
+    // No band or tint is filled anywhere on the surface.
+    for (const background of backgroundsDeclaredIn(galleryCss)) {
+      expect(background === 'none' || background.startsWith('var(--')).toBe(true);
+    }
   });
 });
 
