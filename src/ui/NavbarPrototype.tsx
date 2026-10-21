@@ -61,6 +61,15 @@ const VARIANTS: readonly Variant[] = [
   { key: 'D', name: 'Centred search, boxed controls' },
 ];
 
+/**
+ * The player's rail, applied to the whole prototype. The player page is the
+ * app's widest frame (`page-rail-wide`, derived from the viewport height in
+ * app.css); the text pages take the 1600px reading rail. This prototype is
+ * judged at the player's width so the navbar is measured against the frame it
+ * will actually share with the practice surface.
+ */
+const PROTOTYPE_RAIL = 'page-rail page-rail-wide';
+
 interface Entry {
   id: string;
   name: string;
@@ -453,7 +462,7 @@ function NavbarA({ auth, q, home, count, onQ, onAuth, onHome, open, onOpen, onCl
 
   return (
     <nav className="nb nb-a" aria-label="Primary">
-      <div className="page-rail nb-row nb-a-row">
+      <div className={`${PROTOTYPE_RAIL} nb-row nb-a-row`}>
         <Wordmark href={home} onHome={onHome} />
         <div className={`nb-a-search${showSearch ? ' is-open' : ''}`}>
           {showSearch ? (
@@ -481,7 +490,7 @@ function NavbarA({ auth, q, home, count, onQ, onAuth, onHome, open, onOpen, onCl
 function NavbarB({ auth, q, home, count, onQ, onAuth, onHome }: NavbarProps) {
   return (
     <nav className="nb nb-b" aria-label="Primary">
-      <div className="page-rail nb-row nb-b-row">
+      <div className={`${PROTOTYPE_RAIL} nb-row nb-b-row`}>
         <Wordmark href={home} onHome={onHome} />
         <SearchField className="nb-b-search" value={q} onChange={onQ} />
         <AccountControl auth={auth} onAuth={onAuth} />
@@ -496,12 +505,12 @@ function NavbarB({ auth, q, home, count, onQ, onAuth, onHome }: NavbarProps) {
 function NavbarC({ auth, q, home, count, onQ, onAuth, onHome }: NavbarProps) {
   return (
     <nav className="nb nb-c" aria-label="Primary">
-      <div className="page-rail nb-c-top">
+      <div className={`${PROTOTYPE_RAIL} nb-c-top`}>
         <Wordmark href={home} onHome={onHome} />
         <AccountControl auth={auth} onAuth={onAuth} />
       </div>
       <div className="nb-c-band">
-        <div className="page-rail nb-c-band-inner">
+        <div className={`${PROTOTYPE_RAIL} nb-c-band-inner`}>
           <SearchField className="nb-c-search" value={q} onChange={onQ} />
           <span className="nb-c-count" aria-live="polite">
             {count} of {PROJECTS.length} projects
@@ -515,7 +524,7 @@ function NavbarC({ auth, q, home, count, onQ, onAuth, onHome }: NavbarProps) {
 function NavbarD({ auth, q, home, count, onQ, onAuth, onHome }: NavbarProps) {
   return (
     <nav className="nb nb-d" aria-label="Primary">
-      <div className="page-rail nb-d-row">
+      <div className={`${PROTOTYPE_RAIL} nb-d-row`}>
         <Wordmark href={home} onHome={onHome} />
         <SearchField className="nb-d-search" value={q} onChange={onQ} />
         <AccountControl auth={auth} onAuth={onAuth} legalFirst />
@@ -707,7 +716,7 @@ export function NavbarPrototypePage() {
       {variant === 'C' && <NavbarC {...navProps} />}
       {variant === 'D' && <NavbarD {...navProps} />}
 
-      <main className="page-rail app-page">
+      <main className={`${PROTOTYPE_RAIL} app-page`}>
         <Gallery q={q} onQ={setQ} />
       </main>
 

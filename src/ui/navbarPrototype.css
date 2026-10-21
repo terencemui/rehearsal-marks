@@ -55,8 +55,8 @@
 }
 
 .nb-search:focus-within {
-  border-color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--ink);
+  border-color: var(--pencil);
+  box-shadow: inset 0 -2px 0 var(--pencil);
 }
 
 .nb-search input {
@@ -66,7 +66,7 @@
   border: 0;
   background: none;
   color: var(--ink);
-  font: 400 14px/20px var(--sans);
+  font: 400 15px/22px var(--serif);
   appearance: none;
   outline: none;
 }
@@ -74,6 +74,10 @@
 .nb-search input::placeholder {
   color: var(--ink-2);
   opacity: 0.75;
+}
+
+.nb-search:focus-within .nb-search-icon {
+  color: var(--pencil);
 }
 
 /* The field draws its own clear control; the native one would double it. */
@@ -101,7 +105,7 @@
 }
 
 .nb-clear:hover {
-  color: var(--ink);
+  color: var(--pencil);
 }
 
 .nb-search input:focus-visible {
@@ -123,7 +127,7 @@
 }
 
 .nb-search-toggle:hover {
-  border-color: var(--ink);
+  border-color: var(--pencil);
   color: var(--pencil);
 }
 
@@ -150,11 +154,13 @@
 
 .nb-account-trigger:hover,
 .nb-account-trigger[aria-expanded='true'] {
-  border-color: var(--rule);
+  border-color: var(--pencil);
+  color: var(--pencil);
 }
 
-.nb-account-trigger[aria-expanded='true'] {
-  border-color: var(--ink);
+.nb-account-trigger:hover .nb-chevron,
+.nb-account-trigger[aria-expanded='true'] .nb-chevron {
+  color: var(--pencil);
 }
 
 .nb-chevron {
@@ -191,9 +197,11 @@
   cursor: pointer;
 }
 
+/* The player's rule: hover is the ink coming up to the pencil, never a fill. */
 .nb-menu-item:hover,
 .nb-menu-item:focus-visible {
-  background: var(--wash);
+  background: none;
+  color: var(--pencil);
 }
 
 .nb-menu-item:focus-visible {
@@ -222,7 +230,7 @@
 }
 
 .nb-legal-link:hover {
-  color: var(--ink);
+  color: var(--pencil);
 }
 
 .nb-menu-sep {
@@ -237,7 +245,10 @@
 
 .nb-menu-danger:hover,
 .nb-menu-danger:focus-visible {
-  background: var(--wash);
+  background: none;
+  color: var(--editorial);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .nb-confirm {
@@ -284,8 +295,9 @@
 }
 
 .nb-confirm-cancel:hover {
-  background: var(--ink);
-  color: var(--paper);
+  border-color: var(--pencil);
+  background: none;
+  color: var(--pencil);
 }
 
 /* ---------- signed out ---------- */
@@ -308,8 +320,9 @@
 }
 
 .nb-sign-in:hover {
-  background: var(--ink);
-  color: var(--paper);
+  border-color: var(--pencil);
+  background: none;
+  color: var(--pencil);
 }
 
 .nb-legal-line {
@@ -441,7 +454,8 @@
 .nb-c-count {
   margin-left: auto;
   color: var(--ink-2);
-  font-size: 12px;
+  font: 400 12px/20px var(--serif);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -478,12 +492,12 @@
   width: 100%;
   height: 32px;
   padding-inline: 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--ink);
 }
 
 .nb-d-search:focus-within {
-  border-color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--ink);
+  border-color: var(--pencil);
+  box-shadow: inset 0 0 0 1px var(--pencil);
 }
 
 .nb-d-row .nb-account-slot,
@@ -492,12 +506,12 @@
 }
 
 .nb-d-row .nb-account-trigger {
-  border-color: var(--rule);
+  border-color: var(--ink);
 }
 
 .nb-d-row .nb-account-trigger:hover,
 .nb-d-row .nb-account-trigger[aria-expanded='true'] {
-  border-color: var(--ink);
+  border-color: var(--pencil);
 }
 
 /* Signed out: the legal line reads to the left of the sign-in button, so the
@@ -551,6 +565,110 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ---------- the judged page wears the player's direction ---------- */
+
+/*
+ * The real gallery still uses the shipped placeholder CSS (system-ui, teal,
+ * rounded rows), while the player already wears the app's direction. The
+ * prototype is judged at the player's frame, so the gallery beneath it takes
+ * the same decisions: serif for content, sans for chrome, ink rules, square
+ * rows, and the pencil as the only hover accent. Prototype-only.
+ */
+.proto-shell .gallery {
+  max-width: 760px;
+}
+
+.proto-shell .gallery h2 {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font: 600 28px/1.2 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.proto-shell .gallery-intro {
+  margin: 0 0 24px;
+  color: var(--ink-2);
+  font: 400 14px/22px var(--serif);
+}
+
+.proto-shell .gallery-group {
+  margin: 0 0 24px;
+}
+
+.proto-shell .gallery-recording {
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ink);
+  color: var(--ink);
+  font: 600 16px/24px var(--serif);
+}
+
+.proto-shell .gallery-list {
+  gap: 0;
+}
+
+.proto-shell .gallery-entry {
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--ink-2);
+  font: 400 15px/24px var(--serif);
+}
+
+.proto-shell .gallery-list > li:last-child .gallery-entry {
+  border-bottom: 0;
+}
+
+.proto-shell .gallery-entry:hover {
+  border-color: var(--rule);
+  background: none;
+  color: var(--pencil);
+}
+
+.proto-shell .gallery-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.proto-shell .gallery-entry:hover .gallery-name {
+  color: var(--pencil);
+}
+
+.proto-shell .gallery-count {
+  color: var(--ink-2);
+  font: 400 13px/24px var(--serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.proto-shell .gallery-empty,
+.proto-shell .gallery-error {
+  margin: 0;
+  color: var(--ink-2);
+  font: 400 14px/22px var(--serif);
+}
+
+.proto-shell .gallery-error {
+  color: var(--editorial);
+}
+
+.proto-shell .gallery-retry {
+  padding: 5px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: 500 13px/20px var(--sans);
+  cursor: pointer;
+}
+
+.proto-shell .gallery-retry:hover {
+  border-color: var(--pencil);
+  background: none;
+  color: var(--pencil);
 }
 
 @media (prefers-reduced-motion: reduce) {
