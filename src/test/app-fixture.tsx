@@ -80,14 +80,16 @@ export function renderApp({
   /** Programmatic navigation to a path — the memory router's address bar. */
   let navigateTo: (path: string) => void = () => {};
   /**
-   * The memory router's committed pathname — a mutable holder the returned
-   * getter reads at call time. A getter that captured the location in an effect
+   * The memory router's committed location — a mutable holder the returned
+   * getters read at call time. A getter that captured the location in an effect
    * closure would freeze the initial path (the object literal copies the
-   * closure reference), so the probe writes the path here and the returned
-   * `currentPath` reads it fresh. (The pathname alone: no route in the app
-   * carries a query or a fragment, so there is nothing else to record.)
+   * closure reference), so the probe writes it here and the getters read it
+   * fresh. The search is recorded for the gallery search (T87), whose results
+   * live in `?q=`.
    */
-  const pathRef: { current: string } = { current: initialEntry };
+  const locationRef: { current: { pathname: string; search: string } } = {
+    current: { pathname: initialEntry, search: '' },
+  };
   /** A probe inside the router that hands the helpers the navigate function and
    * the live location. Every drive is wrapped in an async act for the same
    * reason throughout: the page a navigation lands on commits after the act's
@@ -110,7 +112,7 @@ export function renderApp({
           await navigate(path);
         });
       };
-      pathRef.current = location.pathname;
+      locationRef.current = { pathname: location.pathname, search: location.search };
     }, [navigate, location]);
     return null;
   }
@@ -147,6 +149,7 @@ export function renderApp({
     auth: auth.backend,
     go,
     navigateTo,
-    currentPath: () => pathRef.current,
+    currentPath: () => locationRef.current.pathname,
+    currentSearch: () => locationRef.current.search,
   };
 }

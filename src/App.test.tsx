@@ -960,9 +960,9 @@ describe('The navbar wears the direction (T76)', () => {
     // above), so without this the box would sit flush against the name.
     expect(navbarCss).toMatch(/\.app-name-link\s*\{[^}]*gap:\s*9px/);
 
-    // Links are unhighlighted — no rule pours a tint behind a label. The
-    // navbar's own ground is the only fill in the file.
-    expect(backgroundsDeclaredIn(navbarCss)).toEqual(['var(--paper)']);
+    // Links are unhighlighted — no rule pours a tint behind a label. Paper is
+    // the only fill in the file: the navbar's ground and the search's box.
+    expect(backgroundsDeclaredIn(navbarCss)).toEqual(['var(--paper)', 'var(--paper)']);
   });
 
   it('boxes the account control and Sign in at 32px, with the pencil as the only interaction accent', () => {
@@ -1216,6 +1216,162 @@ describe('App public gallery (T50)', () => {
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     await user.click(wordmark());
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+  });
+});
+
+describe('The gallery search (T87)', () => {
+  /**
+   * Two recordings with two projects each: the recording titles and the
+   * project names overlap, so a title match and a row match are told apart.
+   */
+  function seedGallery(api: FakeProjectsApi) {
+    const tchaikovsky = 'Tschaikowsky: 5. Sinfonie — hr-Sinfonieorchester, Manfred Honeck';
+    const bruckner = 'Bruckner: 7. Sinfonie — hr-Sinfonieorchester, Daniel Harding';
+    api.seed(
+      serverProject({ id: 'p1', name: 'Honeck Tchaikovsky 5', recordingTitle: tchaikovsky, videoId: 'aaa', createdAt: 4_000 }),
+    );
+    api.seed(
+      serverProject({ id: 'p2', name: 'First read', recordingTitle: tchaikovsky, videoId: 'aaa', createdAt: 3_000 }),
+    );
+    api.seed(
+      serverProject({ id: 'p3', name: 'Bruckner 7, first read', recordingTitle: bruckner, videoId: 'bbb', createdAt: 2_000 }),
+    );
+    api.seed(
+      serverProject({ id: 'p4', name: 'Second read', recordingTitle: bruckner, videoId: 'bbb', createdAt: 1_000 }),
+    );
+  }
+
+  /** The navbar's search box. */
+  function gallerySearch(): HTMLElement {
+    return within(screen.getByRole('navigation')).getByRole('searchbox', {
+      name: 'Search the gallery',
+    });
+  }
+
+  it('centres a labelled 32px ink-ruled search in the frame, on its own row at 720px', () => {
+    renderApp();
+    expect(gallerySearch()).toHaveAttribute('type', 'search');
+
+    // jsdom computes no layout, so the arrangement is pinned in the stylesheet:
+    // the middle grid track is the frame's centre, and the narrow rule gives
+    // the field the whole row.
+    expect(navbarCss).toMatch(/\.app-nav-inner\s*\{[^}]*grid-template-areas:\s*'name search auth'/);
+    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*grid-area:\s*search/);
+    expect(navbarCss).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.app-nav-search\s*\{[^}]*width:\s*100%/,
+    );
+
+    // One box rule: 32px, the softer ink at rest going to the full ink on
+    // focus, the content face, the pencil on focus.
+    expect(navbarCss).toMatch(/\.app-nav-search-input\s*\{[^}]*height:\s*32px/);
+    expect(navbarCss).toMatch(/\.app-nav-search-input\s*\{[^}]*border:\s*1px solid var\(--ink-2\)/);
+    expect(navbarCss).toMatch(/\.app-nav-search-input:focus-visible[^{]*\{[^}]*border-color:\s*var\(--ink\)/);
+    expect(navbarCss).toMatch(/\.app-nav-search-input\s*\{[^}]*var\(--serif\)/);
+    expect(navbarCss).toMatch(/\.app-nav-search-input:focus-visible[^{]*\{[^}]*var\(--pencil\)/);
+  });
+
+  it('filters on the gallery, writes ?q= with replace, and Back leaves the gallery', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    seedGallery(api);
+    const { currentPath, currentSearch, go } = renderApp({ api, initialEntry: '/projects' });
+
+    // The wordmark is a push into the gallery, so Back has somewhere to go.
+    await user.click(wordmark());
+    expect(await screen.findByRole('heading', { name: /Manfred Honeck/ })).toBeInTheDocument();
+
+    // A recording-title match, case-insensitive, keeps the whole group.
+    await user.type(gallerySearch(), 'HONECK');
+    expect(await screen.findByText('2 projects found.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /First read/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Daniel Harding/ })).not.toBeInTheDocument();
+    expect(gallerySearch()).toHaveValue('HONECK');
+    expect(currentSearch()).toBe('?q=HONECK');
+
+    // A project-name match keeps only the matching rows.
+    await user.clear(gallerySearch());
+    await user.type(gallerySearch(), 'first read');
+    expect(await screen.findByText('2 projects found.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Honeck Tchaikovsky 5/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /First read/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Bruckner 7, first read/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Second read/ })).not.toBeInTheDocument();
+    expect(currentSearch()).toBe('?q=first+read');
+
+    // Typing replaced: Back goes to the page before the gallery, not through
+    // partial queries.
+    await go(-1);
+    expect(currentPath()).toBe('/projects');
+  });
+
+  it('restores the filtered gallery from ?q= on a refresh', async () => {
+    const api = fakeProjectsApi();
+    seedGallery(api);
+    renderApp({ api, initialEntry: '/?q=bruckner' });
+
+    expect(await screen.findByRole('heading', { name: /Daniel Harding/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Bruckner 7, first read/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Second read/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Manfred Honeck/ })).not.toBeInTheDocument();
+    expect(gallerySearch()).toHaveValue('bruckner');
+  });
+
+  it('carries an empty draft from elsewhere to the gallery on Enter', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    seedGallery(api);
+    const { currentPath, currentSearch } = renderApp({ api, initialEntry: '/projects' });
+
+    expect(gallerySearch()).toHaveValue('');
+    await user.type(gallerySearch(), 'first read');
+
+    // Off the gallery, typing is a draft: the URL stays put.
+    expect(currentPath()).toBe('/projects');
+    expect(currentSearch()).toBe('');
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(currentPath()).toBe('/'));
+    expect(currentSearch()).toBe('?q=first+read');
+    expect(await screen.findByText('2 projects found.')).toBeInTheDocument();
+    expect(gallerySearch()).toHaveValue('first read');
+  });
+
+  it('distinguishes an empty server from a query that matches nothing, and clears', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    seedGallery(api);
+    const { currentSearch } = renderApp({ api, initialEntry: '/?q=nothing like this' });
+
+    expect(await screen.findByText('No projects match “nothing like this”.')).toBeInTheDocument();
+    // Zero is still a result count, and the live region announces it.
+    expect(screen.getByRole('status')).toHaveTextContent('0 projects found.');
+
+    await user.click(screen.getByRole('button', { name: 'Clear search' }));
+
+    expect(await screen.findByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
+    expect(currentSearch()).toBe('');
+    expect(gallerySearch()).toHaveValue('');
+  });
+
+  it('says "No public projects yet." even when the URL carries a query', async () => {
+    renderApp({ initialEntry: '/?q=anything' });
+
+    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/No projects match/)).not.toBeInTheDocument();
+  });
+
+  it('keeps no draft from one non-gallery page to the next', async () => {
+    const user = userEvent.setup();
+    const { navigateTo, currentSearch } = renderApp({ initialEntry: '/privacy' });
+
+    await user.type(gallerySearch(), 'bruckner');
+    expect(gallerySearch()).toHaveValue('bruckner');
+    expect(currentSearch()).toBe('');
+
+    await navigateTo('/terms');
+    expect(gallerySearch()).toHaveValue('');
+    expect(currentSearch()).toBe('');
   });
 });
 

@@ -80,7 +80,7 @@
   color: #555;
 }
 
-.gallery-retry {
+.gallery-action {
   border: 1px solid #ddd;
   border-radius: 6px;
   background: none;
@@ -90,7 +90,7 @@
   cursor: pointer;
 }
 
-.gallery-retry:hover {
+.gallery-action:hover {
   background: #0f766e;
   color: #fff;
 }

@@ -1,4 +1,6 @@
-import { Link } from 'react-router';
+import { useEffect, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router';
 import type { AuthState } from '../auth';
 import { UserControl } from './UserControl';
 import './navbar.css';
@@ -20,6 +22,14 @@ export interface NavbarProps {
 }
 
 /**
+ * The gallery's address for a query: `/?q=` for text, `/` for none — the one
+ * spelling both the gallery's live URL and Enter-from-elsewhere use.
+ */
+function galleryPath(query: string): string {
+  return query === '' ? '/' : `/?${new URLSearchParams({ q: query }).toString()}`;
+}
+
+/**
  * The one global navbar (T44): the wordmark and the account control, and
  * nothing else (T86). The Gallery, Projects, and Help links are gone: the
  * wordmark is the way home, the account menu is the way to the workspace and
@@ -35,6 +45,11 @@ export interface NavbarProps {
  * throwaway and only a real element can be kept out of the accessible name:
  * the wordmark is announced as the app's name alone, and the box that draws
  * its initial adds nothing to read.
+ *
+ * The gallery search (T87) is the field centred between them. On the gallery
+ * its value is the URL's `?q=`, written with history replace so Back leaves
+ * the gallery rather than stepping through partial queries; everywhere else it
+ * is an empty draft, and Enter carries it to the gallery.
  */
 export function Navbar({
   railClass,
@@ -43,6 +58,34 @@ export function Navbar({
   onSignOut,
   onDeleteAccount,
 }: NavbarProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pathname = location.pathname;
+  const onGallery = pathname === '/';
+  const urlQuery = new URLSearchParams(location.search).get('q') ?? '';
+  const [draft, setDraft] = useState(urlQuery);
+
+  // The field follows the URL on the gallery and is empty on every other
+  // page — including one page to the next, where neither the path's gallery
+  // flag nor the search changes. Typing keeps the draft locally, so a
+  // keystroke never waits on a navigation.
+  useEffect(() => {
+    setDraft(onGallery ? urlQuery : '');
+  }, [onGallery, urlQuery, pathname]);
+
+  function handleChange(event: ChangeEvent<HTMLInputElement>): void {
+    const next = event.target.value;
+    setDraft(next);
+    if (!onGallery) return;
+    void navigate(galleryPath(next), { replace: true });
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (onGallery) return;
+    void navigate(galleryPath(draft.trim()));
+  }
+
   return (
     <nav className="app-nav" aria-label="Primary">
       <div className={`${railClass} app-nav-inner`}>
@@ -52,6 +95,16 @@ export function Navbar({
             Rehearsal Marks
           </Link>
         </h1>
+        <form className="app-nav-search" role="search" onSubmit={handleSubmit}>
+          <input
+            type="search"
+            className="app-nav-search-input"
+            aria-label="Search the gallery"
+            placeholder="Search the gallery"
+            value={draft}
+            onChange={handleChange}
+          />
+        </form>
         <div className="app-nav-auth">
           <UserControl
             state={authState}

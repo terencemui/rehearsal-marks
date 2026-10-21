@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupGalleryProjects } from './api';
+import { filterGalleryGroups, groupGalleryProjects } from './api';
 import type { PublicProjectSummary } from './api';
 
 /** A gallery entry builder — a recording's project, defaults so tests name only what varies. */
@@ -61,5 +61,57 @@ describe('groupGalleryProjects', () => {
         projects: [alone],
       },
     ]);
+  });
+});
+
+describe('filterGalleryGroups', () => {
+  const tchaikovsky = summary({ id: 'p1', name: 'Honeck Tchaikovsky 5', videoId: 'aaa' });
+  const tchaikovskyAgain = summary({
+    id: 'p2',
+    name: 'First read',
+    videoId: 'aaa',
+  });
+  const bruckner = summary({
+    id: 'p3',
+    name: 'Bruckner 7, first read',
+    recordingTitle: 'Bruckner: 7. Sinfonie — hr-Sinfonieorchester, Daniel Harding',
+    videoId: 'bbb',
+  });
+  const groups = groupGalleryProjects([tchaikovsky, bruckner, tchaikovskyAgain]);
+
+  it('keeps every group for an empty or whitespace query', () => {
+    expect(filterGalleryGroups(groups, '')).toEqual(groups);
+    expect(filterGalleryGroups(groups, '   ')).toEqual(groups);
+  });
+
+  it('keeps the whole group on a recording-title match, case-insensitively after trimming', () => {
+    const filtered = filterGalleryGroups(groups, '  BRUCKNER ');
+
+    expect(filtered.map((group) => group.videoId)).toEqual(['bbb']);
+    expect(filtered[0].projects).toEqual([bruckner]);
+  });
+
+  it('matches any member’s recording title, not only the newest’s', () => {
+    // A recording retitled on YouTube leaves older rows carrying the old
+    // title; the group's own title is the newest row's.
+    const retitled = summary({ id: 'p4', videoId: 'ccc', recordingTitle: 'New title', name: 'x' });
+    const older = summary({ id: 'p5', videoId: 'ccc', recordingTitle: 'Old title', name: 'y' });
+
+    const filtered = filterGalleryGroups(groupGalleryProjects([retitled, older]), 'old title');
+
+    expect(filtered.map((group) => group.videoId)).toEqual(['ccc']);
+    expect(filtered[0].projects).toHaveLength(2);
+  });
+
+  it('keeps only the matching rows on a project-name match', () => {
+    const filtered = filterGalleryGroups(groups, 'first read');
+
+    expect(filtered.map((group) => group.videoId)).toEqual(['aaa', 'bbb']);
+    expect(filtered[0].projects).toEqual([tchaikovskyAgain]);
+    expect(filtered[1].projects).toEqual([bruckner]);
+  });
+
+  it('drops a group no row and no title matches', () => {
+    expect(filterGalleryGroups(groups, 'nothing like this')).toEqual([]);
   });
 });
