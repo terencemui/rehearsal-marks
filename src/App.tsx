@@ -11,8 +11,8 @@ import type { ProjectSummary } from './projects/types';
 import { MARKINGS_ROUTE } from './routes';
 import { fetchYouTubeTitle } from './youtube';
 import { GalleryScreen } from './ui/GalleryScreen';
-import { HelpTab } from './ui/HelpTab';
 import { LandingScreen } from './ui/LandingScreen';
+import { PrivacyPolicy, TermsOfService } from './ui/Legal';
 import { MarkingsPage } from './ui/MarkingsPage';
 import { Navbar } from './ui/Navbar';
 import { NotWiredUpScreen } from './ui/NotWiredUpScreen';
@@ -76,14 +76,14 @@ export interface WiredAppProps {
  * line, the notices, the create surface's rejection and busy state —
  * everything that must survive the page surfaces' unmounts), and coordinates
  * the four separable modules — the workspace surface (create, list, rename,
- * delete, visibility), the public gallery, the help reference, and the routed
+ * delete, visibility), the public gallery, the legal pages, and the routed
  * project page. The app is served by a history-mode router (T44): `/` is the
  * front door — the public gallery (T50), or the "not wired up" screen without
  * a configured backend — `/projects` the owner's workspace (the anonymous
- * landing when signed out, T51), `/help` the discoverable reference,
+ * landing when signed out, T51), `/privacy` and `/terms` the legal documents,
  * `/projects/:id` the editable project page, `/gallery/:id` the read-only
  * view over a published public project, and any unknown path falls back to
- * `/`. A persistent navbar — the app name, the Gallery, Projects, and Help
+ * `/`. A persistent navbar — the app name, and the Gallery and Projects
  * links with active states, and the user sign-in — renders on every page,
  * inside the shared page rail. Opening a project is navigation now (T45): the
  * page is its own session, restored by a refresh of its URL, and browser
@@ -102,8 +102,8 @@ function WiredApp({
   const [status, setStatus] = useState<SaveStatus>('idle');
   /**
    * The routed page — the location is the shell's page: navigation swaps the
-   * workspace surface for Help or a project page, and bumps the navigation
-   * token that a slow create reads before it lands.
+   * workspace surface for a legal page or a project page, and bumps the
+   * navigation token that a slow create reads before it lands.
    */
   const location = useLocation();
   const [notice, setNotice] = useState<string | null>(null);
@@ -323,7 +323,11 @@ function WiredApp({
               )
             }
           />
-          <Route path="/help" element={<HelpTab />} />
+          {/* The legal documents as their own addresses (T85), so Privacy and
+              Terms can be linked and bookmarked rather than found inside a
+              reference page. */}
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
           <Route
             path="/projects/:id"
             element={

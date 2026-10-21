@@ -32,6 +32,8 @@ Supporting choices:
   > **The panel is not replaced, it is joined.** It keeps the complete named list, its movement grouping, its following of the playhead and its click-to-jump rows, because the strip is a shape and the panel is the list — a crowded recording's boxes may overlap above the narrow breakpoint, and below it the strip drops its boxes rather than smear them, which is precisely when the panel is all a student has. Nothing above moves the panel, and nothing moves the authoring surface: the **Markings page** keeps the plain filled bar this ADR's Decision describes, because it is handed no strip of its own.
   >
   > The Help tab's line that a project's markers sit on a full-width timeline below the video was re-read against the folded app and **stands**. It had asserted that the marks were on the strip while this ADR kept them off it — a claim the app could not honour until the reversal above — so confirming it was a question worth asking rather than a coincidence to leave unexamined; it now describes what the strip draws, and `HelpTab.test.tsx` pins the sentence so it cannot be quietly dropped or hedged while the strip still draws them. The two reversals this ADR has now recorded — the marks retired from the strip in 2026-08-28, and put back on it here — move neither word: *Timeline* is still the term for the strip, and *stave* is still only the drawing's name.
+  >
+  > _Amended 2026-10-21 — the Help tab was removed (T85, spec #195), taking this line and the test that pinned it. `docs/keyboard-reference.md` remains the repo's keyboard reference; the stave described above is unchanged._
 
 ## Consequences
 

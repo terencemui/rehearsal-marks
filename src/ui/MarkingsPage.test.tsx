@@ -493,9 +493,9 @@ describe('the markings page opens on a project and plays it (T55)', () => {
     });
     await waitForPlayerSettled();
 
-    await navigateTo('/help');
+    await navigateTo('/privacy');
 
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
     // The controller the page built is released, and the workspace behind the
     // navigation holds the row exactly as the server does.
     expect(controller.destroy).toHaveBeenCalled();
@@ -2882,9 +2882,9 @@ describe('saving follows what the project is (T56)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
     // Work only its owner can settle does not leave on a link press any more
     // (T60): the page asks, and discarding is the answer that lets it go.
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
-    await screen.findByRole('heading', { name: 'Help' });
+    await screen.findByRole('heading', { name: 'Privacy policy' });
     await pastDebounce();
 
     // Leaving is not committing: the teardown of a waiting record writes
@@ -2903,8 +2903,8 @@ describe('saving follows what the project is (T56)', () => {
 
     // Left inside the debounce window: the teardown is what settles it.
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
-    await navigateTo('/help');
-    await screen.findByRole('heading', { name: 'Help' });
+    await navigateTo('/privacy');
+    await screen.findByRole('heading', { name: 'Privacy policy' });
 
     await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
   });
@@ -2927,12 +2927,12 @@ describe('leaving with unsaved changes (T60)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
     expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
 
-    await navigateTo('/help');
+    await navigateTo('/privacy');
 
     // The router held where it was, and the page is asking.
     expect(currentPath()).toBe('/projects/p1/markings');
     expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved changes/i);
-    expect(screen.queryByRole('heading', { name: 'Help' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Privacy policy' })).toBeNull();
   });
 
   it('stays put with the work intact when the owner declines, and asks again next time', async () => {
@@ -2948,7 +2948,7 @@ describe('leaving with unsaved changes (T60)', () => {
     await waitForPlayerSettled();
 
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     await user.click(screen.getByRole('button', { name: 'Stay' }));
 
     // Nowhere moved, the question is answered and gone, and the edit is still
@@ -2962,7 +2962,7 @@ describe('leaving with unsaved changes (T60)', () => {
     // Declining refused *that* navigation, it did not spend the guard: the
     // next attempt is a fresh question rather than a page that can now be
     // walked out of.
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     expect(currentPath()).toBe('/projects/p1/markings');
   });
@@ -2978,7 +2978,7 @@ describe('leaving with unsaved changes (T60)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
     // The everyday exit: a link in the navbar, which navigates through the
     // router rather than through anything this page owns.
-    await user.click(screen.getByRole('link', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
 
     expect(currentPath()).toBe('/projects/p1/markings');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
@@ -2997,9 +2997,9 @@ describe('leaving with unsaved changes (T60)', () => {
     await waitForPlayerSettled();
 
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
-    await screen.findByRole('heading', { name: 'Help' });
+    await screen.findByRole('heading', { name: 'Privacy policy' });
 
     await navigateTo('/projects/p1/markings');
     await waitForPlayerSettled();
@@ -3023,11 +3023,11 @@ describe('leaving with unsaved changes (T60)', () => {
     // A published project, but one whose owner has touched nothing: there is
     // no commit outstanding, so leaving is not a decision to put to them — and
     // the same navbar link that would raise the question stays a plain link.
-    await user.click(screen.getByRole('link', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
 
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(currentPath()).toBe('/help');
+    expect(currentPath()).toBe('/');
   });
 
   it('does not stand in the way of a recording that saves itself — leaving writes it', async () => {
@@ -3043,13 +3043,13 @@ describe('leaving with unsaved changes (T60)', () => {
     await waitForPlayerSettled();
 
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
-    await navigateTo('/help');
+    await navigateTo('/privacy');
 
     // An autosaving record has nothing for its owner to answer for: the
     // teardown settles the work on the way out rather than asking about it.
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(currentPath()).toBe('/help');
+    expect(currentPath()).toBe('/privacy');
     await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
   });
 
@@ -3058,11 +3058,12 @@ describe('leaving with unsaved changes (T60)', () => {
     const api = fakeProjectsApi();
     api.seed(project({ markers: [marker('m1', 10)] }));
     const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
-    // Arrived at the page from Help, so Back is a real history move off it.
+    // Arrived at the page from the privacy policy, so Back is a real history
+    // move off it.
     const { currentPath, go, navigateTo } = renderApp({
       api,
       controller,
-      initialEntry: '/help',
+      initialEntry: '/privacy',
     });
     await navigateTo('/projects/p1/markings');
     await waitForPlayerSettled();
@@ -3075,8 +3076,8 @@ describe('leaving with unsaved changes (T60)', () => {
 
     // And the same prompt answers it: discarding is what lets Back through.
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
-    expect(currentPath()).toBe('/help');
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
+    expect(currentPath()).toBe('/privacy');
   });
 
   it('stands the page’s shortcuts down while the question is up', async () => {
@@ -3094,7 +3095,7 @@ describe('leaving with unsaved changes (T60)', () => {
     act(() => controller.seek(60));
 
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
     // The question is about the work, so nothing answers it on the owner's
@@ -3126,7 +3127,7 @@ describe('leaving with unsaved changes (T60)', () => {
     // The playhead on a mark, then an exit asked for.
     await user.click(markerRows(container)[0]);
     await user.click(screen.getByRole('button', { name: 'Delete marker B' }));
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
     // The `inert` gate is the one above every key, and the correction keys are
@@ -3151,7 +3152,7 @@ describe('leaving with unsaved changes (T60)', () => {
     await waitForPlayerSettled();
 
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
     // The two answers are the whole of the keyboard while the question stands:
@@ -3201,7 +3202,7 @@ describe('leaving with unsaved changes (T60)', () => {
       expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled(),
     );
 
-    await navigateTo('/help');
+    await navigateTo('/privacy');
 
     // Requesting the commit is not making it: left now, a write that rejects
     // would come back to a disposed autosave with nothing left to retry it,
@@ -3215,7 +3216,7 @@ describe('leaving with unsaved changes (T60)', () => {
       land?.();
     });
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
   });
 
   it('asks the browser before the tab is closed or reloaded, while work is uncommitted', async () => {
@@ -3316,7 +3317,7 @@ describe('leaving with unsaved changes (T60)', () => {
 
     // The everyday exit: a link in the navbar, which navigates through the
     // router rather than through anything this page owns.
-    await user.click(screen.getByRole('link', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
 
     // A failed save is work to lose in either mode, so the page asks — the
     // teardown's retry is a safety net, not a promise the work will land.
@@ -3351,10 +3352,10 @@ describe('leaving with unsaved changes (T60)', () => {
     await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
 
     // The server holds the work again, so there is nothing left to ask about.
-    await navigateTo('/help');
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    await navigateTo('/privacy');
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(currentPath()).toBe('/help');
+    expect(currentPath()).toBe('/privacy');
   });
 
   it('discards a failed save when the owner says so — the teardown does not write it (T83)', async () => {
@@ -3373,14 +3374,14 @@ describe('leaving with unsaved changes (T60)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/save failed/i);
 
-    await navigateTo('/help');
+    await navigateTo('/privacy');
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
-    await screen.findByRole('heading', { name: 'Help' });
+    await screen.findByRole('heading', { name: 'Privacy policy' });
     await pastDebounce();
 
     // Discard means discard: the work the owner chose to leave behind is not
     // saved on the way out, by a teardown retry or anything else.
-    expect(currentPath()).toBe('/help');
+    expect(currentPath()).toBe('/privacy');
     expect(api.get('p1')?.markers).toEqual([marker('m1', 10)]);
   });
 
@@ -3406,10 +3407,10 @@ describe('leaving with unsaved changes (T60)', () => {
     await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
 
     // The server holds the record again, so the exit is a plain link again.
-    await user.click(screen.getByRole('link', { name: 'Help' }));
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(currentPath()).toBe('/help');
+    expect(currentPath()).toBe('/');
   });
 
   it('leaves without a word while a save is merely pending, not failed (T83)', async () => {
@@ -3425,11 +3426,11 @@ describe('leaving with unsaved changes (T60)', () => {
     // owner — only a save that has already failed is.
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
     expect(api.saveProject).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('link', { name: 'Help' }));
+    await user.click(screen.getByRole('link', { name: 'Gallery' }));
 
-    expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(currentPath()).toBe('/help');
+    expect(currentPath()).toBe('/');
     await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
   });
 

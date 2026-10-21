@@ -1,19 +1,20 @@
 /**
- * The privacy policy and terms (T26) — in-app documents reachable from the
- * Help tab. Static content, deliberately short, and written in the app's own
+ * The privacy policy and terms (T26) — documents at their own routes since
+ * T85. Static content, deliberately short, and written in the app's own
  * honest voice: the privacy promise is restated per ADR-0006 — projects live
  * on the server in your account, while public projects are public by
  * definition. Keep the facts in sync with the behavior they describe: the
  * project rules in `src/projects/`, the YouTube streaming in
  * `src/audio/youtube.ts`, and the account deletion in `src/auth/`.
  */
+import './legal.css';
 
 /** The privacy policy: what the app holds, what it never holds, and what is public. */
 export function PrivacyPolicy() {
   return (
-    <>
+    <section className="legal">
       <h2>Privacy policy</h2>
-      <p className="legal-updated">Last updated: August 31, 2026</p>
+      <p className="legal-updated">Last updated: October 21, 2026</p>
 
       <h3>Your projects live on the server, in your account</h3>
       <p>
@@ -49,9 +50,10 @@ export function PrivacyPolicy() {
 
       <h3>Deleting your account</h3>
       <p>
-        You can delete your account from the app at any time — the <strong>Delete account</strong>{' '}
-        control in the header. Deleting removes your account and <strong>every project you've
-        created</strong> — public or private — and it can't be undone.
+        You can delete your account from the app at any time, with the{' '}
+        <strong>Delete account</strong> control. Deleting removes your account and{' '}
+        <strong>every project you've created</strong> — public or private — and it can't be
+        undone.
       </p>
 
       <h3>Where the data lives</h3>
@@ -66,14 +68,14 @@ export function PrivacyPolicy() {
         Questions about this policy? Open an issue on the{' '}
         <a href="https://github.com/terencemui/rehearsal-marks">project's GitHub repository</a>.
       </p>
-    </>
+    </section>
   );
 }
 
 /** The terms: what the app is, what publishing means, and the honest limits. */
 export function TermsOfService() {
   return (
-    <>
+    <section className="legal">
       <h2>Terms</h2>
       <p className="legal-updated">Last updated: August 31, 2026</p>
 
@@ -122,6 +124,6 @@ export function TermsOfService() {
         Questions about these terms? Open an issue on the{' '}
         <a href="https://github.com/terencemui/rehearsal-marks">project's GitHub repository</a>.
       </p>
-    </>
+    </section>
   );
 }

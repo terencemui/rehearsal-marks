@@ -1,0 +1,12 @@
+/* The legal documents as their own pages (T85): a reading measure inside the
+   page frame, and the revision line's quiet voice. */
+
+.legal {
+  max-width: 70ch;
+}
+
+.legal .legal-updated {
+  font-style: italic;
+  color: var(--ink-2);
+  font-size: 13px;
+}
