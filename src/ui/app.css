@@ -42,13 +42,29 @@
   --sans: 'Public Sans', system-ui, -apple-system, sans-serif;
 }
 
-/* The shared page rail: a maximum content width, centred, with fluid side
-   padding. Applied consistently to the navbar's contents and to the page
-   below — the same frame the player (T37) uses, extended to the workspace
-   pages (T44) — so content is never jammed against the window edge and no
-   page scrolls sideways when the window narrows. */
+/* The page's frame: a maximum width, centred, with fluid side padding,
+   applied to the navbar's contents and to the page beneath it, so the two are
+   always the same width.
+
+   The cap is the player's (T37), on every route (T84). 1600px is a reading
+   measure for prose, and a recording is not prose: the rail is as wide as its
+   16:9 video may be without outgrowing the window — the height the viewport
+   has left once the page's chrome is paid for, turned into a width — plus the
+   side column and the gap the split needs beside it. Text surfaces no longer
+   take a narrower frame; the measures they declare stay inside this one
+   (gallery.css, landing.css, the error cards), and a surface that declares
+   none is bounded by the frame. Above the cap the
+   split fills the rail and nothing scrolls; below it the window's own width
+   binds first, so the video is then necessarily shorter than the height
+   budget too, and the bound holds either way.
+
+   The rail's side padding is deliberately not added back: it sits inside this
+   border box, so it only ever makes the video a little narrower than the
+   budget allows — slack in the one direction that cannot cause a scroll. */
 .page-rail {
-  max-width: 1600px;
+  max-width: calc(
+    (100vh - var(--player-chrome)) * 16 / 9 + var(--player-side-column) + var(--player-gap)
+  );
   margin: 0 auto;
   padding-inline: clamp(16px, 3vw, 48px);
   box-sizing: border-box;
@@ -89,29 +105,11 @@
   --player-chrome: 355px;
 }
 
-/* The player page escapes the text rail's cap. 1600px is a reading measure for
-   prose, and a recording is not prose. The player's rail is instead as wide as
-   its 16:9 video may be without outgrowing the window — the height the viewport
-   has left once the page's chrome is paid for, turned into a width — plus the
-   side column and the gap the split needs beside it. Above the cap the split
-   fills the rail and nothing scrolls; below it the window's own width binds
-   first, so the video is then necessarily shorter than the height budget too,
-   and the bound holds either way.
-
-   The rail's side padding is deliberately not added back: it sits inside this
-   border box, so it only ever makes the video a little narrower than the
-   budget allows — slack in the one direction that cannot cause a scroll. */
-.page-rail-wide {
-  max-width: calc(
-    (100vh - var(--player-chrome)) * 16 / 9 + var(--player-side-column) + var(--player-gap)
-  );
-}
-
 /* The same breakpoint the split itself stacks at (player.css) — the two values
    must move together. Below it the video is full width, there is no side column
    left to reserve, and the height budget has no reader. */
 @media (max-width: 920px) {
-  .page-rail-wide {
+  .page-rail {
     max-width: none;
   }
 }

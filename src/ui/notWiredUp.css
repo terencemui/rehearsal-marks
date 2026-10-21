@@ -6,7 +6,10 @@
   align-items: center;
 }
 
-.not-wired-inner {
+/* `.page-rail` also sets max-width (app.css) and is emitted after this file,
+   so the element needs both classes named here or the rail's frame wins and
+   this prose stretches to it (T84). */
+.not-wired-inner.page-rail {
   padding-block: 48px;
   max-width: 40em;
   margin-inline: auto;

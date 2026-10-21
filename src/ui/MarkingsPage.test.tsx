@@ -473,15 +473,6 @@ describe('the markings page opens on a project and plays it (T55)', () => {
     expect(screen.getByRole('link', { name: 'Back to Projects' })).toBeInTheDocument();
   });
 
-  it('lays out in the player rail, not the narrow text rail', async () => {
-    const api = fakeProjectsApi();
-    api.seed(project());
-    const { container } = renderApp({ api, initialEntry: '/projects/p1/markings' });
-    await waitForPlayerSettled();
-
-    expect(container.querySelector('.page-rail-wide.app-page')).toBeInTheDocument();
-  });
-
   it('tears its session down on leaving — nothing it held survives the navigation', async () => {
     const api = fakeProjectsApi();
     api.seed(project());
