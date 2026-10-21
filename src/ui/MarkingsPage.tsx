@@ -336,19 +336,20 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const canCommit = status === 'dirty' || status === 'error';
   /**
    * Whether an in-app exit would cost work only the owner can settle (T60) —
-   * a `manual` record with something the server has not confirmed. An `auto`
-   * record never blocks here, because a write is already scheduled for it and
-   * an in-app exit runs the session's teardown, which flushes: the page is not
-   * what settles that work, so leaving is not a decision to put to its owner.
-   * Only a `manual` record has nothing that will write it, which is why this is
-   * narrower than `uncommitted` and is named for what leaving would cost rather
-   * than for what the record holds.
+   * `uncommitted` work in a `manual` record, where nothing on the way out will
+   * write it, or any failed save, in either mode (T83). An `auto` record with
+   * a write still pending or in flight does not block: a write is already
+   * scheduled for it and an in-app exit runs the session's teardown, which
+   * flushes, so leaving is not a decision to put to its owner. A save that has
+   * failed is different — the teardown's retry can fail again, and a failure
+   * the owner has already been shown is work they can still lose. This is
+   * named for what leaving would cost rather than for what the record holds.
    *
    * It is the router's question and not the tab's (#136): the teardown that
-   * answers it for an `auto` record runs on an in-app exit and never on a tab
-   * close, which is why the tab's own exit takes `uncommitted` instead.
+   * answers it runs on an in-app exit and never on a tab close, which is why
+   * the tab's own exit takes `uncommitted` instead.
    */
-  const hasWorkToLose = needsCommit && uncommitted;
+  const hasWorkToLose = uncommitted && (needsCommit || status === 'error');
   const blocker = useNavigationBlocker(hasWorkToLose);
   useTabCloseGuard(uncommitted);
 
@@ -704,7 +705,16 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
           asked for. Rendered inside the page's own tree so the recording it is
           asking about stays behind it, visible and unmoved. */}
       {blocker.state === 'blocked' && (
-        <UnsavedChangesDialog onStay={blocker.reset} onDiscard={blocker.proceed} />
+        <UnsavedChangesDialog
+          onStay={blocker.reset}
+          onDiscard={() => {
+            // The owner chose to leave the work behind (T83): drop it before
+            // the teardown, whose flush would otherwise retry the failed save
+            // and write what was just discarded.
+            autosave.abandonPendingWrite();
+            blocker.proceed();
+          }}
+        />
       )}
       <div className="markings-save-bar">
         <SaveStatusLine autosave={autosave} />

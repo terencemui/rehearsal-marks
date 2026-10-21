@@ -287,6 +287,20 @@ describe('createAutosave', () => {
     await expect(autosave.flush()).rejects.toBeInstanceOf(Error);
     expect(autosave.status()).toBe('error');
   });
+
+  it('abandons a pending write, so a later flush writes nothing', async () => {
+    // The owner chose to leave the work behind (T83); the teardown's flush
+    // must not retry it.
+    const save = vi.fn<(record: ServerProject) => Promise<ServerProject>>(async (record) => record);
+    const autosave = createAutosave(serverProject(), { save });
+
+    autosave.mutate((c) => ({ ...c, name: 'Renamed' }));
+    autosave.abandonPendingWrite();
+    await autosave.flush();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(save).not.toHaveBeenCalled();
+  });
 });
 
 describe('createAutosave in manual mode', () => {

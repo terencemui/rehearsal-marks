@@ -10,7 +10,8 @@ import type { Blocker } from 'react-router';
  * the other's answer asks the wrong thing of one of them:
  *
  * - **In-app navigation** asks *"will anything write this on the way out?"* —
- *   a property of the save mode, and true only where nothing will.
+ *   a property of the save mode and the last write's fate, and true where
+ *   nothing will, or where the write that would has already failed.
  * - **The tab's own exit** asks *"does the server hold this yet?"* — a property
  *   of the record, and true whatever mode wrote it.
  *
