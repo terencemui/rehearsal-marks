@@ -91,11 +91,12 @@
   line-height: 1;
 }
 
-/* The gallery search (T87): a 32px ink-ruled box in the content face, the
-   pencil its only accent — the same control anatomy as the account box. Its
-   height is the row's tallest thing, so the navbar keeps its 57px. The width
-   follows the window up to 320px, so the centred track never pushes the ends
-   off a narrow frame before the field drops to its own row. */
+/* The gallery search (T87): a 32px box ruled in the softer ink at rest and
+   the full ink once focused, in the content face, the pencil its only
+   accent — the same control anatomy as the account box. Its height is the
+   row's tallest thing, so the navbar keeps its 57px. The width follows the
+   window up to 320px, so the centred track never pushes the ends off a narrow
+   frame before the field drops to its own row. */
 .app-nav-search {
   grid-area: search;
   width: clamp(160px, 30vw, 320px);
@@ -106,7 +107,7 @@
   width: 100%;
   height: 32px;
   padding: 0 8px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--ink-2);
   border-radius: 0;
   background: var(--paper);
   font: 400 14px/1.2 var(--serif);
@@ -114,6 +115,7 @@
 }
 
 .app-nav-search-input:focus-visible {
+  border-color: var(--ink);
   outline: 1px solid var(--pencil);
   outline-offset: 1px;
 }

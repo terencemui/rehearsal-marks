@@ -1261,9 +1261,11 @@ describe('The gallery search (T87)', () => {
       /@media \(max-width: 720px\)\s*\{[\s\S]*?\.app-nav-search\s*\{[^}]*width:\s*100%/,
     );
 
-    // One box rule: 32px, the ink rule, the content face, the pencil on focus.
+    // One box rule: 32px, the softer ink at rest going to the full ink on
+    // focus, the content face, the pencil on focus.
     expect(navbarCss).toMatch(/\.app-nav-search-input\s*\{[^}]*height:\s*32px/);
-    expect(navbarCss).toMatch(/\.app-nav-search-input\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
+    expect(navbarCss).toMatch(/\.app-nav-search-input\s*\{[^}]*border:\s*1px solid var\(--ink-2\)/);
+    expect(navbarCss).toMatch(/\.app-nav-search-input:focus-visible[^{]*\{[^}]*border-color:\s*var\(--ink\)/);
     expect(navbarCss).toMatch(/\.app-nav-search-input\s*\{[^}]*var\(--serif\)/);
     expect(navbarCss).toMatch(/\.app-nav-search-input:focus-visible[^{]*\{[^}]*var\(--pencil\)/);
   });
