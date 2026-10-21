@@ -1034,83 +1034,81 @@ describe('App route-as-session project page (T45)', () => {
     expect(api.get('p1')).toEqual(expect.objectContaining({ markers: project.markers }));
   });
 
-  it('the navbar heads the page with that page’s own rail — wide or narrow', async () => {
-    // The defect this closes (T74): the page took the wide rail on a player
-    // route and the navbar did not, so on a wide window the frame was narrower
-    // than the content it headed, and on a short one it was wider. The two are
-    // one shared rail, so the agreement is asserted as one thing — whatever
-    // rail the page takes, the navbar takes — across every kind of route the
-    // shell serves, the player routes' own not-found arm included: a rail
-    // follows the route pattern, not the surface's luck. This test is also
-    // where the page's own rail is pinned, and it is the only one that pins
-    // the navbar's.
+  it('gives the navbar and the page one wide frame on every route', async () => {
+    // T84: the rail no longer follows the route. A recording is not prose, so
+    // the player's viewport-derived frame is the app's frame; the measures a
+    // text surface declares (gallery.css, landing.css) stay inside it. The
+    // navbar and the page take the same class on every route the shell
+    // serves, the player routes' own not-found arm included, so the two
+    // cannot disagree by construction. (Player.test.tsx pins that the class
+    // itself carries the wide, height-derived cap.)
     const api = fakeProjectsApi();
     api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
     const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
     const { container, navigateTo } = renderApp({ api, controller, initialEntry: '/projects/p1' });
     await waitForPlayerSettled();
 
-    // The rail classes as the DOM actually carries them, rather than a restated
-    // expectation: a rule that named the classes again could pass while the two
-    // elements disagreed on them. Sorted, because the class attribute's order
-    // is not a thing the page and the navbar are agreeing about — only which
-    // rail they take is.
+    // The rail classes as the DOM actually carries them, not a second
+    // selector that could drift from the markup: both elements must carry the
+    // one frame class, and nothing else that starts with `page-rail`.
     const railOf = (selector: string): string[] =>
       [...container.querySelector(selector)!.classList]
         .filter((name) => name.startsWith('page-rail'))
         .sort();
 
-    // The owner's player: the wide rail runs the navbar's full width too.
-    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
-    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+    const expectOneFrame = (): void => {
+      expect(railOf('.app-nav-inner')).toEqual(['page-rail']);
+      expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+    };
 
-    // The text pages keep the reading measure the rail was built for, above
-    // and below the frame alike.
+    // The owner's player.
+    expectOneFrame();
+
+    // A text page: it keeps its prose measure, but inside the same frame.
     await navigateTo('/help');
     expect(await screen.findByRole('heading', { name: 'Help' })).toBeInTheDocument();
-    expect(railOf('.app-nav-inner')).toEqual(['page-rail']);
-    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+    expectOneFrame();
 
-    // The read-only public view is a player too, and widens with it.
+    // The gallery, the workspace's anonymous landing, the read-only public
+    // view, the markings page …
+    await navigateTo('/');
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
+    expectOneFrame();
+
+    await navigateTo('/projects');
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Mark your rehearsal, save it, come back to it.',
+      }),
+    ).toBeInTheDocument();
+    expectOneFrame();
+
     await navigateTo('/gallery/p1');
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     await waitForPlayerSettled();
-    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
-    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+    expectOneFrame();
 
-    // The markings page is the third player route — it widens the same way.
     await navigateTo('/projects/p1/markings');
     await waitForPlayerSettled();
-    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
-    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+    expectOneFrame();
 
-    // And a player route that names no row: the URL is still a player route,
-    // so the dead-URL surface is as wide as the page it heads.
+    // … and a player route that names no row: the dead-URL surface takes the
+    // same frame as the page it heads.
     await navigateTo('/projects/no-such-project');
     expect(
       await screen.findByRole('heading', { name: 'This project could not be found' }),
     ).toBeInTheDocument();
-    expect(railOf('.app-nav-inner')).toEqual(['page-rail', 'page-rail-wide']);
-    expect(railOf('.app-nav-inner')).toEqual(railOf('.app-page'));
+    expectOneFrame();
   });
 
   it('lets nothing in the navbar’s own stylesheet cap the rail it is handed', () => {
     // jsdom computes no layout, so this is a stylesheet-source fact, pinned the
     // way the rail's own definitions are (Player.test.tsx). The navbar's inner
     // element takes its width from the class the shell hands it; a max-width
-    // declared here — or any rule more specific than .page-rail-wide, which a
-    // `.app-nav .app-nav-inner` selector would be — silently beats the wide
-    // rail while the test above still sees the right class names on both.
+    // declared here — or any rule more specific than .page-rail, which a
+    // `.app-nav .app-nav-inner` selector would be — silently beats the rail
+    // while the test above still sees the right class names on both.
     expect(navbarCss).not.toMatch(/\.app-nav-inner[^{]*\{[^}]*\b(?:max-)?width\s*:/);
-  });
-
-  it('widens the read-only public view too — it is the same player', async () => {
-    const api = fakeProjectsApi();
-    api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2' }));
-    const { container } = renderApp({ api, initialEntry: '/gallery/p1' });
-
-    expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
-    expect(container.querySelector('.page-rail-wide.app-page')).toBeInTheDocument();
   });
 
   it('opening a project from the list navigates to its page', async () => {

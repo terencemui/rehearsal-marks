@@ -5,10 +5,10 @@ import './navbar.css';
 
 export interface NavbarProps {
   /**
-   * The rail the page under this navbar takes (T74) — the shell's own class
+   * The frame the page under this navbar takes (T84) — the shell's own class
    * string, handed in rather than decided here, so the navbar and the page it
-   * heads are always the same width. Decided separately, they disagreed on
-   * every player route: the page widened and the navbar did not.
+   * heads are the same width on every route. The rail itself is defined in
+   * the shell stylesheet (app.css); nothing in navbar.css may cap it.
    */
   railClass: string;
   /** The user session — the same state the workspace's create gate reads. */

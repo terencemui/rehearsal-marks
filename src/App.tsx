@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { matchPath, Navigate, Route, Routes, useLocation } from 'react-router';
+import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { createAudioController } from './audio';
 import type { AudioController } from './audio';
 import { createDefaultAuthController, readAuthEnv } from './auth';
@@ -241,35 +241,14 @@ function WiredApp({
   }
 
   /**
-   * Whether the routed page is a player — the owner's `/projects/:id`, the
-   * markings page at `/projects/:id/markings`, or the read-only
-   * `/gallery/:id`. A player page escapes the text rail's 1600px reading
-   * measure; its recording takes the window instead, bounded by the viewport's
-   * height (app.css).
-   *
-   * Derived from the route patterns this shell declares rather than from a
-   * pathname prefix, so a future `/projects/import` — text, however it starts —
-   * does not silently widen. `matchPath` with a string pattern matches the
-   * whole path, so `/projects` itself and any path below a page's own do not:
-   * every page that hosts a recording is named here, and a nested one that is
-   * not would fall to the narrow text rail while hosting a full player.
-   * A player route that ends up rendering not-found or an error keeps the wide
-   * rail; those surfaces are centred and carry their own caps.
+   * The one frame the navbar and the routed page both take (T84): the
+   * player's wide, viewport-derived rail, on every route. It used to follow
+   * the route — wide on the player pages, a 1600px reading rail on the text
+   * pages — which moved the frame under the navbar whenever the user
+   * navigated. Text surfaces keep the measures they declare inside this frame
+   * (app.css); only the frame is shared.
    */
-  const isPlayerPage =
-    matchPath('/projects/:id', location.pathname) !== null ||
-    matchPath(MARKINGS_ROUTE, location.pathname) !== null ||
-    matchPath('/gallery/:id', location.pathname) !== null;
-
-  /**
-   * The rail the navbar and the routed page both take (T74). A player page
-   * escapes the text rail's reading measure, and the navbar heads that page —
-   * so it takes the same rail. The two used to be decided separately, and
-   * disagreed on every player route: the page widened and the navbar did not,
-   * leaving the frame narrower than the content it headed on a wide window and
-   * wider on a short one. One value, read twice, cannot disagree.
-   */
-  const railClass = `page-rail${isPlayerPage ? ' page-rail-wide' : ''}`;
+  const railClass = 'page-rail';
 
   return (
     <main>

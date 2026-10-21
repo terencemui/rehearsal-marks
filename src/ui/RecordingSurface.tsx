@@ -93,9 +93,9 @@ export interface RecordingSurfaceProps {
  *
  * The one piece of page chrome the surface carries is the title band naming
  * the project; the navbar and the page rail are the shell's (T45). The rail is
- * the player's — a recording is not prose, so the shell widens the page and
- * the 16:9 video takes the width the window leaves it, rather than the text
- * rail's reading measure.
+ * the player's on every route (T84) — a recording is not prose, so the 16:9
+ * video takes the width the window leaves it, while a text surface keeps its
+ * own reading measure inside the same frame.
  *
  * The recording's clock is a single strip below the split (T38), spanning the
  * full content width — a click-to-seek surface with the elapsed time under its
