@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router';
+import { Link } from 'react-router';
 import type { AuthState } from '../auth';
 import { UserControl } from './UserControl';
 import './navbar.css';
@@ -20,12 +20,12 @@ export interface NavbarProps {
 }
 
 /**
- * The one global navbar (T44): the app name, the Gallery and Projects links
- * with active states, and the user sign-in — the shell chrome that
- * replaced the workspace's header-plus-tabs pair. Renders on every routed
- * page, including the project page (T45): the player's own Projects control
- * is retired, and the navbar links are the only navigation. The gallery is
- * the front door at `/` (T50); the owner's workspace lives at `/projects`.
+ * The one global navbar (T44): the wordmark and the account control, and
+ * nothing else (T86). The Gallery, Projects, and Help links are gone: the
+ * wordmark is the way home, the account menu is the way to the workspace and
+ * the account actions, and the legal documents are linked from the account
+ * control in both auth states. Renders on every routed page, including the
+ * project page (T45).
  *
  * The wordmark wears the direction (T76): the name is set in the document's
  * face with the rehearsal mark in its box in front of it, and it is the
@@ -47,17 +47,11 @@ export function Navbar({
     <nav className="app-nav" aria-label="Primary">
       <div className={`${railClass} app-nav-inner`}>
         <h1 className="app-name">
-          <NavLink to="/" end className="app-name-link">
+          <Link to="/" className="app-name-link">
             <span className="app-mark" aria-hidden="true">R</span>
             Rehearsal Marks
-          </NavLink>
+          </Link>
         </h1>
-        <NavLink to="/" end className="app-nav-link">
-          Gallery
-        </NavLink>
-        <NavLink to="/projects" end className="app-nav-link">
-          Projects
-        </NavLink>
         <div className="app-nav-auth">
           <UserControl
             state={authState}

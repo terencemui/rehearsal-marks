@@ -83,13 +83,12 @@ export interface WiredAppProps {
  * landing when signed out, T51), `/privacy` and `/terms` the legal documents,
  * `/projects/:id` the editable project page, `/gallery/:id` the read-only
  * view over a published public project, and any unknown path falls back to
- * `/`. A persistent navbar — the app name, and the Gallery and Projects
- * links with active states, and the user sign-in — renders on every page,
- * inside the shared page rail. Opening a project is navigation now (T45): the
- * page is its own session, restored by a refresh of its URL, and browser
- * Back — or a navbar link — is the exit, flushing the session's pending
- * autosave before the list is re-read, so the workspace never shows stale
- * data.
+ * `/`. A persistent navbar — the wordmark and the account control (T86) —
+ * renders on every page, inside the shared page rail. Opening a project is
+ * navigation now (T45): the page is its own session, restored by a refresh of
+ * its URL, and browser Back — or the wordmark — is the exit, flushing the
+ * session's pending autosave before the list is re-read, so the workspace
+ * never shows stale data.
  */
 function WiredApp({
   controllerFactory = createAudioController,

@@ -2969,7 +2969,7 @@ describe('leaving with unsaved changes (T60)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
     // The everyday exit: a link in the navbar, which navigates through the
     // router rather than through anything this page owns.
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(screen.getByRole('link', { name: 'Rehearsal Marks' }));
 
     expect(currentPath()).toBe('/projects/p1/markings');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
@@ -3014,7 +3014,7 @@ describe('leaving with unsaved changes (T60)', () => {
     // A published project, but one whose owner has touched nothing: there is
     // no commit outstanding, so leaving is not a decision to put to them — and
     // the same navbar link that would raise the question stays a plain link.
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(screen.getByRole('link', { name: 'Rehearsal Marks' }));
 
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
@@ -3308,7 +3308,7 @@ describe('leaving with unsaved changes (T60)', () => {
 
     // The everyday exit: a link in the navbar, which navigates through the
     // router rather than through anything this page owns.
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(screen.getByRole('link', { name: 'Rehearsal Marks' }));
 
     // A failed save is work to lose in either mode, so the page asks — the
     // teardown's retry is a safety net, not a promise the work will land.
@@ -3398,7 +3398,7 @@ describe('leaving with unsaved changes (T60)', () => {
     await waitFor(() => expect(api.get('p1')?.markers).toEqual([]));
 
     // The server holds the record again, so the exit is a plain link again.
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(screen.getByRole('link', { name: 'Rehearsal Marks' }));
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(currentPath()).toBe('/');
@@ -3417,7 +3417,7 @@ describe('leaving with unsaved changes (T60)', () => {
     // owner — only a save that has already failed is.
     await user.click(screen.getByRole('button', { name: 'Delete marker A' }));
     expect(api.saveProject).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(screen.getByRole('link', { name: 'Rehearsal Marks' }));
 
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();

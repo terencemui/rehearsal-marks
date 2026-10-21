@@ -51,8 +51,8 @@ export function PrivacyPolicy() {
       <h3>Deleting your account</h3>
       <p>
         You can delete your account from the app at any time, with the{' '}
-        <strong>Delete account</strong> control. Deleting removes your account and{' '}
-        <strong>every project you've created</strong> — public or private — and it can't be
+        <strong>Delete account</strong> item in the account menu. Deleting removes your account
+        and <strong>every project you've created</strong> — public or private — and it can't be
         undone.
       </p>
 

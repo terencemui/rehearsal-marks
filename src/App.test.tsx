@@ -76,11 +76,25 @@ function coloursDeclaredIn(css: string): string[] {
     .map((match) => match[2].trim());
 }
 
-/** The navbar's sign-in control — the landing's own button is a second, distinct one. */
+/** The navbar's Sign in button — the landing's own button is a second, distinct one. */
 function navSignIn(): HTMLElement {
-  return within(screen.getByRole('navigation')).getByRole('button', {
-    name: 'Sign in with Google',
-  });
+  return within(screen.getByRole('navigation')).getByRole('button', { name: 'Sign in' });
+}
+
+/** The signed-in account trigger: the user's name and the chevron (T86). */
+function accountTrigger(name = 'Ava Cellist'): HTMLElement {
+  return within(screen.getByRole('navigation')).getByRole('button', { name });
+}
+
+/** The wordmark — the navbar's only way home (T86). */
+function wordmark(): HTMLElement {
+  return within(screen.getByRole('navigation')).getByRole('link', { name: 'Rehearsal Marks' });
+}
+
+/** Opens the account menu and returns it. */
+async function openAccountMenu(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  await user.click(accountTrigger());
+  return screen.getByRole('group', { name: 'Account' });
 }
 
 /**
@@ -93,7 +107,7 @@ async function signIn(
 ): Promise<void> {
   await user.click(navSignIn());
   act(() => backend.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
-  await screen.findByText('Signed in as Ava Cellist');
+  await screen.findByRole('button', { name: 'Ava Cellist' });
 }
 
 /** Types a link into the create surface's link input and submits it. */
@@ -316,7 +330,7 @@ describe('App Projects workspace', () => {
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
     expect(screen.getByText(/paste a YouTube link above to start marking/i)).toBeInTheDocument();
     // The Library tab and its browse surface are gone — the link is the only way in.
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(wordmark()).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Library' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /browse the library/i })).not.toBeInTheDocument();
   });
@@ -354,9 +368,10 @@ describe('App Projects workspace', () => {
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     await waitForPlayerSettled();
 
-    // The navbar's Projects link is the way home now — the player carries no
-    // nav of its own (T45).
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    // The account menu's My projects is the way home now — the player carries
+    // no nav of its own (T45, T86).
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('link', { name: 'My projects' }));
 
     await waitForWorkspaceRow(VIDEO_TITLE);
     expect(await api.listMyProjects()).toHaveLength(1);
@@ -465,27 +480,19 @@ describe('App Projects workspace', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Save failed.');
   });
 
-  it('navigates between the workspace pages, and the navbar marks the active page', async () => {
+  it('navigates between the gallery and the workspace through the wordmark and the account menu', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
     await signIn(user, auth);
 
-    // The front-door link jumps to the public gallery.
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    // The wordmark is the way to the front door.
+    await user.click(wordmark());
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
 
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    // And the account menu's My projects is the way back.
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('link', { name: 'My projects' }));
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Gallery' })).not.toHaveAttribute('aria-current');
-
-    // And back out to the gallery, whose active state follows.
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
-    expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
   });
 
   it('drops an in-flight page read when the user navigates away', async () => {
@@ -509,7 +516,7 @@ describe('App Projects workspace', () => {
 
     // The row click navigates to the project page; its record read is slow.
     await user.click(screen.getByRole('button', { name: /^Brahms/ }));
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(wordmark());
     await act(async () => {
       releaseRead();
     });
@@ -562,7 +569,7 @@ describe('App user sign-in', () => {
     ).toBeInTheDocument();
   });
 
-  it('signs in with Google and shows the user in the header', async () => {
+  it('signs in with Google and shows the user in the navbar', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
 
@@ -572,10 +579,9 @@ describe('App user sign-in', () => {
     // The redirect round-trip lands the session through the backend's events.
     act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
 
-    expect(await screen.findByText('Signed in as Ava Cellist')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Ava Cellist' })).toBeInTheDocument();
     // The sign-in prompt is gone once the user is signed in.
-    expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 
   it('signing out returns to the anonymous landing', async () => {
@@ -586,6 +592,7 @@ describe('App user sign-in', () => {
     await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    await openAccountMenu(user);
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
     // Anonymous again — the landing, and the workspace list is gone.
@@ -613,12 +620,10 @@ describe('App user sign-in', () => {
     // that the server side was not reached.
     const user = userEvent.setup();
     const { auth } = renderApp();
-
-    await user.click(navSignIn());
-    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
-    await screen.findByText('Signed in as Ava Cellist');
+    await signIn(user, auth);
 
     auth.failNextSignOut();
+    await openAccountMenu(user);
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/signed out on this device/i);
@@ -629,13 +634,11 @@ describe('App user sign-in', () => {
   it('a signed-in user can delete their account, confirming the one-way door first', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
-
-    await user.click(navSignIn());
-    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
-    await screen.findByText('Signed in as Ava Cellist');
+    await signIn(user, auth);
 
     // The destructive action hides behind an explicit confirmation that
     // says what the account deletion removes — it never fires by accident.
+    await openAccountMenu(user);
     await user.click(screen.getByRole('button', { name: 'Delete account' }));
     expect(screen.getByText(/every project you've created/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete forever' })).toBeInTheDocument();
@@ -648,38 +651,37 @@ describe('App user sign-in', () => {
     expect(navSignIn()).toBeInTheDocument();
   });
 
-  it('cancelling the confirmation leaves the user signed in and does not delete', async () => {
+  it('cancelling the confirmation restores the menu items and does not delete', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
+    await signIn(user, auth);
 
-    await user.click(navSignIn());
-    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
-    await screen.findByText('Signed in as Ava Cellist');
-
+    await openAccountMenu(user);
     await user.click(screen.getByRole('button', { name: 'Delete account' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(auth.deleteAccount).not.toHaveBeenCalled();
-    expect(screen.getByText('Signed in as Ava Cellist')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ava Cellist' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument();
+    // The menu's items are back, and the safe way out is still there.
+    expect(screen.getByRole('link', { name: 'My projects' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete account' })).toBeInTheDocument();
   });
 
-  it('a failed account deletion keeps the user signed in with an honest notice', async () => {
+  it('a failed account deletion keeps the confirmation open with an honest notice', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
-
-    await user.click(navSignIn());
-    act(() => auth.setUser({ id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' }));
-    await screen.findByText('Signed in as Ava Cellist');
+    await signIn(user, auth);
 
     auth.failNextAccountDelete();
+    await openAccountMenu(user);
     await user.click(screen.getByRole('button', { name: 'Delete account' }));
     await user.click(screen.getByRole('button', { name: 'Delete forever' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/didn't work/i);
     // Nothing was deleted: the user is still signed in and the confirmation
     // stays, so they can see the reason and retry or cancel.
-    expect(screen.getByText('Signed in as Ava Cellist')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ava Cellist' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete forever' })).toBeInTheDocument();
   });
 
@@ -809,9 +811,10 @@ describe('App durable workspace state (T43)', () => {
     await pasteLink(user, 'not a youtube link');
     expect(await screen.findByRole('alert')).toHaveTextContent(/YouTube video link/);
 
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(wordmark());
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('link', { name: 'My projects' }));
 
     // The guidance is still under the input it explains, and the input still
     // carries the invalid state.
@@ -827,8 +830,10 @@ describe('App pages and the persistent navbar (T44)', () => {
     await signIn(user, auth);
 
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Gallery' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(wordmark()).toBeInTheDocument();
+    expect(accountTrigger()).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Gallery' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Projects' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
   });
@@ -875,7 +880,7 @@ describe('App pages and the persistent navbar (T44)', () => {
     const { auth, go } = renderApp();
     await signIn(user, auth);
 
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(wordmark());
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
 
     await go(-1);
@@ -946,9 +951,8 @@ describe('The navbar wears the direction (T76)', () => {
     expect(navbarCss).not.toMatch(/content:/);
   });
 
-  it('sets the name in the document’s face, and marks the current page with a rule', () => {
+  it('sets the name in the document’s face, with no tint behind any label', () => {
     expect(navbarCss).toMatch(/\.app-name\s*\{[^}]*var\(--serif\)/);
-    expect(navbarCss).toMatch(/\.app-nav-link\s*\{[^}]*var\(--sans\)/);
 
     // The gap between the box and the words. jsdom computes no layout, so the
     // separation is pinned as the rule that makes it rather than as a
@@ -956,25 +960,214 @@ describe('The navbar wears the direction (T76)', () => {
     // above), so without this the box would sit flush against the name.
     expect(navbarCss).toMatch(/\.app-name-link\s*\{[^}]*gap:\s*9px/);
 
-    // Links are unhighlighted — no rule pours a tint behind a label, and there
-    // is no pill here to cancel. The current page is a rule under its own
-    // link, the way a running head is marked, rather than a filled state.
+    // Links are unhighlighted — no rule pours a tint behind a label. The
+    // navbar's own ground is the only fill in the file.
     expect(backgroundsDeclaredIn(navbarCss)).toEqual(['var(--paper)']);
-    expect(navbarCss).toMatch(/\[aria-current='page'\][^{]*\{[^}]*inset[^;]*var\(--ink\)/);
   });
 
-  it('squares and ink-outlines the navbar’s sign-in control', () => {
-    expect(userCss).not.toMatch(/#0f766e/);
-    expect(userCss).toMatch(/\.user-status\s*\{[^}]*font-family:\s*var\(--sans\)/);
-    expect(userCss).toMatch(/:where\(\.user-status\) button\s*\{[^}]*var\(--sans\)/);
-    expect(userCss).toMatch(/:where\(\.user-status\) button\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
-    expect(radiiDeclaredIn(userCss).filter((radius) => radius !== '0')).toEqual([]);
+  it('boxes the account control and Sign in at 32px, with the pencil as the only interaction accent', () => {
+    // Chrome is the sans and every colour a token: the direction is consumed
+    // by name, never re-spelled here.
+    expect(userCss).toMatch(/\.user-sign-in,\s*\.user-trigger\s*\{[^}]*var\(--sans\)/);
+    expect(userCss).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
 
-    // The `:where()` above is load-bearing and so is what it wraps: the base
-    // rule must carry no class of its own, or it out-specifies the deletion
-    // rules below it and draws the one-way door in ink — see the selector
-    // itself. The door keeps the danger colour as its own single-class rule.
-    expect(userCss).toMatch(/\.user-delete\s*\{[^}]*#b91c1c/);
+    // One box rule for the bar's controls: the same 32px height and the same
+    // ink rule at rest, whether signed in or out.
+    expect(userCss).toMatch(/\.user-sign-in,\s*\.user-trigger\s*\{[^}]*height:\s*32px/);
+    expect(userCss).toMatch(/\.user-sign-in,\s*\.user-trigger\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
+
+    // The pencil on hover, focus, or open — never a filled pill.
+    expect(userCss).toMatch(
+      /\.user-trigger\[aria-expanded='true'\]\s*\{[^}]*border-color:\s*var\(--pencil\)/,
+    );
+    expect(userCss).toMatch(/\.user-sign-in:focus-visible[^{]*\{[^}]*var\(--pencil\)/);
+
+    // The menu is a boxed surface whose rows are unboxed; the legal links are
+    // underlined text, not controls.
+    expect(userCss).toMatch(/\.user-menu\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
+    expect(userCss).toMatch(/\.user-menu\s*\{[^}]*background:\s*var\(--paper\)/);
+    expect(userCss).toMatch(/\.user-menu-item\s*\{[^}]*border:\s*0/);
+    expect(userCss).toMatch(/\.user-legal-link\s*\{[^}]*text-decoration:\s*underline/);
+
+    // The one-way door keeps the editorial red; nothing else in this file
+    // names a colour.
+    expect(userCss).toMatch(/\.user-menu-danger\s*\{[^}]*color:\s*var\(--editorial\)/);
+    expect(userCss).toMatch(/\.user-delete-forever\s*\{[^}]*background:\s*var\(--editorial\)/);
+
+    // Square corners throughout.
+    expect(radiiDeclaredIn(userCss).filter((radius) => radius !== '0')).toEqual([]);
+  });
+
+  it('keeps the navbar’s 57px row in both auth states', () => {
+    // 12px above, the 32px control, 12px below, and the hairline: the height
+    // the shell's player rail budget pays for (app.css). A taller control
+    // would take those pixels off the recording.
+    expect(navbarCss).toMatch(/\.app-nav-inner\s*\{[^}]*padding-block:\s*12px/);
+    expect(userCss).toMatch(/\.user-sign-in,\s*\.user-trigger\s*\{[^}]*height:\s*32px/);
+    expect(navbarCss).toMatch(/\.app-nav\s*\{[^}]*border-bottom:\s*1px solid var\(--rule\)/);
+  });
+});
+
+describe('The account control (T86)', () => {
+  it('shows the wordmark, the legal line, and Sign in when signed out — and no page links', async () => {
+    renderApp({ initialEntry: '/' });
+    await screen.findByText('No public projects yet.');
+    const nav = screen.getByRole('navigation');
+
+    expect(wordmark()).toHaveAttribute('href', '/');
+    expect(within(nav).getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(within(nav).getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+    expect(navSignIn()).toHaveTextContent('Sign in');
+    expect(navSignIn()).not.toHaveTextContent('Google');
+
+    // The legal line precedes the button in the document, so the bar reads
+    // Privacy · Terms, then Sign in.
+    const legal = within(nav).getByRole('link', { name: 'Privacy' }).parentElement!;
+    expect(legal.compareDocumentPosition(navSignIn()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    expect(within(nav).queryByRole('link', { name: 'Gallery' })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole('link', { name: 'Projects' })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
+  });
+
+  it('opens the signed-in menu and exposes its expanded state and items', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    const trigger = accountTrigger();
+    expect(trigger).toHaveAttribute('aria-haspopup', 'true');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('group', { name: 'Account' })).not.toBeInTheDocument();
+
+    const menu = await openAccountMenu(user);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(within(menu).getByRole('link', { name: 'My projects' })).toHaveAttribute(
+      'href',
+      '/projects',
+    );
+    expect(within(menu).getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(within(menu).getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+    expect(within(menu).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(within(menu).getByRole('button', { name: 'Delete account' })).toBeInTheDocument();
+    // The old inline block is gone: the trigger is the only place the bar
+    // names the user.
+    expect(screen.queryByText(/Signed in as/)).not.toBeInTheDocument();
+  });
+
+  it('focuses the first item on open, and Escape returns focus to the trigger', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    await openAccountMenu(user);
+    expect(screen.getByRole('link', { name: 'My projects' })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('group', { name: 'Account' })).not.toBeInTheDocument();
+    expect(accountTrigger()).toHaveFocus();
+  });
+
+  it('closes on an outside pointer-down', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('heading', { name: 'No projects yet' }));
+
+    expect(screen.queryByRole('group', { name: 'Account' })).not.toBeInTheDocument();
+  });
+
+  it('closes when the route changes underneath it', async () => {
+    const user = userEvent.setup();
+    const { auth, navigateTo } = renderApp();
+    await signIn(user, auth);
+
+    await openAccountMenu(user);
+    await navigateTo('/privacy');
+
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Account' })).not.toBeInTheDocument();
+  });
+
+  it('hands focus to Sign in when the session ends', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toHaveFocus();
+  });
+
+  it('navigates to the legal pages from the menu', async () => {
+    const user = userEvent.setup();
+    const { auth, currentPath } = renderApp();
+    await signIn(user, auth);
+
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('link', { name: 'Privacy' }));
+
+    expect(await screen.findByRole('heading', { name: 'Privacy policy' })).toBeInTheDocument();
+    await waitFor(() => expect(currentPath()).toBe('/privacy'));
+  });
+
+  it('replaces the menu with the confirmation, focusing Cancel, and restores it', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    expect(screen.queryByRole('link', { name: 'My projects' })).not.toBeInTheDocument();
+    expect(screen.getByText(/every project you've created/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('link', { name: 'My projects' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument();
+  });
+
+  it('renders a failed sign-in notice beneath the account control, outside any popup', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+
+    auth.failNextSignIn();
+    await user.click(navSignIn());
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/didn't work/i);
+    expect(alert.closest('[role="group"]')).toBeNull();
+    expect(alert.closest('nav')).not.toBeNull();
+  });
+
+  it('renders a failed deletion’s notice outside the open confirmation', async () => {
+    const user = userEvent.setup();
+    const { auth } = renderApp();
+    await signIn(user, auth);
+
+    auth.failNextAccountDelete();
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+    await user.click(screen.getByRole('button', { name: 'Delete forever' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/didn't work/i);
+    // Outside the popup, below the control, while the confirmation stays open.
+    expect(alert.closest('[role="group"]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete forever' })).toBeInTheDocument();
+  });
+
+  it('names the account menu as the Delete account location in the policy', async () => {
+    const { navigateTo } = renderApp();
+    await navigateTo('/privacy');
+    const privacy = (await screen.findByRole('heading', { name: 'Privacy policy' })).closest(
+      'section',
+    )!;
+    expect(privacy).toHaveTextContent(/Delete account item in the account menu/);
   });
 });
 
@@ -998,7 +1191,7 @@ describe('App public gallery (T50)', () => {
     expect(await screen.findByRole('heading', { name: /Manfred Honeck/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
     expect(screen.getByText('21 markers')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
+    expect(wordmark()).toBeInTheDocument();
   });
 
   it('opens a gallery entry as the read-only view at /gallery/:id', async () => {
@@ -1014,16 +1207,15 @@ describe('App public gallery (T50)', () => {
     expect(screen.queryByRole('button', { name: 'Add marker' })).not.toBeInTheDocument();
   });
 
-  it('the navbar Gallery link moves between the workspace and the gallery', async () => {
+  it('the wordmark moves between the workspace and the gallery', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
     await signIn(user, auth);
 
-    // The signed-in home is the workspace; the Gallery link crosses to the front door.
+    // The signed-in home is the workspace; the wordmark crosses to the front door.
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: 'Gallery' }));
+    await user.click(wordmark());
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
   });
 });
 
@@ -1040,10 +1232,10 @@ describe('App route-as-session project page (T45)', () => {
     const { container } = renderApp({ api, controller, initialEntry: '/projects/p1' });
 
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
-    // The player is shell chrome under the persistent navbar — the app name,
-    // the page links, and the sign-in all frame it.
+    // The player is shell chrome under the persistent navbar — the wordmark
+    // and the signed-out account control frame it.
     expect(screen.getByRole('heading', { name: 'Rehearsal Marks' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(navSignIn()).toBeInTheDocument();
     expect(container.querySelector('.player-ruler')).toBeInTheDocument();
     await waitForPlayerSettled();
     // A visit writes nothing — the server row is exactly what was read.
@@ -1367,7 +1559,7 @@ describe('App create-from-link lands on the markings page (T63, amending T46)', 
     const [created] = await api.listMyProjects();
     await waitFor(() => expect(currentPath()).toBe(`/projects/${created.id}/markings`));
     // The persistent navbar still frames the player page.
-    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+    expect(accountTrigger()).toBeInTheDocument();
     // The load settles before the test finishes, so the page's autosave is not
     // left pending across the teardown.
     await waitForPlayerSettled();
@@ -1383,7 +1575,8 @@ describe('App create-from-link lands on the markings page (T63, amending T46)', 
 
     // Their own return to Projects finds the saved project in the list.
     const user = userEvent.setup();
-    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    await openAccountMenu(user);
+    await user.click(screen.getByRole('link', { name: 'My projects' }));
     await waitForWorkspaceRow(VIDEO_TITLE);
     expect(await api.listMyProjects()).toHaveLength(1);
   });

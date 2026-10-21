@@ -1,7 +1,6 @@
-/* The persistent navbar (T44): the app name, the page links with active
-   states, and the contributor sign-in — the shell chrome that replaced the
-   workspace's header-plus-tabs pair. Spans the window; its bottom border is
-   the only divider the chrome needs.
+/* The persistent navbar (T44): the wordmark and the account control, and
+   nothing else (T86) — the shell chrome that spans the window, its bottom
+   border the only divider the chrome needs.
 
    It wears the direction (T76): the ground is the sheet's paper under a
    hairline, the name is set in the document's face with the rehearsal mark in
@@ -24,7 +23,7 @@
    derived from the chrome above and below the recording (app.css), and the
    navbar's 57px — this padding, the tallest thing in the row, and the hairline
    under it — is part of that sum. Nothing here may grow it either, and the
-   tallest thing is the page links (32px, see `.app-nav-link`), not the name:
+   tallest thing is the account control's 32px box (user.css), not the name:
    the wordmark's box is 27px and rides inside the row. */
 .app-nav-inner {
   display: flex;
@@ -42,8 +41,9 @@
    flex container lays its item out by its own height rather than on a line
    box's baseline. The name's height is therefore its content's exactly (27px,
    the box's), with no half-leading a face's metrics could add to it. That is
-   what keeps the name out of the navbar's height, which is the links' — see
-   `.app-nav-inner` above for why the shell is reading it. */
+   what keeps the name out of the navbar's height, which is the account
+   control's box — see `.app-nav-inner` above for why the shell is reading
+   it. */
 .app-name {
   display: flex;
   align-items: center;
@@ -53,9 +53,8 @@
   color: var(--ink);
 }
 
-/* The wordmark is the navbar's way home (T76): the same journey as the Gallery
-   link, made where the identity is rather than a second time beside it. The
-   link wears the name's own face and ink — a link in the chrome does not
+/* The wordmark is the navbar's way home (T76, now its only way home, T86):
+   the link wears the name's own face and ink — a link in the chrome does not
    announce itself by turning blue — and is `inline-flex`, so it is exactly as
    wide as the wordmark and the click stops at the box. */
 .app-name-link {
@@ -87,36 +86,7 @@
   line-height: 1;
 }
 
-/* Navigation is chrome, and chrome here is square and unhighlighted: the
-   current page is marked by a rule under it, the way a running head is, not by
-   a filled pill. The 14px/20px line over 6px of padding is what makes the
-   link the tallest thing in the row, and so the 57px the shell budgeted. */
-.app-nav-link {
-  padding: 6px 12px;
-  border-radius: 0;
-  font: 500 14px/20px var(--sans);
-  color: var(--ink-2);
-  text-decoration: none;
-}
-
-.app-nav-link:hover {
-  color: var(--pencil);
-}
-
-/* The active page's link shows where the user is (T44) — the visual
-   counterpart of the aria-current the router puts on it. The rule is drawn
-   inside the link's own box so it costs the row no height: a border under the
-   link would add its 2px to the navbar and take them off the player's rail.
-
-   Neither this rule nor the hover above cancels a background, because nothing
-   in this file fills one: the pill these states used to paint is gone from the
-   base rule rather than merely overridden here. */
-.app-nav-link[aria-current='page'] {
-  color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--ink);
-}
-
-/* The sign-in control sits at the rail's far end, away from the page links. */
+/* The account control sits at the rail's far end. */
 .app-nav-auth {
   margin-left: auto;
 }
