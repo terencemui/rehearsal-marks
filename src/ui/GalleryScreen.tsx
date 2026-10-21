@@ -132,14 +132,13 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   return (
     <GalleryFrame wide={variant !== null}>
       {/* The live region every state shares: a search announces its count,
-          and an empty result announces zero. */}
+          and an empty result announces zero. The static subtitle is gone;
+          an empty paragraph stays mounted so the region is always live. */}
       <p className={emptyServer ? 'gallery-empty' : 'gallery-intro'} role="status">
         {emptyServer
           ? 'No public projects yet.'
           : query.trim() === ''
-            ? variant === null
-              ? 'Published projects, newest first.'
-              : 'Published recordings, newest first.'
+            ? null
             : `${countLabel(count, unit)} found.`}
       </p>
       {!emptyServer && count === 0 && (
