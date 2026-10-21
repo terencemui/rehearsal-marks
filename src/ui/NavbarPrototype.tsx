@@ -334,7 +334,7 @@ function AccountControl({ auth, onAuth, legalFirst = false }: AccountControlProp
     );
     const signIn = (
       <button type="button" className="nb-sign-in" onClick={() => onAuth('in')}>
-        Sign in with Google
+        Sign in
       </button>
     );
 
