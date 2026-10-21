@@ -34,6 +34,8 @@ Supporting choices:
   > The Help tab's line that a project's markers sit on a full-width timeline below the video was re-read against the folded app and **stands**. It had asserted that the marks were on the strip while this ADR kept them off it — a claim the app could not honour until the reversal above — so confirming it was a question worth asking rather than a coincidence to leave unexamined; it now describes what the strip draws, and `HelpTab.test.tsx` pins the sentence so it cannot be quietly dropped or hedged while the strip still draws them. The two reversals this ADR has now recorded — the marks retired from the strip in 2026-08-28, and put back on it here — move neither word: *Timeline* is still the term for the strip, and *stave* is still only the drawing's name.
   >
   > _Amended 2026-10-21 — the Help tab was removed (T85, spec #195), taking this line and the test that pinned it. `docs/keyboard-reference.md` remains the repo's keyboard reference; the stave described above is unchanged._
+  >
+  > _Noted 2026-10-21 (T89, #201) — the `HelpTab.test.tsx` references above are historical._ That file was deleted with Help, so the paragraph claiming it pins the Help line now describes a test that does not exist; it stands as the record of a check once made, not of one still in place. `docs/keyboard-reference.md` remains as a repo document with no in-app consumer and no mirror test — the keys it lists are the app's, but nothing surfaces the list and nothing holds it to the real handlers. That is the accepted cost of removing Help, recorded rather than discovered later.
 
 ## Consequences
 

@@ -1,5 +1,10 @@
 # Keyboard reference
 
+> **No longer surfaced in the app.** This document used to be rendered inside
+> Help; Help is removed (T85, spec #195), so no page shows it, and the test that
+> held it to the real key handlers went with it. The keys below are still the
+> app's behaviour — this file is now their only record.
+
 Two surfaces play a recording, and both are keyboard-operable: the **practice
 surface** — a recording played back, from the public gallery or from a project's
 own page — and the **Markings page**, where a project's owner authors what it
