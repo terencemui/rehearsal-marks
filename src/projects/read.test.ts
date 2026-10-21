@@ -75,7 +75,7 @@ describe('listPublishedProjects', () => {
     expect(queryOf(seenUrl)).toContain('publication_status=eq.published');
     expect(queryOf(seenUrl)).toContain('order=created_at.desc');
     const select = queryOf(seenUrl);
-    for (const column of ['id', 'name', 'recording_title', 'video_id', 'duration', 'created_at', 'markers']) {
+    for (const column of ['id', 'name', 'recording_title', 'video_id', 'duration', 'created_at', 'markers', 'movements']) {
       expect(select).toContain(column);
     }
   });
@@ -104,6 +104,7 @@ describe('listPublishedProjects', () => {
         videoId: ROW.video_id,
         duration: ROW.duration,
         markerCount: 2,
+        movementCount: 0,
         createdAt: Date.parse(ROW.created_at),
       },
     ]);
@@ -161,6 +162,7 @@ describe('getPublicProject', () => {
       videoId: ROW.video_id,
       duration: ROW.duration,
       markerCount: 2,
+      movementCount: 1,
       createdAt: Date.parse(ROW.created_at),
       markers: fullRow.markers,
       movements: fullRow.movements,

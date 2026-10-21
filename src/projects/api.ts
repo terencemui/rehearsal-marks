@@ -43,6 +43,8 @@ export interface PublicProjectSummary {
   duration: number;
   /** How many markers the project carries — one of the gallery entry's facts. */
   markerCount: number;
+  /** How many movements the project defines — the gallery card's third fact. */
+  movementCount: number;
   /** Epoch ms — the gallery's "newest first" sort. */
   createdAt: number;
 }

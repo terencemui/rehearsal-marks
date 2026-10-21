@@ -11,6 +11,7 @@ function summary(overrides: Partial<PublicProjectSummary>): PublicProjectSummary
     videoId: 'a_B02BZp-5Y',
     duration: 3036,
     markerCount: 21,
+    movementCount: 4,
     createdAt: 3_000_000_000,
     ...overrides,
   };

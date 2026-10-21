@@ -1,0 +1,200 @@
+/* PROTOTYPE — gallery card anatomy. Throwaway: never merge this file.
+   One grid and three card bodies. Colours and faces are consumed by name
+   from the shell's tokens (app.css); the prototype names none of its own. */
+
+/* The gallery's prose cap is for the old ruled list; the card grid takes the
+   whole page rail. Two classes, so this wins regardless of import order. */
+.gallery.gallery--prototype {
+  max-width: none;
+}
+
+.proto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 28px 20px;
+  margin-top: 20px;
+}
+
+.proto-card {
+  display: block;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.proto-card:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 4px;
+}
+
+.proto-image {
+  position: relative;
+  display: block;
+}
+
+/* The photograph is the card's one colour object; the hairline frame is what
+   keeps it in the paper-and-ink direction. */
+.proto-thumb {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid var(--ink);
+  background: var(--wash);
+}
+
+.proto-card:hover .proto-thumb,
+.proto-card:focus-visible .proto-thumb {
+  border-color: var(--pencil);
+}
+
+.proto-duration {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  background: var(--ink);
+  color: var(--paper);
+  font: 500 12px/1.4 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.proto-meta {
+  margin: 2px 0 0;
+  font: 400 13px/1.4 var(--serif);
+  color: var(--ink-2);
+}
+
+.proto-card:hover .proto-meta,
+.proto-card:focus-visible .proto-meta {
+  color: var(--pencil);
+}
+
+/* A — YouTube-literal: title then metadata, both under the image. */
+.proto-card--a .proto-a-title {
+  margin: 10px 0 2px;
+  font: 600 16px/1.25 var(--serif);
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.proto-card--a:hover .proto-a-title,
+.proto-card--a:focus-visible .proto-a-title {
+  color: var(--pencil);
+}
+
+/* B — Plate: the recording title sits in a ruled band directly under the
+   image; the metadata line falls below the band. */
+.proto-card--b .proto-b-plate {
+  margin: 0;
+  padding: 8px 0 9px;
+  border-bottom: 1px solid var(--ink);
+  font: 600 14px/1.35 var(--serif);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.proto-card--b:hover .proto-b-plate,
+.proto-card--b:focus-visible .proto-b-plate {
+  color: var(--pencil);
+}
+
+.proto-card--b .proto-meta {
+  margin-top: 6px;
+}
+
+/* C — Contents: a three-row table, the duration in the title row rather than
+   on the image. */
+.proto-card--c .proto-thumb {
+  border-bottom: none;
+}
+
+.proto-contents {
+  display: block;
+}
+
+.proto-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--rule);
+  font: 400 13px/1.4 var(--serif);
+  color: var(--ink-2);
+}
+
+.proto-row--title {
+  padding-top: 7px;
+  border-top: 1px solid var(--ink);
+}
+
+.proto-row--title h3 {
+  margin: 0;
+  font: 600 15px/1.25 var(--serif);
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.proto-card--c:hover .proto-row--title h3,
+.proto-card--c:focus-visible .proto-row--title h3 {
+  color: var(--pencil);
+}
+
+.proto-c-duration {
+  flex: none;
+  font: 400 12px/1.4 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The switcher is deliberately unlike the page: a high-contrast pill, so it
+   is never mistaken for part of the design being judged. */
+.proto-switcher {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+  font: 500 12px/1 var(--sans);
+}
+
+.proto-switcher button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.proto-switcher button:hover,
+.proto-switcher button:focus-visible {
+  background: var(--pencil);
+  outline: none;
+}
+
+.proto-switcher-label {
+  padding: 0 8px;
+  white-space: nowrap;
+}

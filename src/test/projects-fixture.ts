@@ -59,6 +59,7 @@ export function fakeProjectsApi(): FakeProjectsApi {
       videoId: project.videoId,
       duration: project.duration,
       markerCount: project.markers.length,
+      movementCount: project.movements.length,
       createdAt: project.createdAt,
     };
   }

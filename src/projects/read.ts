@@ -57,12 +57,13 @@ export interface ProjectsReadDependencies {
 }
 
 /**
- * The gallery's read projection: the entry's facts, plus the markers array so
- * the count can be computed client-side (no PostgREST computed-column
- * dependency). Content (`movements`) stays off the list read — a gallery of
- * summaries has no use for it.
+ * The gallery's read projection: the entry's facts, plus the markers and
+ * movements arrays so their counts can be computed client-side (no PostgREST
+ * computed-column dependency). The gallery renders neither array — only the
+ * counts — but a card now carries the movement count beside the marker count.
  */
-const LIST_SELECT = 'id,name,recording_title,video_id,duration,created_at,markers';
+const LIST_SELECT =
+  'id,name,recording_title,video_id,duration,created_at,markers,movements';
 /**
  * The read-only view's projection: the summary's facts plus the full content.
  * `naming` is here and not on `LIST_SELECT` because only this read renders
@@ -203,6 +204,10 @@ function summaryFromRow(raw: unknown): PublicProjectSummary {
   const row = asObject(raw);
   const markers = row.markers;
   if (!Array.isArray(markers)) throw invalidResponse();
+  // Movements are counted, never rendered on the gallery: the card carries
+  // the count as one fact. Absent or malformed movements degrade to none,
+  // the same tolerance the detail read applies.
+  const movements = Array.isArray(row.movements) ? row.movements : [];
   return {
     id: stringField(row, 'id'),
     name: stringField(row, 'name'),
@@ -210,6 +215,7 @@ function summaryFromRow(raw: unknown): PublicProjectSummary {
     videoId: stringField(row, 'video_id'),
     duration: numberField(row, 'duration'),
     markerCount: markers.length,
+    movementCount: movements.length,
     createdAt: stampField(row, 'created_at'),
   };
 }

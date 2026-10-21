@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { filterGalleryGroups, groupGalleryProjects } from '../projects';
 import type { GalleryGroup, ProjectsApi } from '../projects';
+import { GalleryPrototype, isPrototypeVariant } from './GalleryPrototype';
 import './gallery.css';
 
 export interface GalleryScreenProps {
@@ -11,12 +12,30 @@ export interface GalleryScreenProps {
 }
 
 /** The gallery's shell — the heading and region the states share. */
-function GalleryFrame({ children }: { children: ReactNode }) {
+function GalleryFrame({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <section className="gallery" role="region" aria-label="Public gallery">
+    <section
+      className={wide ? 'gallery gallery--prototype' : 'gallery'}
+      role="region"
+      aria-label="Public gallery"
+    >
       <h2>Gallery</h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * PROTOTYPE — the recording-level search the card grid needs: any match on a
+ * recording's title or one of its projects keeps that recording's card whole.
+ */
+function filterRecordings(groups: readonly GalleryGroup[], query: string): GalleryGroup[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return [...groups];
+  return groups.filter(
+    (group) =>
+      group.recordingTitle.toLowerCase().includes(needle) ||
+      group.projects.some((project) => project.name.toLowerCase().includes(needle)),
   );
 }
 
@@ -53,6 +72,13 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
+  const requestedVariant = searchParams.get('variant');
+  /**
+   * PROTOTYPE — `?variant=A|B|C` swaps the card anatomy on the real gallery.
+   * Dev builds only, so a stray query can never reach a production reader.
+   */
+  const variant =
+    import.meta.env.DEV && isPrototypeVariant(requestedVariant) ? requestedVariant : null;
   /** The gallery's groups; null while the read is in flight. */
   const [groups, setGroups] = useState<GalleryGroup[] | null>(null);
   const [readFailed, setReadFailed] = useState(false);
@@ -91,22 +117,34 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   // The read is in flight — nothing to paint until it lands.
   if (groups === null) return null;
   const emptyServer = groups.length === 0;
-  const matching = emptyServer ? [] : filterGalleryGroups(groups, query);
-  const count = matching.reduce((total, group) => total + group.projects.length, 0);
+  // PROTOTYPE — the card grid searches at the recording level, so a set-name
+  // match keeps the whole card. The shipped list keeps its own rule.
+  const matching = emptyServer
+    ? []
+    : variant === null
+      ? filterGalleryGroups(groups, query)
+      : filterRecordings(groups, query);
+  const count =
+    variant === null
+      ? matching.reduce((total, group) => total + group.projects.length, 0)
+      : matching.length;
+  const unit = variant === null ? 'project' : 'recording';
   return (
-    <GalleryFrame>
+    <GalleryFrame wide={variant !== null}>
       {/* The live region every state shares: a search announces its count,
           and an empty result announces zero. */}
       <p className={emptyServer ? 'gallery-empty' : 'gallery-intro'} role="status">
         {emptyServer
           ? 'No public projects yet.'
           : query.trim() === ''
-            ? 'Published projects, newest first.'
-            : `${countLabel(count, 'project')} found.`}
+            ? variant === null
+              ? 'Published projects, newest first.'
+              : 'Published recordings, newest first.'
+            : `${countLabel(count, unit)} found.`}
       </p>
       {!emptyServer && count === 0 && (
         <>
-          <p className="gallery-empty">No projects match “{query.trim()}”.</p>
+          <p className="gallery-empty">No {unit}s match “{query.trim()}”.</p>
           <button
             type="button"
             className="gallery-action"
@@ -116,25 +154,29 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
           </button>
         </>
       )}
-      {matching.map((group) => (
-        <article className="gallery-group" key={group.videoId}>
-          <h3 className="gallery-recording">{group.recordingTitle}</h3>
-          <ul className="gallery-list">
-            {group.projects.map((project) => (
-              <li key={project.id}>
-                <button
-                  type="button"
-                  className="gallery-entry"
-                  onClick={() => navigate(`/gallery/${project.id}`)}
-                >
-                  <span className="gallery-name">{project.name}</span>
-                  <span className="gallery-count">{markerCountLabel(project.markerCount)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </article>
-      ))}
+      {variant !== null ? (
+        <GalleryPrototype groups={matching} variant={variant} />
+      ) : (
+        matching.map((group) => (
+          <article className="gallery-group" key={group.videoId}>
+            <h3 className="gallery-recording">{group.recordingTitle}</h3>
+            <ul className="gallery-list">
+              {group.projects.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    className="gallery-entry"
+                    onClick={() => navigate(`/gallery/${project.id}`)}
+                  >
+                    <span className="gallery-name">{project.name}</span>
+                    <span className="gallery-count">{markerCountLabel(project.markerCount)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </article>
+        ))
+      )}
     </GalleryFrame>
   );
 }

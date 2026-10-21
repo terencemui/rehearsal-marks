@@ -26,7 +26,16 @@ export interface NavbarProps {
  * spelling both the gallery's live URL and Enter-from-elsewhere use.
  */
 function galleryPath(query: string): string {
-  return query === '' ? '/' : `/?${new URLSearchParams({ q: query }).toString()}`;
+  const params = new URLSearchParams();
+  if (query !== '') params.set('q', query);
+  // PROTOTYPE — the gallery-cards variant must survive a search edit, or the
+  // first keystroke would drop the prototype.
+  if (import.meta.env.DEV) {
+    const variant = new URLSearchParams(window.location.search).get('variant');
+    if (variant !== null) params.set('variant', variant);
+  }
+  const search = params.toString();
+  return search === '' ? '/' : `/?${search}`;
 }
 
 /**
