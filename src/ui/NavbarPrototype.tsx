@@ -22,6 +22,13 @@
  *   C — Catalogue masthead. Two rows at every width: identity and account
  *                          above, a boxed full-width search band below, with
  *                          the result count on its right.
+ *   D — Centred, one box rule. B's single row with the search centred in the
+ *                          rail, and one rule for every control: the search
+ *                          field, the account trigger and the sign-in button
+ *                          are all boxed, so nothing is outlined in one place
+ *                          and underlined in another. Signed out, the
+ *                          Privacy · Terms line sits to the left of the sign-in
+ *                          button instead of beneath it.
  *
  * The account menu is the same object in all three: name + chevron, then
  * My projects / Privacy · Terms / Sign out / Delete account, with the delete
@@ -39,7 +46,7 @@ import './navbar.css';
 import './navbarPrototype.css';
 import './prototypeSwitcher.css';
 
-type VariantKey = 'A' | 'B' | 'C';
+type VariantKey = 'A' | 'B' | 'C' | 'D';
 type AuthKey = 'in' | 'out';
 
 interface Variant {
@@ -51,6 +58,7 @@ const VARIANTS: readonly Variant[] = [
   { key: 'A', name: 'Icon expands' },
   { key: 'B', name: 'Search in the bar' },
   { key: 'C', name: 'Catalogue masthead' },
+  { key: 'D', name: 'Centred search, boxed controls' },
 ];
 
 interface Entry {
@@ -255,6 +263,8 @@ function SearchField({ value, onChange, className = '', autoFocus = false, onClo
 interface AccountControlProps {
   auth: AuthKey;
   onAuth: (auth: AuthKey) => void;
+  /** Variant D: the legal line reads to the left of the sign-in button. */
+  legalFirst?: boolean;
 }
 
 /**
@@ -262,7 +272,7 @@ interface AccountControlProps {
  * legal line beneath it. The menu closes on outside click and Escape (focus
  * returns to the trigger), and its delete confirmation replaces the items.
  */
-function AccountControl({ auth, onAuth }: AccountControlProps) {
+function AccountControl({ auth, onAuth, legalFirst = false }: AccountControlProps) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -302,20 +312,36 @@ function AccountControl({ auth, onAuth }: AccountControlProps) {
   }, [open, confirming]);
 
   if (auth === 'out') {
-    return (
-      <div className="nb-signed-out">
-        <button type="button" className="nb-sign-in" onClick={() => onAuth('in')}>
-          Sign in with Google
+    const legal = (
+      <span className="nb-legal-line">
+        <button type="button" className="nb-legal-link">
+          Privacy
         </button>
-        <span className="nb-legal-line">
-          <button type="button" className="nb-legal-link">
-            Privacy
-          </button>
-          <span aria-hidden="true">·</span>
-          <button type="button" className="nb-legal-link">
-            Terms
-          </button>
-        </span>
+        <span aria-hidden="true">·</span>
+        <button type="button" className="nb-legal-link">
+          Terms
+        </button>
+      </span>
+    );
+    const signIn = (
+      <button type="button" className="nb-sign-in" onClick={() => onAuth('in')}>
+        Sign in with Google
+      </button>
+    );
+
+    return (
+      <div className={`nb-signed-out${legalFirst ? ' nb-signed-out-row' : ''}`}>
+        {legalFirst ? (
+          <>
+            {legal}
+            {signIn}
+          </>
+        ) : (
+          <>
+            {signIn}
+            {legal}
+          </>
+        )}
       </div>
     );
   }
@@ -481,6 +507,21 @@ function NavbarC({ auth, q, home, count, onQ, onAuth, onHome }: NavbarProps) {
             {count} of {PROJECTS.length} projects
           </span>
         </div>
+      </div>
+    </nav>
+  );
+}
+
+function NavbarD({ auth, q, home, count, onQ, onAuth, onHome }: NavbarProps) {
+  return (
+    <nav className="nb nb-d" aria-label="Primary">
+      <div className="page-rail nb-d-row">
+        <Wordmark href={home} onHome={onHome} />
+        <SearchField className="nb-d-search" value={q} onChange={onQ} />
+        <AccountControl auth={auth} onAuth={onAuth} legalFirst />
+        <span className="nb-sr-only" aria-live="polite">
+          {count} results
+        </span>
       </div>
     </nav>
   );
@@ -664,6 +705,7 @@ export function NavbarPrototypePage() {
       )}
       {variant === 'B' && <NavbarB {...navProps} />}
       {variant === 'C' && <NavbarC {...navProps} />}
+      {variant === 'D' && <NavbarD {...navProps} />}
 
       <main className="page-rail app-page">
         <Gallery q={q} onQ={setQ} />

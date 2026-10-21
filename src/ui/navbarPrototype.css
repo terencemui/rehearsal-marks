@@ -451,6 +451,87 @@
   }
 }
 
+/* ---------- D: centred search, one box rule ---------- */
+
+/*
+ * Three tracks, so the field is centred in the rail rather than in whatever
+ * space the wordmark and the account happen to leave. The outer tracks are
+ * equal and the wordmark and account pull to their own edges; the field owns
+ * the middle. Narrow, the grid becomes two rows and the field takes the whole
+ * second row.
+ */
+.nb-d-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(240px, 440px) 1fr;
+  align-items: center;
+  gap: 16px;
+  padding-block: 12px;
+}
+
+.nb-d-row .app-name {
+  justify-self: start;
+}
+
+/* Every control is a box, with the same hairline at rest and the same ink on
+   hover, focus or open. Links stay underlined; a link is not a control. */
+.nb-d-search {
+  width: 100%;
+  height: 32px;
+  padding-inline: 10px;
+  border: 1px solid var(--rule);
+}
+
+.nb-d-search:focus-within {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.nb-d-row .nb-account-slot,
+.nb-d-row .nb-signed-out {
+  justify-self: end;
+}
+
+.nb-d-row .nb-account-trigger {
+  border-color: var(--rule);
+}
+
+.nb-d-row .nb-account-trigger:hover,
+.nb-d-row .nb-account-trigger[aria-expanded='true'] {
+  border-color: var(--ink);
+}
+
+/* Signed out: the legal line reads to the left of the sign-in button, so the
+   bar keeps the same 32px row and the same 57px height in both auth states. */
+.nb-signed-out-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .nb-d-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'brand account'
+      'search search';
+  }
+
+  .nb-d-row .app-name {
+    grid-area: brand;
+  }
+
+  .nb-d-search {
+    grid-area: search;
+  }
+
+  .nb-d-row .nb-account-slot,
+  .nb-d-row .nb-signed-out {
+    grid-area: account;
+  }
+}
+
 /* ---------- the prototype's empty state ---------- */
 
 .nb-empty {
