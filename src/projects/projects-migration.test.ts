@@ -15,6 +15,12 @@ const namingMigrationUrl = resolve(
   'supabase/migrations/20261001000000_project_naming.sql',
 );
 
+/** The T82 execute-grant migration — closes the browser's path to moderation. */
+const grantsMigrationUrl = resolve(
+  process.cwd(),
+  'supabase/migrations/20261021000000_client_execute_grants.sql',
+);
+
 /**
  * The baseline migration's contracts, pinned the way the seed test pins the
  * seed: what an actor can and cannot read or write is the database's own rule,
@@ -197,7 +203,7 @@ describe('the baseline migration', () => {
     expect(migration).toContain(`'${BANNED_PREFIX}:`);
   });
 
-  it('gives the maintainer a moderation surface no client role can execute', () => {
+  it('gives the maintainer a moderation surface, revoking PUBLIC in the baseline', () => {
     expect(migration).toMatch(/create or replace function public\.moderate_project[\s\S]*?security definer/);
     for (const action of ['publish', 'reject', 'unpublish']) {
       expect(migration).toContain(`when '${action}' then`);
@@ -240,5 +246,40 @@ describe('the project naming migration', () => {
   it('is a migration, not a baseline — it never drops or renames', () => {
     expect(migration).not.toMatch(/\bdrop\s+(table|function|policy|trigger|index|column)\b/i);
     expect(migration).not.toMatch(/\brename\s+to\b/i);
+  });
+});
+
+/**
+ * The execute-grant migration (T82). On a hosted project Supabase's default
+ * privileges grant EXECUTE on new public functions to anon and authenticated,
+ * and a revoke from `public` does not remove a grant made to a role — so a
+ * revoke naming only `public` leaves the moderation RPC callable from the
+ * browser. These assertions name the roles, because that is the whole fix.
+ */
+describe('the client execute grant migration', () => {
+  const migration = readFileSync(grantsMigrationUrl, 'utf8');
+
+  it('removes every client role\'s execute right on the moderation function', () => {
+    expect(migration).toMatch(
+      /revoke execute on function public\.moderate_project\(uuid, text\)\s+from public, anon, authenticated;/,
+    );
+  });
+
+  it('makes account deletion a signed-in surface only', () => {
+    expect(migration).toMatch(
+      /revoke execute on function public\.delete_my_account\(\)\s+from public, anon;/,
+    );
+    // authenticated keeps the baseline's explicit grant.
+    expect(migration).not.toMatch(
+      /revoke execute on function public\.delete_my_account\(\)[^;]*authenticated/,
+    );
+  });
+
+  it('grants nothing and narrows no trusted role', () => {
+    // A later edit that re-grants a client role would leave both revokes in
+    // place and the suite green, so pin the absence too.
+    expect(migration).not.toMatch(/^\s*grant\b/mi);
+    // The maintainer's path runs as service_role or postgres.
+    expect(migration).not.toMatch(/^\s*revoke[^;\n]*\b(service_role|postgres)\b/mi);
   });
 });
