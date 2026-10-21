@@ -161,6 +161,33 @@ export function groupGalleryProjects(projects: readonly PublicProjectSummary[]):
 }
 
 /**
+ * The gallery search's rule (T87): a trimmed, case-insensitive substring match
+ * over a project's name and its recording's title. A recording-title match
+ * keeps the whole group — the search found the recording; a project-name match
+ * keeps only the rows that matched; a group left with nothing drops.
+ */
+export function filterGalleryGroups(
+  groups: readonly GalleryGroup[],
+  query: string,
+): GalleryGroup[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return [...groups];
+  return groups.flatMap((group) => {
+    // Any member's title, not just the newest's: a recording retitled on
+    // YouTube leaves older rows carrying the old title. A title match is the
+    // recording's, so the whole group stays.
+    const titleMatch = group.projects.some((project) =>
+      project.recordingTitle.toLowerCase().includes(needle),
+    );
+    if (titleMatch) return [group];
+    const projects = group.projects.filter((project) =>
+      project.name.toLowerCase().includes(needle),
+    );
+    return projects.length === 0 ? [] : [{ ...group, projects }];
+  });
+}
+
+/**
  * The default API for the real app, built from the deployment env, or null
  * when the app is not wired to a Supabase project — the signal the app's env
  * gate renders its "not wired up" screen on. Auth, the write surface, and the

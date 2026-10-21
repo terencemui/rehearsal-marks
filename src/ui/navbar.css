@@ -26,7 +26,11 @@
    tallest thing is the account control's 32px box (user.css), not the name:
    the wordmark's box is 27px and rides inside the row. */
 .app-nav-inner {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  /* The search is the middle track, so it is centred in the frame while the
+     wordmark and the account control keep the ends (T87). */
+  grid-template-areas: 'name search auth';
   align-items: center;
   gap: 8px;
   padding-block: 12px;
@@ -45,6 +49,7 @@
    control's box — see `.app-nav-inner` above for why the shell is reading
    it. */
 .app-name {
+  grid-area: name;
   display: flex;
   align-items: center;
   margin: 0;
@@ -86,7 +91,51 @@
   line-height: 1;
 }
 
+/* The gallery search (T87): a 32px ink-ruled box in the content face, the
+   pencil its only accent — the same control anatomy as the account box. Its
+   height is the row's tallest thing, so the navbar keeps its 57px. The width
+   follows the window up to 320px, so the centred track never pushes the ends
+   off a narrow frame before the field drops to its own row. */
+.app-nav-search {
+  grid-area: search;
+  width: clamp(160px, 30vw, 320px);
+}
+
+.app-nav-search-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  font: 400 14px/1.2 var(--serif);
+  color: var(--ink);
+}
+
+.app-nav-search-input:focus-visible {
+  outline: 1px solid var(--pencil);
+  outline-offset: 1px;
+}
+
 /* The account control sits at the rail's far end. */
 .app-nav-auth {
-  margin-left: auto;
+  grid-area: auth;
+  justify-self: end;
+}
+
+/* At 720px and below the search takes its own full-width row under the
+   wordmark and the account control. */
+@media (max-width: 720px) {
+  .app-nav-inner {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'name auth'
+      'search search';
+    row-gap: 8px;
+  }
+
+  .app-nav-search {
+    width: 100%;
+  }
 }

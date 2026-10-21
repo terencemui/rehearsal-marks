@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { groupGalleryProjects } from '../projects';
+import type { ReactNode } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
+import { filterGalleryGroups, groupGalleryProjects } from '../projects';
 import type { GalleryGroup, ProjectsApi } from '../projects';
 import './gallery.css';
 
@@ -9,11 +10,24 @@ export interface GalleryScreenProps {
   api: ProjectsApi;
 }
 
-/**
- * The marker count's label — the one plural the gallery's entries carry.
- */
+/** The gallery's shell — the heading and region the states share. */
+function GalleryFrame({ children }: { children: ReactNode }) {
+  return (
+    <section className="gallery" role="region" aria-label="Public gallery">
+      <h2>Gallery</h2>
+      {children}
+    </section>
+  );
+}
+
+/** A count and its noun, pluralised — "21 markers", "1 project". */
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** The marker count's label — the one plural the gallery's entries carry. */
 function markerCountLabel(count: number): string {
-  return `${count} ${count === 1 ? 'marker' : 'markers'}`;
+  return countLabel(count, 'marker');
 }
 
 /**
@@ -30,9 +44,15 @@ function markerCountLabel(count: number): string {
  * nothing, a failed read surfaces as an error with a retry rather than a
  * crash, and an empty server answers "no public projects yet" instead of a
  * blank list.
+ *
+ * The search (T87) is the URL's `?q=`: the navbar writes it with history
+ * replace, so a refresh restores the results, and the filter is a pure rule
+ * beside the grouping helper.
  */
 export function GalleryScreen({ api }: GalleryScreenProps) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const query = searchParams.get('q') ?? '';
   /** The gallery's groups; null while the read is in flight. */
   const [groups, setGroups] = useState<GalleryGroup[] | null>(null);
   const [readFailed, setReadFailed] = useState(false);
@@ -58,32 +78,45 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
 
   if (readFailed) {
     return (
-      <section className="gallery" role="region" aria-label="Public gallery">
-        <h2>Gallery</h2>
+      <GalleryFrame>
         <p role="alert" className="gallery-error">
           Couldn’t load the gallery. Check your connection and try again.
         </p>
-        <button type="button" className="gallery-retry" onClick={() => setAttempt((n) => n + 1)}>
+        <button type="button" className="gallery-action" onClick={() => setAttempt((n) => n + 1)}>
           Retry
         </button>
-      </section>
+      </GalleryFrame>
     );
   }
   // The read is in flight — nothing to paint until it lands.
   if (groups === null) return null;
-  if (groups.length === 0) {
-    return (
-      <section className="gallery" role="region" aria-label="Public gallery">
-        <h2>Gallery</h2>
-        <p className="gallery-empty">No public projects yet.</p>
-      </section>
-    );
-  }
+  const emptyServer = groups.length === 0;
+  const matching = emptyServer ? [] : filterGalleryGroups(groups, query);
+  const count = matching.reduce((total, group) => total + group.projects.length, 0);
   return (
-    <section className="gallery" role="region" aria-label="Public gallery">
-      <h2>Gallery</h2>
-      <p className="gallery-intro">Published projects, newest first.</p>
-      {groups.map((group) => (
+    <GalleryFrame>
+      {/* The live region every state shares: a search announces its count,
+          and an empty result announces zero. */}
+      <p className={emptyServer ? 'gallery-empty' : 'gallery-intro'} role="status">
+        {emptyServer
+          ? 'No public projects yet.'
+          : query.trim() === ''
+            ? 'Published projects, newest first.'
+            : `${countLabel(count, 'project')} found.`}
+      </p>
+      {!emptyServer && count === 0 && (
+        <>
+          <p className="gallery-empty">No projects match “{query.trim()}”.</p>
+          <button
+            type="button"
+            className="gallery-action"
+            onClick={() => navigate('/', { replace: true })}
+          >
+            Clear search
+          </button>
+        </>
+      )}
+      {matching.map((group) => (
         <article className="gallery-group" key={group.videoId}>
           <h3 className="gallery-recording">{group.recordingTitle}</h3>
           <ul className="gallery-list">
@@ -102,6 +135,6 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
           </ul>
         </article>
       ))}
-    </section>
+    </GalleryFrame>
   );
 }
