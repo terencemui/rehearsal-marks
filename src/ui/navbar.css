@@ -10,8 +10,10 @@
    cannot drift from the direction without a rule noticing. */
 
 .app-nav {
-  /* The narrow search panel is positioned against the navbar. */
+  /* The search field and its narrow panel are positioned against the navbar,
+     and the navbar paints above the page so both stay on top. */
   position: relative;
+  z-index: 1;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
 }
@@ -30,13 +32,17 @@
 .app-nav-inner {
   display: grid;
   /* The middle track takes whatever the wordmark and the account control
-     leave, so the field can be wide without overflowing a short rail (T93);
-     the field centres itself inside that track and caps at 480px. */
+     leave; the field itself is centred on the rail, not on this track, since
+     the ends are not equally wide (T94). */
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: 'name search auth';
   align-items: center;
   gap: 8px;
   padding-block: 12px;
+  /* The field collapses on the rail's actual width, not the window's: the
+     player rail is also capped by the window's height (app.css), so a
+     short-wide window is tight at any viewport width (T94). */
+  container-type: inline-size;
 }
 
 /* The app's name is a title on the document, so it takes the document's face.
@@ -99,14 +105,34 @@
    accent — the same control anatomy as the account box. Its height is the
    row's tallest thing, so the navbar keeps its 57px.
 
-   The middle track takes whatever the ends leave, and the field fills it up
-   to 480px. The rail's width follows the window's height, so a short-wide
-   window gets a narrow rail — the field shrinks there rather than scrolling. */
+   The field is a fixed 480px centred on the navbar, so the input and its
+   button stay centred together rather than sitting off-centre between the
+   ends' unequal widths. It never shrinks: the container rule below collapses
+   it instead once the rail cannot hold it.
+
+   The in-track field is the fallback for engines without container queries:
+   it shrinks in its track rather than overlapping the wordmark or account
+   control. Only where the queries work does the field leave the track and
+   centre on the navbar. */
 .app-nav-search {
   grid-area: search;
   justify-self: center;
   width: 100%;
   max-width: 480px;
+}
+
+@supports (container-type: inline-size) {
+  .app-nav-search {
+    /* An abspos grid child with a grid area is placed against that area (the
+       middle track), not the rail — which centred it on the track and pushed
+       it over the wordmark. `auto` makes the rail the containing block. */
+    grid-area: auto;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 480px;
+  }
 }
 
 .app-nav-search-panel {
@@ -182,37 +208,19 @@
   justify-self: end;
 }
 
-/* At 720px and below the search takes its own full-width row under the
-   wordmark and the account control. */
-@media (max-width: 720px) {
-  .app-nav-inner {
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      'name auth'
-      'search search';
-    row-gap: 8px;
-  }
-
+/* Once the rail's content is too narrow for the 480px field plus clearance
+   from the wordmark and the account control, the field collapses into a
+   magnifier beside the account control rather than shrinking (T94). Its panel
+   drops over the page, aligned with the rail's content. 1000px leaves 260px
+   either side of the centred field: 40px clear of the 220px account cap and
+   71px clear of the ~189px wordmark. */
+@container (max-width: 1000px) {
   .app-nav-search {
-    width: 100%;
-    max-width: none;
-  }
-}
-
-/* At 560px and below even the full row is gone: the field collapses into a
-   magnifier beside the account control, and its panel drops over the page,
-   aligned with the rail's content. */
-@media (max-width: 560px) {
-  .app-nav-inner {
-    grid-template-columns: 1fr auto auto;
-    grid-template-areas: 'name search auth';
-    row-gap: 0;
-  }
-
-  .app-nav-search {
+    grid-area: search;
+    position: static;
+    transform: none;
     justify-self: end;
     width: auto;
-    max-width: none;
   }
 
   .app-nav-search-trigger {
