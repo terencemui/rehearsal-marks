@@ -77,10 +77,18 @@ export function PrototypeSwitcher({ current, onPick }: PrototypeSwitcherProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return;
-      const target = event.target as HTMLElement | null;
       // A caret in a field is typing, not switching: the column is full of
-      // fields, and one of them is always under the playhead.
-      if (target?.closest('input, textarea, select, [contenteditable]') !== null) return;
+      // fields, and one of them is always under the playhead. The target is not
+      // always an element — a key dispatched at the document has none — so it
+      // is asked what it is before it is asked what it is inside, the same way
+      // `usePlayerKeys` asks.
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, select, [contenteditable]') !== null
+      ) {
+        return;
+      }
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
         step(-1);
