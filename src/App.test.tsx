@@ -1187,24 +1187,27 @@ describe('App public gallery (T50)', () => {
     });
   }
 
-  it('renders the public gallery at the front door /, grouped by recording', async () => {
+  it('renders the public gallery at the front door /, one card per recording', async () => {
     const api = fakeProjectsApi();
     api.seed(galleryProject());
     renderApp({ api, initialEntry: '/' });
 
-    expect(await screen.findByRole('heading', { name: /Manfred Honeck/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
-    expect(screen.getByText('21 markers')).toBeInTheDocument();
+    const card = await screen.findByRole('link', { name: /Manfred Honeck/ });
+    expect(card).toHaveAttribute('href', '/gallery/project-1');
+    expect(card).toHaveTextContent('50:36');
+    // The card carries no owner metadata — not the project name, not a count.
+    expect(screen.queryByText('Honeck Tchaikovsky 5')).not.toBeInTheDocument();
+    expect(screen.queryByText('21 markers')).not.toBeInTheDocument();
     expect(wordmark()).toBeInTheDocument();
   });
 
-  it('opens a gallery entry as the read-only view at /gallery/:id', async () => {
+  it('opens a gallery card as the read-only view at /gallery/:id', async () => {
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(galleryProject());
     const { currentPath } = renderApp({ api, initialEntry: '/' });
 
-    await user.click(await screen.findByRole('button', { name: /Honeck Tchaikovsky 5/ }));
+    await user.click(await screen.findByRole('link', { name: /Manfred Honeck/ }));
     await waitFor(() => expect(currentPath()).toBe('/gallery/project-1'));
 
     // The read-only surface never offers an edit affordance.
@@ -1282,25 +1285,25 @@ describe('The gallery search (T87)', () => {
 
     // The wordmark is a push into the gallery, so Back has somewhere to go.
     await user.click(wordmark());
-    expect(await screen.findByRole('heading', { name: /Manfred Honeck/ })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Manfred Honeck/ })).toBeInTheDocument();
 
-    // A recording-title match, case-insensitive, keeps the whole group.
+    // A recording-title match keeps that recording's one card.
     await user.type(gallerySearch(), 'HONECK');
-    expect(await screen.findByText('2 projects found.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /First read/ })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /Daniel Harding/ })).not.toBeInTheDocument();
+    expect(await screen.findByText('1 recording found.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Manfred Honeck/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Daniel Harding/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Honeck Tchaikovsky 5')).not.toBeInTheDocument();
     expect(gallerySearch()).toHaveValue('HONECK');
     expect(currentSearch()).toBe('?q=HONECK');
 
-    // A project-name match keeps only the matching rows.
+    // A project-name match still finds the recording, whose card names it.
     await user.clear(gallerySearch());
     await user.type(gallerySearch(), 'first read');
-    expect(await screen.findByText('2 projects found.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Honeck Tchaikovsky 5/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /First read/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Bruckner 7, first read/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Second read/ })).not.toBeInTheDocument();
+    expect(await screen.findByText('2 recordings found.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Manfred Honeck/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Daniel Harding/ })).toBeInTheDocument();
+    expect(screen.queryByText('First read')).not.toBeInTheDocument();
+    expect(screen.queryByText('Second read')).not.toBeInTheDocument();
     expect(currentSearch()).toBe('?q=first+read');
 
     // Typing replaced: Back goes to the page before the gallery, not through
@@ -1314,10 +1317,8 @@ describe('The gallery search (T87)', () => {
     seedGallery(api);
     renderApp({ api, initialEntry: '/?q=bruckner' });
 
-    expect(await screen.findByRole('heading', { name: /Daniel Harding/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Bruckner 7, first read/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Second read/ })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /Manfred Honeck/ })).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Daniel Harding/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Manfred Honeck/ })).not.toBeInTheDocument();
     expect(gallerySearch()).toHaveValue('bruckner');
   });
 
@@ -1337,7 +1338,7 @@ describe('The gallery search (T87)', () => {
     await user.keyboard('{Enter}');
     await waitFor(() => expect(currentPath()).toBe('/'));
     expect(currentSearch()).toBe('?q=first+read');
-    expect(await screen.findByText('2 projects found.')).toBeInTheDocument();
+    expect(await screen.findByText('2 recordings found.')).toBeInTheDocument();
     expect(gallerySearch()).toHaveValue('first read');
   });
 
@@ -1347,13 +1348,13 @@ describe('The gallery search (T87)', () => {
     seedGallery(api);
     const { currentSearch } = renderApp({ api, initialEntry: '/?q=nothing like this' });
 
-    expect(await screen.findByText('No projects match “nothing like this”.')).toBeInTheDocument();
+    expect(await screen.findByText('No recordings match “nothing like this”.')).toBeInTheDocument();
     // Zero is still a result count, and the live region announces it.
-    expect(screen.getByRole('status')).toHaveTextContent('0 projects found.');
+    expect(screen.getByRole('status')).toHaveTextContent('0 recordings found.');
 
     await user.click(screen.getByRole('button', { name: 'Clear search' }));
 
-    expect(await screen.findByRole('button', { name: /Honeck Tchaikovsky 5/ })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Manfred Honeck/ })).toBeInTheDocument();
     expect(currentSearch()).toBe('');
     expect(gallerySearch()).toHaveValue('');
   });
@@ -1362,7 +1363,7 @@ describe('The gallery search (T87)', () => {
     renderApp({ initialEntry: '/?q=anything' });
 
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
-    expect(screen.queryByText(/No projects match/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No recordings match/)).not.toBeInTheDocument();
   });
 
   it('keeps no draft from one non-gallery page to the next', async () => {
@@ -1379,47 +1380,72 @@ describe('The gallery search (T87)', () => {
   });
 });
 
-describe('The gallery wears the player’s direction (T88)', () => {
-  it('sets the title, introduction, recording titles, and prose in the serif', () => {
+describe('The gallery wears the player’s direction (T88, T90)', () => {
+  it('sets the title, card titles, and prose in the serif', () => {
     // The gallery is the front door and where the search lives, so its content
     // takes the document's face as the player's does.
     expect(galleryCss).toMatch(/\.gallery h2\s*\{[^}]*var\(--serif\)/);
-    expect(galleryCss).toMatch(/\.gallery-intro\s*\{[^}]*var\(--serif\)/);
-    expect(galleryCss).toMatch(/\.gallery-recording\s*\{[^}]*var\(--serif\)/);
+    expect(galleryCss).toMatch(/\.gallery-card-title\s*\{[^}]*var\(--serif\)/);
     expect(galleryCss).toMatch(/\.gallery-empty\s*\{[^}]*var\(--serif\)/);
     expect(galleryCss).toMatch(/\.gallery-error\s*\{[^}]*var\(--serif\)/);
   });
 
-  it('rules a recording title in ink and separates entries with hairlines, not boxes', () => {
-    expect(galleryCss).toMatch(
-      /\.gallery-recording\s*\{[^}]*border-bottom:\s*1px solid var\(--ink\)/,
-    );
+  it('fills the page rail with a grid capped at three across, stepping down to two and one', () => {
+    // The card grid takes the whole rail the shell bounds, rather than the old
+    // list's 720px prose measure.
+    expect(galleryCss).not.toMatch(/\.gallery\s*\{[^}]*max-width/);
+    // The grid is an ordered list of cards, with the list's markers removed.
+    expect(galleryCss).toMatch(/\.gallery-grid\s*\{[^}]*list-style:\s*none/);
 
-    // A row carries no box of its own; the rule between two rows is the
-    // list's, so the first starts under the recording's own heavier rule.
-    const entryRule = rulesOf(galleryCss).match(/\.gallery-entry\s*\{([^}]*)\}/)![1];
-    expect(entryRule).toMatch(/border:\s*none/);
-    expect(entryRule).toMatch(/background:\s*none/);
+    // Three across is the ceiling; the medium and narrow breakpoints step it
+    // down. minmax(0, …) lets each track shrink, so nothing scrolls sideways.
     expect(galleryCss).toMatch(
-      /\.gallery-list li \+ li\s*\{[^}]*border-top:\s*1px solid var\(--rule\)/,
+      /\.gallery-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
     );
+    expect(galleryCss).toMatch(
+      /@media \(max-width: 860px\)\s*\{[\s\S]*?\.gallery-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    );
+    expect(galleryCss).toMatch(
+      /@media \(max-width: 560px\)\s*\{[\s\S]*?\.gallery-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    );
+    // No column count is ever fixed at a pixel width that could overflow.
+    expect(galleryCss).not.toMatch(/grid-template-columns:\s*\d+px/);
   });
 
-  it('gives project names ink 600 and counts the serif’s tabular figures', () => {
-    expect(galleryCss).toMatch(/\.gallery-name\s*\{[^}]*font-weight:\s*600/);
-    expect(galleryCss).toMatch(/\.gallery-name\s*\{[^}]*color:\s*var\(--ink\)/);
-    expect(galleryCss).toMatch(/\.gallery-count\s*\{[^}]*var\(--serif\)/);
-    expect(galleryCss).toMatch(/\.gallery-count\s*\{[^}]*font-variant-numeric:\s*tabular-nums/);
-    expect(galleryCss).toMatch(/\.gallery-count\s*\{[^}]*color:\s*var\(--ink-2\)/);
+  it('frames the 16:9 still in ink with no box around the card', () => {
+    expect(galleryCss).toMatch(/\.gallery-thumb\s*\{[^}]*aspect-ratio:\s*16 \/ 9/);
+    expect(galleryCss).toMatch(/\.gallery-thumb\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
+    expect(galleryCss).toMatch(/\.gallery-thumb\s*\{[^}]*object-fit:\s*cover/);
+
+    // The link is a card of facts, not a second ruled box.
+    const cardRule = rulesOf(galleryCss).match(/\.gallery-card\s*\{([^}]*)\}/)![1];
+    expect(cardRule).not.toMatch(/border|background/);
   });
 
-  it('brings the row and the retry to the pencil, never a fill', () => {
+  it('gives the recording title ink 600, clamped to two lines', () => {
+    expect(galleryCss).toMatch(/\.gallery-card-title\s*\{[^}]*font-weight:\s*600|\.gallery-card-title\s*\{[^}]*font:\s*600/);
+    expect(galleryCss).toMatch(/\.gallery-card-title\s*\{[^}]*-webkit-line-clamp:\s*2/);
+    expect(galleryCss).toMatch(/\.gallery-card-title\s*\{[^}]*overflow:\s*hidden/);
+    expect(galleryCss).toMatch(/\.gallery-card\s*\{[^}]*color:\s*var\(--ink\)/);
+  });
+
+  it('sets the duration chip in the sans, whole figures on ink', () => {
+    expect(galleryCss).toMatch(/\.gallery-duration\s*\{[^}]*var\(--sans\)/);
+    expect(galleryCss).toMatch(/\.gallery-duration\s*\{[^}]*font-variant-numeric:\s*tabular-nums/);
+    expect(galleryCss).toMatch(/\.gallery-duration\s*\{[^}]*background:\s*var\(--ink\)/);
+    expect(galleryCss).toMatch(/\.gallery-duration\s*\{[^}]*color:\s*var\(--paper\)/);
+  });
+
+  it('brings the frame, the title, and the retry to the pencil, never a fill', () => {
     // Hover and keyboard focus share the one accent; the platform's ring is
     // replaced so the pencil stays the only colour that means interaction.
-    expect(galleryCss).toMatch(/\.gallery-entry:hover[^{]*\{[^}]*var\(--pencil\)/);
+    expect(galleryCss).toMatch(/\.gallery-card:hover \.gallery-thumb[^{]*\{[^}]*var\(--pencil\)/);
+    expect(galleryCss).toMatch(
+      /\.gallery-card:hover \.gallery-card-title[^{]*\{[^}]*var\(--pencil\)/,
+    );
     expect(galleryCss).toMatch(/\.gallery-action:hover[^{]*\{[^}]*var\(--pencil\)/);
     expect(galleryCss).toMatch(
-      /\.gallery-entry:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--pencil\)/,
+      /\.gallery-card:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--pencil\)/,
     );
     expect(galleryCss).toMatch(
       /\.gallery-action:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--pencil\)/,

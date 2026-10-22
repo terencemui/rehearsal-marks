@@ -1,95 +1,124 @@
-/* The public gallery (T88): the app's front door wears the player's direction
-   — a serif page on the sheet's paper, ink rules, square rule-separated rows,
-   and the pencil as the one interaction accent. Every colour and face is
-   consumed by name from the shell's tokens (app.css); this file names none of
-   its own. */
+/* The public gallery (T90): the app's front door wears the player's direction
+   — a serif page on the sheet's paper, ink rules, square cards, and the pencil
+   as the one interaction accent. Every colour and face is consumed by name
+   from the shell's tokens (app.css); this file names none of its own. */
 
-.gallery {
-  max-width: 720px;
-}
+/* The card grid takes the whole page rail the shell already bounds; the old
+   ruled list's prose measure is gone. */
 
 .gallery h2 {
-  margin: 0 0 4px;
+  margin: 0;
   font: 600 27px/1.12 var(--serif);
   letter-spacing: -0.015em;
   color: var(--ink);
 }
 
-.gallery-intro {
-  margin: 0 0 20px;
+/* The search's count line. It is empty (and so takes no room) until a query
+   gives it something to announce. */
+.gallery-status {
+  margin: 0;
   font: 400 15px/1.5 var(--serif);
   color: var(--ink-2);
 }
 
-.gallery-group {
-  margin: 0 0 28px;
+.gallery-status:not(:empty) {
+  margin: 4px 0 0;
 }
 
-/* A recording's title is a heading over the entries it names: serif content
-   above an ink hairline, the page's table of contents. */
-.gallery-recording {
-  margin: 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--ink);
-  font: 600 17px/1.3 var(--serif);
-  color: var(--ink);
-}
-
-.gallery-list {
-  list-style: none;
-  margin: 0;
+/* Three across is the ceiling; the grid steps down rather than growing more
+   columns on the wide rail. minmax(0, …) lets the tracks shrink under their
+   content's intrinsic width, so nothing scrolls sideways. */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px 20px;
+  margin: 20px 0 0;
   padding: 0;
+  list-style: none;
 }
 
-/* Entries are rows in a ruled list, not cards: the rule between two rows is
-   the list's, so the first starts under the recording's own heavier rule with
-   no second box around it. */
-.gallery-list li + li {
-  border-top: 1px solid var(--rule);
+@media (max-width: 860px) {
+  .gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-.gallery-entry {
-  width: 100%;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  border: none;
-  border-radius: 0;
-  background: none;
-  padding: 10px 0;
-  font: 400 15px/1.4 var(--serif);
+@media (max-width: 560px) {
+  .gallery-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.gallery-card {
+  display: block;
   color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-}
-
-/* Hover is the ink coming up to the pencil, never a tint behind the row. */
-.gallery-entry:hover .gallery-name,
-.gallery-entry:hover .gallery-count,
-.gallery-entry:focus-visible .gallery-name,
-.gallery-entry:focus-visible .gallery-count {
-  color: var(--pencil);
+  text-decoration: none;
 }
 
 /* The pencil is the only focus accent, so the keyboard ring is ours rather
    than the platform's second colour — the player draws its controls the same
    way. */
-.gallery-entry:focus-visible {
+.gallery-card:focus-visible {
   outline: 2px solid var(--pencil);
-  outline-offset: -2px;
+  outline-offset: 4px;
 }
 
-.gallery-name {
-  font-weight: 600;
-  color: var(--ink);
+.gallery-image {
+  position: relative;
+  display: block;
+  /* Keeps the still's 16:9 box when both stills fail and the image hides, so
+     the duration chip stays in the card rather than floating over the title. */
+  aspect-ratio: 16 / 9;
 }
 
-.gallery-count {
-  flex: none;
-  font: 400 13px/1.4 var(--serif);
+/* The photograph is the card's one colour object; the hairline frame is what
+   keeps it in the paper-and-ink direction, at the source's own 16:9. */
+.gallery-thumb {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid var(--ink);
+  background: var(--wash);
+}
+
+/* The attribute alone would lose to the display above (the author's rule
+   outranks the platform's [hidden]), so the hide is spelled out. */
+.gallery-thumb[hidden] {
+  display: none;
+}
+
+.gallery-card:hover .gallery-thumb,
+.gallery-card:focus-visible .gallery-thumb {
+  border-color: var(--pencil);
+}
+
+/* YouTube's own placement: the duration in the still's corner, whole seconds. */
+.gallery-duration {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  background: var(--ink);
+  color: var(--paper);
+  font: 500 12px/1.4 var(--sans);
   font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
+}
+
+.gallery-card-title {
+  display: -webkit-box;
+  margin: 10px 0 0;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font: 600 16px/1.25 var(--serif);
+  letter-spacing: -0.01em;
+}
+
+.gallery-card:hover .gallery-card-title,
+.gallery-card:focus-visible .gallery-card-title {
+  color: var(--pencil);
 }
 
 .gallery-error {
