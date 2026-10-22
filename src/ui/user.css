@@ -48,8 +48,9 @@
   color: var(--pencil);
 }
 
-/* The two boxes in the bar: the sign-in button and the account trigger. Same
-   32px height, same ink rule at rest, same pencil on hover, focus or open. */
+/* The account's boxes in the bar: the sign-in button and the account trigger.
+   Same 32px height, same ink rule at rest, same pencil on hover, focus or
+   open. */
 .user-sign-in,
 .user-trigger {
   display: inline-flex;

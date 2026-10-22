@@ -80,6 +80,10 @@ _Avoid_: selected row, picked-out row, current row, highlighted row
 The anonymous browse surface: one card per recording with at least one published public project, ordered by its newest published project, newest first. A card opens the recording's oldest published project, and no account is needed to read or play any of them.
 _Avoid_: homepage, catalog, browse
 
+**Gallery search**:
+The reader's text filter over the public gallery: a trimmed, case-insensitive match against a recording's title or any of its projects' names, keeping the whole recording.
+_Avoid_: filter, keyword search
+
 **User**:
 A signed-in person who owns the projects they create; browsing the public gallery never requires being one.
 _Avoid_: contributor, account holder
