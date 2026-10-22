@@ -103,12 +103,15 @@ describe('filterGalleryGroups', () => {
     expect(filtered[0].projects).toHaveLength(2);
   });
 
-  it('keeps only the matching rows on a project-name match', () => {
+  it('keeps the whole group unchanged on a project-name match', () => {
+    // The search finds recordings, not project subsets: a name match keeps the
+    // card's thumbnail, title, duration and oldest-project link intact.
     const filtered = filterGalleryGroups(groups, 'first read');
 
     expect(filtered.map((group) => group.videoId)).toEqual(['aaa', 'bbb']);
-    expect(filtered[0].projects).toEqual([tchaikovskyAgain]);
-    expect(filtered[1].projects).toEqual([bruckner]);
+    expect(filtered[0]).toEqual(groups[0]);
+    expect(filtered[0].projects).toEqual([tchaikovsky, tchaikovskyAgain]);
+    expect(filtered[1]).toEqual(groups[1]);
   });
 
   it('drops a group no row and no title matches', () => {

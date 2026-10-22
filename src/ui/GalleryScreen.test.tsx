@@ -128,20 +128,22 @@ describe('GalleryScreen', () => {
     await waitFor(() => expect(currentPath()).toBe('/gallery/oldest'));
   });
 
-  it('keeps the oldest-project target when a project-name search narrows the group', async () => {
+  it('keeps the whole card when a project-name search matches a non-oldest project', async () => {
     const api = fakeProjectsApi();
     api.seed(galleryProject({ id: 'oldest', name: 'First read', createdAt: 2_000 }));
     api.seed(galleryProject({ id: 'newest', name: 'Second read', createdAt: 3_000 }));
 
     renderGallery(api, '/?q=second');
 
-    // The query matches only the newer project, but the card still opens the
-    // recording's oldest published set — the same target the unfiltered card
-    // has, so a query never moves the card's link.
+    // The query matches only the newer project's name, but the search finds the
+    // recording: its card is unchanged, still opening the recording's oldest
+    // published set, the same target the unfiltered card has.
     expect(await screen.findByRole('link', { name: /Manfred Honeck/ })).toHaveAttribute(
       'href',
       '/gallery/oldest',
     );
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('1 recording found.');
   });
 
   it('shows the high-resolution still, falling back to the medium one, then hiding', async () => {

@@ -123,12 +123,6 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   if (groups === null) return null;
   const emptyServer = groups.length === 0;
   const matching = emptyServer ? [] : filterGalleryGroups(groups, query);
-  // A card's target is the oldest project in the whole recording, never the
-  // query's narrowed view of it: a project-name search keeps the card's link
-  // where the unfiltered gallery puts it.
-  const oldestByVideo = new Map(
-    groups.map((group) => [group.videoId, oldestProject(group)]),
-  );
   return (
     <GalleryFrame>
       {/* The live region every state shares: a search announces its count,
@@ -155,7 +149,7 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
       )}
       <ol className="gallery-grid">
         {matching.map((group) => {
-          const project = oldestByVideo.get(group.videoId)!;
+          const project = oldestProject(group);
           return (
             <li key={group.videoId}>
               <Link className="gallery-card" to={`/gallery/${project.id}`}>
