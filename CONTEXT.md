@@ -77,7 +77,7 @@ _Avoid_: selected row, picked-out row, current row, highlighted row
 ### Gallery and sharing
 
 **Public gallery**:
-The anonymous browse surface listing published public projects, grouped by recording and newest first — no account is needed to read or play any of them.
+The anonymous browse surface: one card per recording with at least one published public project, ordered by its newest published project, newest first. A card opens the recording's oldest published project, and no account is needed to read or play any of them.
 _Avoid_: homepage, catalog, browse
 
 **User**:
