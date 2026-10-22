@@ -161,10 +161,10 @@ export function groupGalleryProjects(projects: readonly PublicProjectSummary[]):
 }
 
 /**
- * The gallery search's rule (T87): a trimmed, case-insensitive substring match
- * over a project's name and its recording's title. A recording-title match
- * keeps the whole group — the search found the recording; a project-name match
- * keeps only the rows that matched; a group left with nothing drops.
+ * The gallery search's rule (T91): a trimmed, case-insensitive substring match
+ * over any of a recording's project names and its title. The search finds
+ * recordings, so a match — title or project name — keeps the whole group
+ * unchanged; a group with no match drops.
  */
 export function filterGalleryGroups(
   groups: readonly GalleryGroup[],
@@ -172,19 +172,15 @@ export function filterGalleryGroups(
 ): GalleryGroup[] {
   const needle = query.trim().toLowerCase();
   if (needle === '') return [...groups];
-  return groups.flatMap((group) => {
-    // Any member's title, not just the newest's: a recording retitled on
-    // YouTube leaves older rows carrying the old title. A title match is the
-    // recording's, so the whole group stays.
-    const titleMatch = group.projects.some((project) =>
-      project.recordingTitle.toLowerCase().includes(needle),
-    );
-    if (titleMatch) return [group];
-    const projects = group.projects.filter((project) =>
-      project.name.toLowerCase().includes(needle),
-    );
-    return projects.length === 0 ? [] : [{ ...group, projects }];
-  });
+  return groups.filter((group) =>
+    // Any member's fields, not just the newest's: a recording retitled on
+    // YouTube leaves older rows carrying the old title.
+    group.projects.some(
+      (project) =>
+        project.recordingTitle.toLowerCase().includes(needle) ||
+        project.name.toLowerCase().includes(needle),
+    ),
+  );
 }
 
 /**
