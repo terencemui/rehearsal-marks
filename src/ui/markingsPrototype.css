@@ -1,0 +1,507 @@
+/* PROTOTYPE — throwaway (prototype/markings-direction), never merged to main.
+
+   The markings page wearing the player's direction, in three anatomies. Every
+   rule here is scoped under `.markings-proto`, which the page puts over its own
+   tree: that one extra class outranks markings.css's shipped rules without
+   editing them, so the branch can be thrown away by deleting this file and the
+   wiring, and the shipped stylesheet is never touched.
+
+   What is held constant across all three variants (settled before this
+   prototype, and not under judgement here):
+     - the direction's tokens and both faces, no raw hex, no radius;
+     - the label in its ruled box, filled with the pencil where the playhead
+       has passed it;
+     - the active item's own 2px pencil rule, in the margin;
+     - the correction decks bare on the paper, hairline-ruled and square;
+     - serif tabular digits, sans chrome;
+     - three weights of rule on the controls — pencil for the commit, ink for
+       the common act, hairline for the rarer one;
+     - `--editorial` for the trash, the delete answer and every refusal, and
+       the return-to-review note as a quiet sans footnote.
+
+   What varies, and what the three are judged on: where the exact time lives,
+   how a movement is banded, and what yields at the side column's 280px floor.
+
+   FAKED, declared (docs/prototypes.md asks for this in the commit message too):
+     1. The direction reaches the shared surface by handing `RecordingSurface`
+        its `practiceSurface` hook, standing in for promoting the fold's shared
+        rules off that hook. Same pixels, one line instead of forty — and it
+        reddens the two App.test.tsx guards that assert the hook is absent
+        here. On this branch only; the real ticket promotes the rules.
+     2. In variant B the exact time is moved out of the row by wrapping the row
+        and letting the field take a line of its own. The markup still swaps the
+        clock *for* the field, so B's active row shows no whole-second clock;
+        the real B keeps both (a one-line change in MarkersPanel).
+     3. Writes are refused by the server for an anonymous visitor, which is how
+        the page is reached in dev without a Google sign-in. The drawing is what
+        is under judgement; the save path is not. */
+
+/* ---------------------------------------------------------------- the save bar */
+
+/* The commit, in the one control that carries the pencil's rule: the direction
+   has no filled button, and the pencil's *fill* is spent on the mark the
+   playhead has passed. A doubled rule on hover rather than a thicker border,
+   which would reflow the bar. */
+.markings-proto .markings-save {
+  padding: 5px 14px;
+  border: 1px solid var(--pencil);
+  border-radius: 0;
+  background: none;
+  color: var(--pencil);
+  font: 600 12.5px/18px var(--sans);
+}
+
+.markings-proto .markings-save:hover:not(:disabled) {
+  background: none;
+  border-color: var(--pencil);
+  box-shadow: inset 0 0 0 1px var(--pencil);
+}
+
+.markings-proto .markings-save:disabled {
+  border-color: var(--rule);
+  background: none;
+  color: var(--ink-2);
+}
+
+/* The consequence is not an error: it is a sentence explaining what Saving
+   does, so it reads as an editorial footnote in the quiet ink rather than as a
+   wall of the alert colour. */
+.markings-proto .markings-save-note {
+  max-width: 68ch;
+  font: 400 12.5px/1.5 var(--sans);
+  color: var(--ink-2);
+}
+
+/* The status line and its retry (saveStatusLine.css is pre-fold, and renders on
+   the project page too — the real ticket folds that file; here it is scoped). */
+.markings-proto .save-status {
+  font: 400 13px/18px var(--sans);
+  color: var(--ink-2);
+}
+
+.markings-proto .save-status-error {
+  color: var(--editorial);
+}
+
+.markings-proto .save-status-retry {
+  border: 1px solid currentColor;
+  border-radius: 0;
+  background: none;
+  color: var(--editorial);
+  font: 600 12px/18px var(--sans);
+}
+
+/* ------------------------------------------------------------ the add controls */
+
+.markings-proto .markings-add,
+.markings-proto .markings-add-movement {
+  border-radius: 0;
+  background: none;
+  font: 600 12px/18px var(--sans);
+}
+
+/* Placing a mark is the column's common act: the ink rule. */
+.markings-proto .markings-add {
+  border: 1px solid var(--ink);
+  color: var(--ink);
+}
+
+/* A boundary is the rarer one, and stays a step back: the hairline. */
+.markings-proto .markings-add-movement {
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+
+.markings-proto .markings-add:hover:not(:disabled),
+.markings-proto .markings-add-movement:hover:not(:disabled) {
+  border-color: var(--pencil);
+  background: none;
+  color: var(--pencil);
+}
+
+.markings-proto .markings-add:disabled,
+.markings-proto .markings-add-movement:disabled {
+  border-color: var(--rule);
+  color: var(--ink-2);
+}
+
+.markings-proto .markings-add-error {
+  font: 400 12px/17px var(--sans);
+  color: var(--editorial);
+}
+
+/* -------------------------------------------------------------------- the rows */
+
+/* The row reads in the document's face, as the browsing row does. No tint under
+   the pointer — the direction has no band for a row to sit in, so hover is the
+   ink coming up. */
+.markings-proto .markings-row {
+  border-radius: 0;
+  font: 400 15px/22px var(--serif);
+  color: var(--ink-2);
+}
+
+.markings-proto .markings-row:hover {
+  background: none;
+  color: var(--ink);
+}
+
+/* The direction's signature at row scale. The label button is already its own
+   element, so the box costs no markup. */
+.markings-proto .markings-row .player-marker-title {
+  padding: 1px 3px 2px;
+  border: 1.25px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  font: 600 15px/1.2 var(--serif);
+}
+
+/* The mark the playhead has passed: the pencil has gone over it, so the box
+   fills and the letter shows in the sheet's paper — the same three
+   declarations the strip's box and the readout's slot spend. The row's own
+   tint goes with it: the box is what carries the state now. */
+.markings-proto .player-marker-list li.passed .markings-row {
+  background: none;
+  color: var(--ink);
+}
+
+.markings-proto .player-marker-list li.passed .markings-row .player-marker-title {
+  border-color: var(--pencil);
+  background: var(--pencil);
+  color: var(--paper);
+}
+
+/* The clock, in the direction's own answer for digits: the serif with tabular
+   figures, as the strip's clock and the practice panel's are. */
+.markings-proto .markings-row .player-marker-time {
+  font: 400 13.5px/22px var(--serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.markings-proto .player-marker-list li.passed .markings-row .player-marker-time,
+.markings-proto .player-marker-list li.passed .markings-row-time {
+  color: var(--pencil);
+}
+
+/* The band's clock is where the pointer learns the band can be jumped to — a
+   band cannot light up against itself. */
+.markings-proto .player-marker-movement .markings-movement-header .player-marker-time:hover {
+  background: var(--wash);
+}
+
+/* The alias: one slot in two shapes, the name as text and the field it is typed
+   into, both in the row's own face. */
+.markings-proto .markings-alias-slot {
+  border-radius: 0;
+  font: 400 15px/18px var(--serif);
+  color: inherit;
+}
+
+.markings-proto .markings-row-alias {
+  border-color: var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.markings-proto .markings-row-alias:focus,
+.markings-proto .markings-row-time:focus {
+  outline: 2px solid var(--pencil);
+  outline-offset: -1px;
+}
+
+/* The exact time. No monospace anywhere: the direction has two faces, and a
+   clock in it is the serif with tabular figures — which is also what keeps one
+   face in the slot the clock and the field share. */
+.markings-proto .markings-row-time {
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  font: 400 13.5px/18px var(--serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.markings-proto .markings-delete {
+  border-radius: 0;
+  color: var(--editorial);
+}
+
+.markings-proto .markings-delete:hover {
+  background: var(--wash);
+}
+
+.markings-proto .markings-row-error {
+  font: 400 12px/17px var(--sans);
+  color: var(--editorial);
+}
+
+/* ------------------------------------------------- the active row and its decks */
+
+/* The row being corrected carries a pencil rule down its own left edge — the
+   way a bar being worked on is marked in a part. Not a ring: the direction
+   draws focus as a 2px pencil outline inset into the control it marks, and the
+   active row is usually the row whose field has the caret, so a ring here would
+   nest two identical marks 2px apart.
+
+   It is the item's and not the row's, because the item is the row and its decks
+   together: one stroke says they belong to each other, which is what lets the
+   decks give up their panel below. Drawn as a pseudo-element rather than a
+   border so nothing in the row shifts by 2px when the playhead arrives. */
+.markings-proto .player-marker-list li.correcting {
+  position: relative;
+  border-radius: 0;
+  outline: 0;
+}
+
+.markings-proto .player-marker-list li.correcting::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--pencil);
+}
+
+/* The decks, bare on the paper: the margin rule above binds them to their row,
+   so neither a fill nor a frame is spent saying it a second time. The layout is
+   the shipped one — minus flush left, plus flush right, wrapping at the floor. */
+.markings-proto .markings-correct {
+  margin: 4px 0 6px 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* A nudge: the navbar's control idiom at deck scale. The width is pinned in
+   pixels rather than in `ch`, because the face is no longer monospaced — the
+   halves say `±0.5s` and, with `Shift` down, `±1s`, and the wider of the two is
+   what the pin has to hold so the strip does not move under the pointer
+   mid-gesture. */
+.markings-proto .markings-nudge {
+  min-width: 54px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: 600 12px/18px var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.markings-proto .markings-nudge:hover {
+  border-color: var(--pencil);
+  background: none;
+  color: var(--pencil);
+}
+
+/* ------------------------------------------------------------- the movement band */
+
+.markings-proto .markings-movement-name {
+  border-radius: 0;
+  background: none;
+  font: 600 15px/22px var(--serif);
+  color: var(--ink);
+}
+
+.markings-proto .markings-movement-name:hover {
+  border-color: var(--rule);
+}
+
+.markings-proto .markings-movement-name:focus {
+  border-color: var(--rule);
+  background: var(--paper);
+  outline: 2px solid var(--pencil);
+  outline-offset: -1px;
+}
+
+.markings-proto .markings-movement-name::placeholder {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.markings-proto .markings-movement-confirm {
+  border-bottom: 1px solid var(--rule);
+  font: 400 13px/19px var(--sans);
+  color: var(--ink-2);
+}
+
+.markings-proto .markings-movement-confirm button {
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--ink-2);
+  font: 600 12px/18px var(--sans);
+}
+
+.markings-proto .markings-movement-confirm .markings-movement-confirm-delete {
+  border-color: var(--editorial);
+  color: var(--editorial);
+}
+
+.markings-proto .markings-movement-confirm .markings-movement-confirm-delete:hover {
+  background: var(--editorial);
+  color: var(--paper);
+}
+
+/* ------------------------------------------------------------- the empty column */
+
+.markings-proto .markings-empty-copy {
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-2);
+}
+
+.markings-proto .markings-empty-copy kbd {
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  font: 600 12px/18px var(--sans);
+  color: var(--ink);
+}
+
+/* ============================================================================
+   A — the list
+
+   Tight rows, the practice band's paper-and-ink rule, and T68's one slot: the
+   clock and the millisecond field share a width, so nothing in the row moves
+   when the playhead arrives. The alias is what yields, and at 280px it is
+   sitting on its floor. This is the drawing the grilling settled; the other two
+   are here to beat it.
+   ============================================================================ */
+
+/* Re-measured for the serif: the shipped 104px was sized for 13px monospace,
+   and `h:mm:ss.mmm` in Source Serif 4 at 13.5px needs more. */
+.markings-proto[data-proto-v='a'] .player-markers {
+  --markings-clock-slot: 115px;
+}
+
+.markings-proto[data-proto-v='a'] .player-marker-movement .markings-movement-header,
+.markings-proto[data-proto-v='a'] .markings-movement-confirm {
+  background: var(--paper);
+  border-bottom: 1px solid var(--ink);
+}
+
+/* ============================================================================
+   B — the worksheet
+
+   Airier rows, wash-filled bands, and the exact time out of the slot and onto a
+   line of its own above the decks — so the row carries only a short clock and
+   the alias breathes at every width. The cost is that a correction is then read
+   in two places instead of one.
+   ============================================================================ */
+
+.markings-proto[data-proto-v='b'] .player-markers {
+  --markings-clock-slot: 62px;
+}
+
+.markings-proto[data-proto-v='b'] .markings-row {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  /* The row wraps so the field below can take a line inside it. */
+  flex-wrap: wrap;
+}
+
+.markings-proto[data-proto-v='b'] .player-marker-movement .markings-movement-header,
+.markings-proto[data-proto-v='b'] .markings-movement-confirm {
+  background: var(--wash);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The field takes a line of its own at the row's foot, flush left under the
+   name it belongs to, at the width the longest reading needs. */
+.markings-proto[data-proto-v='b'] .markings-row-time {
+  order: 9;
+  flex: 0 0 100%;
+  width: auto;
+  max-width: 112px;
+  margin: 6px 0 0;
+}
+
+/* ============================================================================
+   C — the part
+
+   No bands at all: a movement is a serif heading over a hairline, the way a
+   part sets one. The clock leaves the inactive rows — only the row being
+   corrected reads a time — so the alias takes the whole width, and the rows sit
+   as tight as a table of contents. The cost is the times you scan by.
+   ============================================================================ */
+
+.markings-proto[data-proto-v='c'] .player-markers {
+  --markings-clock-slot: 115px;
+}
+
+.markings-proto[data-proto-v='c'] .markings-row {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.markings-proto[data-proto-v='c'] .player-marker-movement .markings-movement-header,
+.markings-proto[data-proto-v='c'] .markings-movement-confirm {
+  background: none;
+  border-bottom: 1px solid var(--ink);
+}
+
+.markings-proto[data-proto-v='c'] .player-marker-movement .markings-movement-header {
+  padding-top: 12px;
+}
+
+/* The clock goes from the marker rows and stays on the band, where a movement's
+   start still has to be read and jumped to. */
+.markings-proto[data-proto-v='c'] .markings-row .player-marker-time {
+  display: none;
+}
+
+.markings-proto[data-proto-v='c'] .markings-movement-header .player-marker-time {
+  display: block;
+  width: auto;
+  min-width: 54px;
+}
+
+/* ============================================================================
+   The switcher — scaffolding, deliberately not in the direction
+   ============================================================================ */
+
+.proto-switcher {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 22%);
+  font: 600 12px/18px var(--sans);
+}
+
+.proto-switcher button {
+  min-width: 30px;
+  padding: 2px 6px;
+  border: 1px solid rgb(252 252 250 / 45%);
+  border-radius: 0;
+  background: none;
+  color: var(--paper);
+  cursor: pointer;
+  font: 600 13px/18px var(--sans);
+}
+
+.proto-switcher button:hover {
+  border-color: var(--paper);
+}
+
+.proto-switcher-label {
+  min-width: 148px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.proto-switcher-hint {
+  font-weight: 400;
+  opacity: 0.65;
+}

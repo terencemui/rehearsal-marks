@@ -34,6 +34,11 @@ import { usePlayerKeys } from './playerKeys';
 import { useRecordingSession } from './useRecordingSession';
 import { useNavigationBlocker, useTabCloseGuard } from './exitGuards';
 import { useShiftHeld } from './useShiftHeld';
+// PROTOTYPE (prototype/markings-direction) — the three column anatomies and
+// their switcher. Both of these, and the `Stave` and `practiceSurface` below,
+// come off before anything lands on main.
+import { PrototypeSwitcher, usePrototypeVariant } from './PrototypeSwitcher';
+import { Stave } from './Stave';
 import './markings.css';
 
 /** One markings page session: the autosave over the loaded project and its controller. */
@@ -212,6 +217,8 @@ interface MarkingsSurfaceProps {
  * cannot follow.
  */
 function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
+  // PROTOTYPE: which anatomy the column is drawn in, read from `?variant=`.
+  const [variant, pickVariant] = usePrototypeVariant();
   const session = useRecordingSession({ autosave, controller });
   const { record, mutate } = session;
   // The playback view of the recording — the shared derivation (T55), the same
@@ -700,7 +707,9 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   };
 
   return (
-    <>
+    // PROTOTYPE: the variant's hook over the page's own tree — one class the
+    // prototype stylesheet keys on, so markings.css is never edited.
+    <div className="markings-proto" data-proto-v={variant}>
       {/* The leave prompt (T60), while the router holds a navigation the owner
           asked for. Rendered inside the page's own tree so the recording it is
           asking about stays behind it, visible and unmoved. */}
@@ -739,6 +748,25 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
         settled={session.settled}
         loadFailed={session.loadFailed}
         onRetryLoad={session.retryLoad}
+        // PROTOTYPE, faked: the fold's shared rules are keyed on this hook, and
+        // the real ticket promotes them off it. Borrowing it here is the
+        // one-line stand-in for that promotion — same pixels, and it reddens
+        // the two App.test.tsx guards that assert the hook is absent here.
+        practiceSurface
+        // PROTOTYPE: the stave on the authoring page (settled, not under
+        // judgement) — the boundaries being placed are drawn as bar lines, with
+        // each movement's name under the stretch it names.
+        timeline={
+          <Stave
+            markers={labeled}
+            naming={naming}
+            passedId={passedMarker?.id ?? null}
+            movements={record.movements}
+            duration={duration}
+            currentTime={elapsed}
+            onSeek={(time) => controller.seek(time)}
+          />
+        }
         side={(markersMaxHeight) =>
           // Empty means empty of everything the column holds (T58): a recording
           // with its movements laid out and no marks in them yet is a project
@@ -777,7 +805,8 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
           )
         }
       />
-    </>
+      <PrototypeSwitcher current={variant} onPick={pickVariant} />
+    </div>
   );
 }
 
