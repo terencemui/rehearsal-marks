@@ -85,6 +85,11 @@ function navSignIn(): HTMLElement {
   return within(screen.getByRole('navigation')).getByRole('button', { name: 'Sign in' });
 }
 
+/** A button in the navbar, by its accessible name. */
+function navButton(name: string): HTMLElement {
+  return within(screen.getByRole('navigation')).getByRole('button', { name });
+}
+
 /** The signed-in account trigger: the user's name and the chevron (T86). */
 function accountTrigger(name = 'Ava Cellist'): HTMLElement {
   return within(screen.getByRole('navigation')).getByRole('button', { name });
@@ -942,7 +947,8 @@ describe('The navbar wears the direction (T76)', () => {
     // assigns is a token reference, in whatever notation it might be written.
     expect(navbarCss).toMatch(/\.app-nav\s*\{[^}]*background:\s*var\(--paper\)/);
     expect(navbarCss).toMatch(/\.app-nav\s*\{[^}]*border-bottom:\s*1px solid var\(--rule\)/);
-    for (const colour of coloursDeclaredIn(navbarCss)) {
+    // `none` paints nothing; every colour that does is a token.
+    for (const colour of coloursDeclaredIn(navbarCss).filter((value) => value !== 'none')) {
       expect(colour).toContain('var(--');
     }
 
@@ -965,8 +971,13 @@ describe('The navbar wears the direction (T76)', () => {
     expect(navbarCss).toMatch(/\.app-name-link\s*\{[^}]*gap:\s*9px/);
 
     // Links are unhighlighted — no rule pours a tint behind a label. Paper is
-    // the only fill in the file: the navbar's ground and the search's box.
-    expect(backgroundsDeclaredIn(navbarCss)).toEqual(['var(--paper)', 'var(--paper)']);
+    // the only fill in the file: the navbar's ground, the search's box, and
+    // the narrow search's dropped panel.
+    expect(backgroundsDeclaredIn(navbarCss).filter((value) => value !== 'none')).toEqual([
+      'var(--paper)',
+      'var(--paper)',
+      'var(--paper)',
+    ]);
   });
 
   it('boxes the account control and Sign in at 32px, with the pencil as the only interaction accent', () => {
@@ -1255,15 +1266,21 @@ describe('The gallery search (T87)', () => {
     });
   }
 
-  it('centres a labelled 32px ink-ruled search in the frame, on its own row at 720px', () => {
+  it('grows a labelled 32px ink-ruled search in the flexible middle track, on its own row at 720px', () => {
     renderApp();
     expect(gallerySearch()).toHaveAttribute('type', 'search');
 
     // jsdom computes no layout, so the arrangement is pinned in the stylesheet:
-    // the middle grid track is the frame's centre, and the narrow rule gives
-    // the field the whole row.
+    // the middle track takes whatever the ends leave, and the field fills it up
+    // to 480px, shrinking on a short rail instead of scrolling.
+    expect(navbarCss).toMatch(
+      /\.app-nav-inner\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/,
+    );
     expect(navbarCss).toMatch(/\.app-nav-inner\s*\{[^}]*grid-template-areas:\s*'name search auth'/);
     expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*grid-area:\s*search/);
+    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*width:\s*100%/);
+    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*max-width:\s*480px/);
+    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*justify-self:\s*center/);
     expect(navbarCss).toMatch(
       /@media \(max-width: 720px\)\s*\{[\s\S]*?\.app-nav-search\s*\{[^}]*width:\s*100%/,
     );
@@ -1340,6 +1357,108 @@ describe('The gallery search (T87)', () => {
     expect(currentSearch()).toBe('?q=first+read');
     expect(await screen.findByText('2 recordings found.')).toBeInTheDocument();
     expect(gallerySearch()).toHaveValue('first read');
+  });
+
+  it('offers a 32px ink-ruled magnifier beside the field, named Search', () => {
+    renderApp();
+
+    expect(navButton('Search')).toHaveAttribute('type', 'submit');
+    expect(navbarCss).toMatch(
+      /\.app-nav-search-trigger,\s*\.app-nav-search-submit\s*\{[^}]*height:\s*32px/,
+    );
+    expect(navbarCss).toMatch(
+      /\.app-nav-search-trigger,\s*\.app-nav-search-submit\s*\{[^}]*border:\s*1px solid var\(--ink\)/,
+    );
+    expect(navbarCss).toMatch(
+      /\.app-nav-search-submit:hover,[\s\S]*?border-color:\s*var\(--pencil\)/,
+    );
+  });
+
+  it('carries a draft to the gallery with the magnifier button', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    seedGallery(api);
+    const { currentPath, currentSearch } = renderApp({ api, initialEntry: '/projects' });
+
+    await user.type(gallerySearch(), 'first read');
+    await user.click(navButton('Search'));
+
+    await waitFor(() => expect(currentPath()).toBe('/'));
+    expect(currentSearch()).toBe('?q=first+read');
+    expect(await screen.findByText('2 recordings found.')).toBeInTheDocument();
+  });
+
+  it('submits the trimmed draft in place on the gallery, so Back still leaves', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    seedGallery(api);
+    const { currentPath, currentSearch, go } = renderApp({ api, initialEntry: '/projects' });
+
+    // The wordmark pushes into the gallery, so Back has somewhere to go.
+    await user.click(wordmark());
+    expect(await screen.findByRole('link', { name: /Manfred Honeck/ })).toBeInTheDocument();
+
+    // Live typing keeps its untrimmed draft in the URL.
+    await user.type(gallerySearch(), ' HONECK ');
+    expect(currentSearch()).toBe('?q=+HONECK+');
+
+    await user.click(navButton('Search'));
+
+    // The button trims and replaces; Back still leaves the gallery.
+    expect(currentSearch()).toBe('?q=HONECK');
+    await go(-1);
+    expect(currentPath()).toBe('/projects');
+  });
+
+  it('opens the narrow search from a magnifier, focuses the field, and closes on Escape', async () => {
+    const user = userEvent.setup();
+    renderApp({ initialEntry: '/' });
+
+    const trigger = navButton('Open search');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveAttribute('aria-controls', 'app-nav-search-panel');
+    expect(navbarCss).toMatch(
+      /@media \(max-width: 560px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
+    );
+    expect(navbarCss).toMatch(
+      /\.app-nav-search\[data-open='true'\] \.app-nav-search-panel\s*\{[^}]*display:\s*flex/,
+    );
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(navButton('Close search')).toBe(trigger);
+    expect(gallerySearch()).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+  });
+
+  it('closes the narrow search when its submit is pressed', async () => {
+    const user = userEvent.setup();
+    renderApp({ initialEntry: '/' });
+
+    const trigger = navButton('Open search');
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    await user.type(gallerySearch(), 'bruckner');
+    await user.click(navButton('Search'));
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes the narrow search on a click outside the form', async () => {
+    const user = userEvent.setup();
+    renderApp({ initialEntry: '/' });
+
+    const trigger = navButton('Open search');
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(wordmark());
+
+    expect(navButton('Open search')).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('distinguishes an empty server from a query that matches nothing, and clears', async () => {

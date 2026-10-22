@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import type { AuthState } from '../auth';
@@ -29,6 +29,29 @@ function galleryPath(query: string): string {
   return query === '' ? '/' : `/?${new URLSearchParams({ q: query }).toString()}`;
 }
 
+/** The search glyph: the magnifier, or the close mark while the panel is open. */
+function SearchGlyph({ close = false }: { close?: boolean }) {
+  return (
+    <svg
+      className="app-nav-search-icon"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {close ? (
+        <path d="M3 3l10 10M13 3L3 13" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      ) : (
+        <>
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M10.5 10.5L14 14" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 /**
  * The one global navbar (T44): the wordmark and the account control, and
  * nothing else (T86). The Gallery, Projects, and Help links are gone: the
@@ -46,10 +69,13 @@ function galleryPath(query: string): string {
  * the wordmark is announced as the app's name alone, and the box that draws
  * its initial adds nothing to read.
  *
- * The gallery search (T87) is the field centred between them. On the gallery
- * its value is the URL's `?q=`, written with history replace so Back leaves
- * the gallery rather than stepping through partial queries; everywhere else it
- * is an empty draft, and Enter carries it to the gallery.
+ * The gallery search (T87, T93) is the field between them. On the gallery its
+ * value is the URL's `?q=`, written with history replace so Back leaves the
+ * gallery rather than stepping through partial queries; everywhere else it is
+ * an empty draft. Enter and the magnifier button share one submit path, which
+ * trims the draft and carries it to the gallery, replacing when already there.
+ * At 560px and below the field collapses into a magnifier trigger whose panel
+ * drops below the navbar.
  */
 export function Navbar({
   railClass,
@@ -64,6 +90,10 @@ export function Navbar({
   const onGallery = pathname === '/';
   const urlQuery = new URLSearchParams(location.search).get('q') ?? '';
   const [draft, setDraft] = useState(urlQuery);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // The field follows the URL on the gallery and is empty on every other
   // page — including one page to the next, where neither the path's gallery
@@ -72,6 +102,34 @@ export function Navbar({
   useEffect(() => {
     setDraft(onGallery ? urlQuery : '');
   }, [onGallery, urlQuery, pathname]);
+
+  // The narrow trigger's disclosure: the field takes focus when it opens, and
+  // a press anywhere outside the form puts the panel away.
+  useEffect(() => {
+    if (searchOpen) inputRef.current?.focus();
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    function handlePointerDown(event: PointerEvent): void {
+      if (!formRef.current?.contains(event.target as Node)) setSearchOpen(false);
+    }
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [searchOpen]);
+
+  // Escape closes the panel from wherever focus has wandered, not only from
+  // inside the form, and gives the trigger the focus back.
+  useEffect(() => {
+    if (!searchOpen) return;
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'Escape') return;
+      setSearchOpen(false);
+      triggerRef.current?.focus();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [searchOpen]);
 
   function handleChange(event: ChangeEvent<HTMLInputElement>): void {
     const next = event.target.value;
@@ -82,8 +140,10 @@ export function Navbar({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    if (onGallery) return;
-    void navigate(galleryPath(draft.trim()));
+    setSearchOpen(false);
+    // One path for Enter and the button: trim, and replace on the gallery so
+    // Back still leaves it rather than stepping through submissions.
+    void navigate(galleryPath(draft.trim()), { replace: onGallery });
   }
 
   return (
@@ -95,15 +155,38 @@ export function Navbar({
             Rehearsal Marks
           </Link>
         </h1>
-        <form className="app-nav-search" role="search" onSubmit={handleSubmit}>
-          <input
-            type="search"
-            className="app-nav-search-input"
-            aria-label="Search the gallery"
-            placeholder="Search the gallery"
-            value={draft}
-            onChange={handleChange}
-          />
+        <form
+          ref={formRef}
+          className="app-nav-search"
+          role="search"
+          data-open={searchOpen ? 'true' : 'false'}
+          onSubmit={handleSubmit}
+        >
+          <button
+            ref={triggerRef}
+            type="button"
+            className="app-nav-search-trigger"
+            aria-label={searchOpen ? 'Close search' : 'Open search'}
+            aria-expanded={searchOpen}
+            aria-controls="app-nav-search-panel"
+            onClick={() => setSearchOpen((open) => !open)}
+          >
+            {searchOpen ? <SearchGlyph close /> : <SearchGlyph />}
+          </button>
+          <div className="app-nav-search-panel" id="app-nav-search-panel">
+            <input
+              ref={inputRef}
+              type="search"
+              className="app-nav-search-input"
+              aria-label="Search the gallery"
+              placeholder="Search the gallery"
+              value={draft}
+              onChange={handleChange}
+            />
+            <button type="submit" className="app-nav-search-submit" aria-label="Search">
+              <SearchGlyph />
+            </button>
+          </div>
         </form>
         <div className="app-nav-auth">
           <UserControl

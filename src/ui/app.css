@@ -61,12 +61,18 @@
    The rail's side padding is deliberately not added back: it sits inside this
    border box, so it only ever makes the video a little narrower than the
    budget allows — slack in the one direction that cannot cause a scroll. */
+:root {
+  /* The rail's fluid side padding, shared with the navbar's narrow search
+     panel so its field lines up with the page. */
+  --rail-padding: clamp(16px, 3vw, 48px);
+}
+
 .page-rail {
   max-width: calc(
     (100vh - var(--player-chrome)) * 16 / 9 + var(--player-side-column) + var(--player-gap)
   );
   margin: 0 auto;
-  padding-inline: clamp(16px, 3vw, 48px);
+  padding-inline: var(--rail-padding);
   box-sizing: border-box;
 }
 

@@ -10,6 +10,8 @@
    cannot drift from the direction without a rule noticing. */
 
 .app-nav {
+  /* The narrow search panel is positioned against the navbar. */
+  position: relative;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
 }
@@ -27,9 +29,10 @@
    the wordmark's box is 27px and rides inside the row. */
 .app-nav-inner {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  /* The search is the middle track, so it is centred in the frame while the
-     wordmark and the account control keep the ends (T87). */
+  /* The middle track takes whatever the wordmark and the account control
+     leave, so the field can be wide without overflowing a short rail (T93);
+     the field centres itself inside that track and caps at 480px. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: 'name search auth';
   align-items: center;
   gap: 8px;
@@ -91,20 +94,31 @@
   line-height: 1;
 }
 
-/* The gallery search (T87): a 32px box ruled in the softer ink at rest and
-   the full ink once focused, in the content face, the pencil its only
+/* The gallery search (T87, T93): a 32px box ruled in the softer ink at rest
+   and the full ink once focused, in the content face, the pencil its only
    accent — the same control anatomy as the account box. Its height is the
-   row's tallest thing, so the navbar keeps its 57px. The width follows the
-   window up to 320px, so the centred track never pushes the ends off a narrow
-   frame before the field drops to its own row. */
+   row's tallest thing, so the navbar keeps its 57px.
+
+   The middle track takes whatever the ends leave, and the field fills it up
+   to 480px. The rail's width follows the window's height, so a short-wide
+   window gets a narrow rail — the field shrinks there rather than scrolling. */
 .app-nav-search {
   grid-area: search;
-  width: clamp(160px, 30vw, 320px);
+  justify-self: center;
+  width: 100%;
+  max-width: 480px;
+}
+
+.app-nav-search-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .app-nav-search-input {
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
-  width: 100%;
   height: 32px;
   padding: 0 8px;
   border: 1px solid var(--ink-2);
@@ -118,6 +132,48 @@
   border-color: var(--ink);
   outline: 1px solid var(--pencil);
   outline-offset: 1px;
+}
+
+/* The submit button (T93) wears the account control's box: 32px square, one
+   ink rule, no fill, the pencil on hover or focus. The trigger is the same
+   box, standing in for the field at narrow widths. */
+.app-nav-search-trigger,
+.app-nav-search-submit {
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.app-nav-search-trigger:hover,
+.app-nav-search-trigger:focus-visible,
+.app-nav-search-trigger[aria-expanded='true'],
+.app-nav-search-submit:hover,
+.app-nav-search-submit:focus-visible {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+.app-nav-search-trigger:focus-visible,
+.app-nav-search-submit:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 1px;
+}
+
+.app-nav-search-submit {
+  display: inline-grid;
+}
+
+/* The trigger is the narrow-width stand-in for the field. */
+.app-nav-search-trigger {
+  display: none;
 }
 
 /* The account control sits at the rail's far end. */
@@ -139,5 +195,45 @@
 
   .app-nav-search {
     width: 100%;
+    max-width: none;
+  }
+}
+
+/* At 560px and below even the full row is gone: the field collapses into a
+   magnifier beside the account control, and its panel drops over the page,
+   aligned with the rail's content. */
+@media (max-width: 560px) {
+  .app-nav-inner {
+    grid-template-columns: 1fr auto auto;
+    grid-template-areas: 'name search auth';
+    row-gap: 0;
+  }
+
+  .app-nav-search {
+    justify-self: end;
+    width: auto;
+    max-width: none;
+  }
+
+  .app-nav-search-trigger {
+    display: inline-grid;
+  }
+
+  .app-nav-search-panel {
+    display: none;
+  }
+
+  .app-nav-search[data-open='true'] .app-nav-search-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    z-index: 1;
+    display: flex;
+    /* The shell rail's own fluid padding, so the panel's field lines up with
+       the page beneath. */
+    padding: 12px var(--rail-padding);
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
   }
 }
