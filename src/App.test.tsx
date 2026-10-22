@@ -1266,13 +1266,15 @@ describe('The gallery search (T87)', () => {
     });
   }
 
-  it('grows a labelled 32px ink-ruled search in the flexible middle track, on its own row at 720px', () => {
+  it('grows a labelled 32px ink-ruled search on the rail’s centre line, collapsing when it no longer fits', () => {
     renderApp();
     expect(gallerySearch()).toHaveAttribute('type', 'search');
 
-    // jsdom computes no layout, so the arrangement is pinned in the stylesheet:
-    // the middle track takes whatever the ends leave, and the field fills it up
-    // to 480px, shrinking on a short rail instead of scrolling.
+    // jsdom computes no layout, so the arrangement is pinned in the
+    // stylesheet: where container queries work, the 480px field leaves its
+    // track and centres on the navbar, so the input and its button stay
+    // centred together rather than sitting off-centre between the ends'
+    // unequal widths. The in-track, shrinkable field is the fallback.
     expect(navbarCss).toMatch(
       /\.app-nav-inner\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/,
     );
@@ -1280,9 +1282,19 @@ describe('The gallery search (T87)', () => {
     expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*grid-area:\s*search/);
     expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*width:\s*100%/);
     expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*max-width:\s*480px/);
-    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*justify-self:\s*center/);
     expect(navbarCss).toMatch(
-      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.app-nav-search\s*\{[^}]*width:\s*100%/,
+      /@supports \(container-type: inline-size\)\s*\{[\s\S]*?\.app-nav-search\s*\{[^}]*position:\s*absolute/,
+    );
+    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*width:\s*480px/);
+    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*left:\s*50%/);
+    expect(navbarCss).toMatch(/\.app-nav-search\s*\{[^}]*transform:\s*translate\(-50%, -50%\)/);
+    // The narrow width is the disclosure, not a second row or a shrunken
+    // field (T94): the rail is the query container, so the player's
+    // height-capped rail collapses too.
+    expect(navbarCss).not.toMatch(/grid-template-areas:\s*'name auth'\s*'search search'/);
+    expect(navbarCss).toMatch(/\.app-nav-inner\s*\{[^}]*container-type:\s*inline-size/);
+    expect(navbarCss).toMatch(
+      /@container \(max-width: 960px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
     );
 
     // One box rule: 32px, the softer ink at rest going to the full ink on
@@ -1418,7 +1430,7 @@ describe('The gallery search (T87)', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(trigger).toHaveAttribute('aria-controls', 'app-nav-search-panel');
     expect(navbarCss).toMatch(
-      /@media \(max-width: 560px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
+      /@container \(max-width: 960px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
     );
     expect(navbarCss).toMatch(
       /\.app-nav-search\[data-open='true'\] \.app-nav-search-panel\s*\{[^}]*display:\s*flex/,

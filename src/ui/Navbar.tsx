@@ -74,8 +74,8 @@ function SearchGlyph({ close = false }: { close?: boolean }) {
  * gallery rather than stepping through partial queries; everywhere else it is
  * an empty draft. Enter and the magnifier button share one submit path, which
  * trims the draft and carries it to the gallery, replacing when already there.
- * At 560px and below the field collapses into a magnifier trigger whose panel
- * drops below the navbar.
+ * When the rail is too narrow to hold the full field, it collapses into a
+ * magnifier trigger whose panel drops below the navbar.
  */
 export function Navbar({
   railClass,
