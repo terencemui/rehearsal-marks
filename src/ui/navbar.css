@@ -123,6 +123,10 @@
 
 @supports (container-type: inline-size) {
   .app-nav-search {
+    /* An abspos grid child with a grid area is placed against that area (the
+       middle track), not the rail — which centred it on the track and pushed
+       it over the wordmark. `auto` makes the rail the containing block. */
+    grid-area: auto;
     position: absolute;
     top: 50%;
     left: 50%;
@@ -207,11 +211,12 @@
 /* Once the rail's content is too narrow for the 480px field plus clearance
    from the wordmark and the account control, the field collapses into a
    magnifier beside the account control rather than shrinking (T94). Its panel
-   drops over the page, aligned with the rail's content. 960px leaves 240px
-   either side of the centred field: 20px clear of the 220px account cap and
-   51px clear of the ~189px wordmark. */
-@container (max-width: 960px) {
+   drops over the page, aligned with the rail's content. 1100px leaves 310px
+   either side of the centred field: 90px clear of the 220px account cap and
+   121px clear of the ~189px wordmark. */
+@container (max-width: 1100px) {
   .app-nav-search {
+    grid-area: search;
     position: static;
     transform: none;
     justify-self: end;
