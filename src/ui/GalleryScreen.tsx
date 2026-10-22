@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import type { ReactNode, SyntheticEvent } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
+import { formatRulerTime } from '../playback/ruler';
 import { filterGalleryGroups, groupGalleryProjects } from '../projects';
 import type { GalleryGroup, ProjectsApi } from '../projects';
 import './gallery.css';
@@ -20,34 +21,64 @@ function GalleryFrame({ children }: { children: ReactNode }) {
   );
 }
 
-/** A count and its noun, pluralised — "21 markers", "1 project". */
+/** A count and its noun, pluralised — "21 markers", "1 recording". */
 function countLabel(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-/** The marker count's label — the one plural the gallery's entries carry. */
-function markerCountLabel(count: number): string {
-  return countLabel(count, 'marker');
+/** The project a recording's card opens: its oldest published set. */
+function oldestProject(group: GalleryGroup) {
+  return group.projects[group.projects.length - 1];
 }
 
 /**
- * The public gallery (T50): the app's front door. Lists every published
- * public project, newest first, grouped under its recording's canonical
- * title — the recording identity, never the owner's editable name, so a
- * rename never mislabels the recording. Each entry is the project's name and
- * marker count; opening one is navigation to the read-only view
- * (`/gallery/:id`). Anonymous browsing needs no account: the read rides the
- * anon key, and the group a recording lands at is where its newest project
- * sits (T50's grouping seam).
+ * The recording's still, decorative beside the title the card already names.
+ * hq720 is the high-resolution still; not every upload has one, so a failed
+ * load steps down to the medium still, and a second failure hides the image
+ * rather than leaving a broken frame.
+ */
+function Thumbnail({ videoId }: { videoId: string }) {
+  function handleError(event: SyntheticEvent<HTMLImageElement>): void {
+    const image = event.currentTarget;
+    if (image.dataset.fallback === 'true') {
+      image.hidden = true;
+      return;
+    }
+    image.dataset.fallback = 'true';
+    image.src = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+  }
+
+  return (
+    <img
+      className="gallery-thumb"
+      src={`https://i.ytimg.com/vi/${videoId}/hq720.jpg`}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={handleError}
+    />
+  );
+}
+
+/**
+ * The public gallery (T50, T90): the app's front door. One card per recording
+ * with a published public project — newest recording first, where a recording
+ * sits at its newest project's position in the flat, newest-first read. The
+ * card is the recording's own still, its duration, and its canonical title,
+ * never the owner's editable project name (T90). Several projects sharing a
+ * video ID are still one card, and the card opens the recording's oldest
+ * published project in the read-only view (`/gallery/:id`). Anonymous
+ * browsing needs no account: the read rides the anon key.
  *
  * The read is one shot on mount (a stateless surface): loading paints
  * nothing, a failed read surfaces as an error with a retry rather than a
  * crash, and an empty server answers "no public projects yet" instead of a
- * blank list.
+ * blank grid.
  *
  * The search (T87) is the URL's `?q=`: the navbar writes it with history
  * replace, so a refresh restores the results, and the filter is a pure rule
- * beside the grouping helper.
+ * beside the grouping helper. The count and the no-match state speak in
+ * recordings, the unit the gallery now shows.
  */
 export function GalleryScreen({ api }: GalleryScreenProps) {
   const navigate = useNavigate();
@@ -92,21 +123,27 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   if (groups === null) return null;
   const emptyServer = groups.length === 0;
   const matching = emptyServer ? [] : filterGalleryGroups(groups, query);
-  const count = matching.reduce((total, group) => total + group.projects.length, 0);
+  // A card's target is the oldest project in the whole recording, never the
+  // query's narrowed view of it: a project-name search keeps the card's link
+  // where the unfiltered gallery puts it.
+  const oldestByVideo = new Map(
+    groups.map((group) => [group.videoId, oldestProject(group)]),
+  );
   return (
     <GalleryFrame>
       {/* The live region every state shares: a search announces its count,
-          and an empty result announces zero. */}
-      <p className={emptyServer ? 'gallery-empty' : 'gallery-intro'} role="status">
+          and an empty result announces zero. It stays mounted, empty, when
+          the unfiltered gallery has nothing to announce. */}
+      <p className={emptyServer ? 'gallery-empty' : 'gallery-status'} role="status">
         {emptyServer
           ? 'No public projects yet.'
           : query.trim() === ''
-            ? 'Published projects, newest first.'
-            : `${countLabel(count, 'project')} found.`}
+            ? ''
+            : `${countLabel(matching.length, 'recording')} found.`}
       </p>
-      {!emptyServer && count === 0 && (
+      {!emptyServer && matching.length === 0 && (
         <>
-          <p className="gallery-empty">No projects match “{query.trim()}”.</p>
+          <p className="gallery-empty">No recordings match “{query.trim()}”.</p>
           <button
             type="button"
             className="gallery-action"
@@ -116,25 +153,22 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
           </button>
         </>
       )}
-      {matching.map((group) => (
-        <article className="gallery-group" key={group.videoId}>
-          <h3 className="gallery-recording">{group.recordingTitle}</h3>
-          <ul className="gallery-list">
-            {group.projects.map((project) => (
-              <li key={project.id}>
-                <button
-                  type="button"
-                  className="gallery-entry"
-                  onClick={() => navigate(`/gallery/${project.id}`)}
-                >
-                  <span className="gallery-name">{project.name}</span>
-                  <span className="gallery-count">{markerCountLabel(project.markerCount)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </article>
-      ))}
+      <ol className="gallery-grid">
+        {matching.map((group) => {
+          const project = oldestByVideo.get(group.videoId)!;
+          return (
+            <li key={group.videoId}>
+              <Link className="gallery-card" to={`/gallery/${project.id}`}>
+                <span className="gallery-image">
+                  <Thumbnail videoId={group.videoId} />
+                  <span className="gallery-duration">{formatRulerTime(group.duration)}</span>
+                </span>
+                <h3 className="gallery-card-title">{group.recordingTitle}</h3>
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
     </GalleryFrame>
   );
 }
