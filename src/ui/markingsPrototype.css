@@ -204,6 +204,14 @@
   color: var(--ink);
 }
 
+/* The hint, in the quiet ink: it tells the student what the slot takes without
+   standing in for a name the mark does not have. One of it on the page — the
+   field is only ever on the active row — which is what the shipped objection to
+   a placeholder was about. */
+.markings-proto .markings-row-alias::placeholder {
+  color: var(--ink-2);
+}
+
 .markings-proto .markings-row-alias:focus,
 .markings-proto .markings-row-time:focus {
   outline: 2px solid var(--pencil);

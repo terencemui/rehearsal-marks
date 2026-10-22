@@ -43,6 +43,19 @@ export interface PlayerKeysOptions {
    * that may not change a row carry no key that could.
    */
   onNudge?: (delta: number) => void;
+  /**
+   * PROTOTYPE (prototype/markings-direction) — which mark `↑`/`↓` walked to,
+   * announced before the seek that reaches it.
+   *
+   * The walk used to need nothing: it seeks, and the correction controls follow
+   * the playhead. That holds while the playhead names one row, and it stops
+   * holding where a mark stands on a movement's boundary — the two occupy one
+   * instant, and `activeRowId` gives the instant to the boundary. Walking onto
+   * such a mark then lands the controls on the movement above it. The playhead
+   * cannot tell the two apart, because they are at the same time; only the
+   * gesture knows which one was asked for, so the gesture says.
+   */
+  onWalk?: (marker: LabeledMarker) => void;
 }
 
 /**
@@ -75,6 +88,7 @@ export function usePlayerKeys({
   inert = false,
   onAddMarker,
   onNudge,
+  onWalk,
 }: PlayerKeysOptions): void {
   const keyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   keyDownRef.current = (event: KeyboardEvent) => {
@@ -179,6 +193,9 @@ export function usePlayerKeys({
         event.key === 'ArrowDown' ? nextMarker(markers, anchor) : previousMarker(markers, anchor);
       if (target === null) return;
       event.preventDefault();
+      // Said before the seek: the mark walked to is the row asked for, even
+      // where a boundary shares its instant.
+      onWalk?.(target);
       controller.seek(target.time);
       return;
     }

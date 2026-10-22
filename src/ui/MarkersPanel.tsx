@@ -1509,6 +1509,13 @@ function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authori
               className="markings-alias-slot markings-row-alias"
               defaultValue={storedAlias}
               aria-label={`Alias for marker ${identity}`}
+              // PROTOTYPE (prototype/markings-direction): the hint the slot
+              // used to refuse. The objection was that a hint repeated down the
+              // panel would read as content — and it would, but the field is
+              // only ever on the active row, so there is one of it, on the row
+              // being worked on. It is set in the quiet ink, like the movement
+              // name's, so an unnamed mark still reads as an empty slot.
+              placeholder="alias"
               // The caret is in the row's own field, so the row is the one being
               // worked on whatever the playhead does next (T64, T69) — the twin
               // of the same gesture in the time field, and the reason a name
