@@ -1294,7 +1294,7 @@ describe('The gallery search (T87)', () => {
     expect(navbarCss).not.toMatch(/grid-template-areas:\s*'name auth'\s*'search search'/);
     expect(navbarCss).toMatch(/\.app-nav-inner\s*\{[^}]*container-type:\s*inline-size/);
     expect(navbarCss).toMatch(
-      /@container \(max-width: 960px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
+      /@container \(max-width: 1000px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
     );
 
     // One box rule: 32px, the softer ink at rest going to the full ink on
@@ -1430,7 +1430,7 @@ describe('The gallery search (T87)', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(trigger).toHaveAttribute('aria-controls', 'app-nav-search-panel');
     expect(navbarCss).toMatch(
-      /@container \(max-width: 960px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
+      /@container \(max-width: 1000px\)\s*\{[\s\S]*?\.app-nav-search-trigger\s*\{[^}]*display:\s*inline-grid/,
     );
     expect(navbarCss).toMatch(
       /\.app-nav-search\[data-open='true'\] \.app-nav-search-panel\s*\{[^}]*display:\s*flex/,
