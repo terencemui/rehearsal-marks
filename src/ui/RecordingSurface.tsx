@@ -47,19 +47,6 @@ export interface RecordingSurfaceProps {
   /** The failure card's retry. */
   onRetryLoad(): void;
   /**
-   * Whether this is the practice surface (T77) — the player the owner and a
-   * stranger open, as against the markings page's authoring column. It is the
-   * fold's one scoping hook, and it is the distinction the two hosts already
-   * carry rather than a mechanism invented for the fold: the panel is already
-   * told which surface it is on (the authoring page passes its authoring
-   * behaviour, the player passes none), and this is that same telling carried
-   * up one level, to the surface the panel sits on — which the band and the
-   * failure card need, since they are drawn outside the panel. The markings
-   * page passes nothing, which is what keeps it rendering exactly as it does
-   * today.
-   */
-  practiceSurface?: boolean;
-  /**
    * The side column's content, beside the recording. It is a function of the
    * measured cap on the marker list (`null` before the first measure): the cap
    * is this surface's own reading of the geometry around content it does not
@@ -121,7 +108,6 @@ export function RecordingSurface({
   settled,
   loadFailed,
   onRetryLoad,
-  practiceSurface = false,
   side,
   timeline,
 }: RecordingSurfaceProps) {
@@ -244,14 +230,10 @@ export function RecordingSurface({
     // chrome (T45): the navbar and page rail are the shell's, so the surface
     // renders just the title band and the recording under them.
     //
-    // The class marks the practice surface (T77) — the fold's one scoping hook,
-    // carried on the surface's own root rather than on a document attribute, so
-    // what it scopes travels with the surface and dies when it unmounts. The
-    // authoring page renders this same tree without it and keeps today's look.
-    <div
-      className={practiceSurface ? 'practice-surface' : undefined}
-      data-settled={settled || undefined}
-    >
+    // The practice-only scoping hook this root once carried (T77) is retired
+    // (T95): the direction's rules are the shared surface's own now, so both
+    // hosts render alike with no class telling them apart.
+    <div data-settled={settled || undefined}>
       <h1 className="player-title">{record.name}</h1>
       {loadFailed && (
         <div role="alert" className="player-youtube-error">
