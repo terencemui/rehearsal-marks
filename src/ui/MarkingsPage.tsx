@@ -28,6 +28,7 @@ import type { MarkingsAddControlsProps, MarkersAuthoring } from './MarkersPanel'
 import { NotFoundPage } from './NotFoundPage';
 import { RecordingSurface } from './RecordingSurface';
 import { SaveStatusLine } from './SaveStatusLine';
+import { Stave } from './Stave';
 import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { useLabeledPlayback } from './useLabeledPlayback';
 import { usePlayerKeys } from './playerKeys';
@@ -216,7 +217,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
   const { record, mutate } = session;
   // The playback view of the recording — the shared derivation (T55), the same
   // one the practice surface reads.
-  const { labeled, naming, duration, elapsed, passedMarker } = useLabeledPlayback({
+  const { playback, labeled, naming, duration, elapsed, passedMarker } = useLabeledPlayback({
     controller,
     record,
   });
@@ -297,6 +298,13 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * exists, with the block already on it and its time ready to be made exact.
    */
   const activeRow = activeRowId(labeled, record.movements, elapsed);
+  /**
+   * The mark the playhead has last passed, or null before the first one — read
+   * once, because two surfaces draw it: the stave fills the box it belongs to
+   * (T98) and the panel tints the row, exactly as the practice surface's two
+   * do (`Player`).
+   */
+  const passedId = passedMarker?.id ?? null;
   /** What the block is actually on: the pin where a caret holds one, the active row otherwise. */
   const blockRow = pinnedId ?? activeRow;
   /**
@@ -739,6 +747,21 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
         settled={session.settled}
         loadFailed={session.loadFailed}
         onRetryLoad={session.retryLoad}
+        // The stave (T98): the authoring page hands the shared surface's
+        // timeline slot the same strip the practice surface draws (`Player`)
+        // — the drawing itself is unchanged, and this is the authoring page
+        // handing one over rather than a second one being built.
+        timeline={
+          <Stave
+            markers={labeled}
+            naming={naming}
+            passedId={passedId}
+            movements={record.movements}
+            duration={duration}
+            currentTime={playback.currentTime}
+            onSeek={(time) => controller.seek(time)}
+          />
+        }
         side={(markersMaxHeight) =>
           // Empty means empty of everything the column holds (T58): a recording
           // with its movements laid out and no marks in them yet is a project
@@ -761,7 +784,7 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
               movements={record.movements}
               naming={naming}
               duration={duration}
-              passedId={passedMarker?.id ?? null}
+              passedId={passedId}
               // The row the correction block goes on, and so the row the panel
               // follows (T64) — resolved here, where the pin is held, so the row
               // the panel draws the block in is the row this page corrects. The
