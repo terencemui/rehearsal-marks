@@ -5,11 +5,20 @@
    owns. */
 
 /* The project name in its own band above the recording, spanning the content
-width — confirmation at a glance of which recording is being practised. */
+width — confirmation at a glance of which recording is being practised. The
+direction's own band (T77): the project's name set in the document's face,
+over the one heavy rule on the page — the page opens like a part and not
+like a dashboard. Every other rule the fold draws is a hairline; this one is
+2px of ink. It was once the practice surface's own override of a plainer
+band; the fold shares it with the markings page too (T95), so there is one
+band and not two. */
 .player-title {
-  margin: 0 0 20px;
-  font: 700 28px/1.15 system-ui, sans-serif;
-  color: #0f172a;
+  margin: 0 0 22px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--ink);
+  font: 600 27px/1.12 var(--serif);
+  letter-spacing: -0.015em;
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
@@ -266,10 +275,10 @@ in the side column is where the marks show. */
 
    Every selector here can only ever match practice markup — the strip is built
    by `Stave` and handed to the shared surface's timeline slot, which the
-   markings page passes nothing to — so none of it is keyed on the fold's one
-   hook, exactly as the panel's own practice-only rules are not (T78). The bar
-   above is what the authoring page keeps, and these rules sit beside it rather
-   than replacing it for the same reason.
+   markings page passes nothing to — so none of it needs a hook, exactly as
+   the panel's own practice-only rules (the door, the row, the boxed mark)
+   need none. The bar above is what the authoring page keeps, and these rules
+   sit beside it rather than replacing it for the same reason.
    -------------------------------------------------------------------------- */
 
 /* The strip: the air under the recording today's bar kept, and one click
@@ -490,18 +499,24 @@ timestamp, then `label — alias` — with the passed marker's row highlighted.
 The list scrolls within its band, so a marker-heavy project never towers over
 the recording.
 
-The rules from here to the movement names are the *authoring* panel's: the
-markings page's column, which the direction leaves alone. The practice panel
-wears the same markup in the direction, and what it changes is keyed on its own
-class (T78) — see the block below the movement name. The rules whose selectors
-can only ever match practice markup are written in place among these, and are
-marked where they are. */
+The rules from here to the movement names draw the panel on every surface
+that hosts it (T78, T95): the markings page's column and the practice panel
+render the same markup and wear the same direction, with one exception (the
+list's own `gap`, below, which still differs — see its own comment) and the
+rules whose selectors can only ever match practice markup — the door, the
+row, the boxed mark — which are written in place among these, and are marked
+where they are. */
+/* The panel's title: the document's face at its smallest, over the panel it
+   names (T95, was practice-only). The shipped direction tracked it out in
+   small caps; the direction's chrome is a grotesque and its content a serif,
+   and a heading set in the serif is a line of the document rather than a
+   label on it. */
 .player-markers-heading {
   margin: 0 0 8px;
-  font: 600 11px/16px system-ui, sans-serif;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #94a3b8;
+  font: 600 12px/16px var(--serif);
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: var(--ink-2);
 }
 
 /* The panel's heading row: the label with the markings page's way in (T55)
@@ -549,6 +564,19 @@ marked where they are. */
   gap: 2px;
   max-height: 320px;
   overflow-y: auto;
+}
+
+/* Closed up rather than given daylight, where the rows have their own
+   hairline to do the separating instead (below): a list of `.player-marker-
+   row`s is the browsing panel's alone (T67) — the markings page's own row
+   (`.markings-row`, markings.css) carries no such rule yet, so collapsing the
+   gap there would leave its rows with no separation at all. This is the one
+   rule of the fold that still has to tell the two surfaces apart (T95): not
+   because the direction differs, but because the authoring row's own hairline
+   is T96/T97's to draw, not this ticket's. `:has()` rather than the retired
+   `.practice-surface` hook, since what varies is which row the list holds. */
+.player-marker-list:has(.player-marker-row) {
+  gap: 0;
 }
 
 /* Rows: `mark — alias` on the left, the timestamp flush right in the shared
@@ -640,23 +668,15 @@ marked where they are. */
   color: var(--paper);
 }
 
-/* These two are the authoring page's: the markings page's own row carries the
-   same `player-marker-time` clock (`Clock`) and the same
-   `player-marker-title`, so the shipped accent and weight stay here and the
-   practice panel's versions are keyed on its own class (T78, below). */
-.player-marker-list li.passed .player-marker-time {
-  color: #0f766e;
-}
-
-.player-marker-list li.passed .player-marker-title {
-  font-weight: 700;
-}
-
+/* Content is the document's, chrome is the sans (T95, was practice-only): the
+   clocks and the movement names wear the serif, the movement's band wears the
+   sans. */
 .player-marker-time {
   min-width: 52px;
+  font: 400 13.5px/22px var(--serif);
   font-variant-numeric: tabular-nums;
   text-align: right;
-  color: #64748b;
+  color: var(--ink-2);
 }
 
 /* The sticky movement headers (ADR-0005). Each movement's `<li>` pins to the
@@ -676,21 +696,35 @@ marked where they are. */
   z-index: 1;
 }
 
+/* The sticky movement header's band (T95, was practice-only): an opaque
+   sheet-white band ruled in ink, the name in the document's face, the band
+   itself in the chrome sans. Opaque because the rows scroll under it — the
+   shipped band was a tint, which a boxed letter shows through.
+
+   `box-sizing` is what the band's own width needs. The orphan divider
+   (markers before the first movement) is a `div`, and the app sets no global
+   `box-sizing` (markings.css says the same), so a `width: 100%` plus 10px of
+   side padding would land the padding *outside* the width — but only for that
+   divider: the UA stylesheet already makes the other variant, a `button`,
+   `border-box`. Declaring it here keeps the two variants of one band in
+   agreement, and the band inside the panel's own 4px inset rather than 10px
+   wider than the list it scrolls in. */
 .player-marker-movement .player-movement-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 14px;
   width: 100%;
+  box-sizing: border-box;
   border: 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ink);
   border-radius: 0;
-  background: #f1f5f9;
+  background: var(--paper);
   cursor: pointer;
   padding: 6px 10px;
   text-align: left;
-  font: 400 15px/22px system-ui, sans-serif;
-  color: #334155;
+  font: 400 13px/20px var(--sans);
+  color: var(--ink-2);
 }
 
 /* The orphan header (markers before the first movement) is a divider, not a
@@ -699,44 +733,45 @@ marked where they are. */
   cursor: default;
 }
 
+/* The pointer moves the name to the pencil, the band staying paper (T95, was
+   practice-only): a tinted hover would have to be restated anyway, since
+   paper is what the band above already draws. */
 .player-marker-movement button.player-movement-header:hover {
-  background: #e2e8f0;
+  background: var(--paper);
+  color: var(--pencil);
 }
 
 /* The movement name: the header's one accent — semibold, ink — so the four
-   names read as the section headers while their times and rows stay quiet. */
+   names read as the section headers while their times and rows stay quiet.
+   The document's own serif at this size (T95, was practice-only). */
 .player-movement-name {
   min-width: 0;
   overflow-wrap: anywhere;
+  font-family: var(--serif);
+  font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--ink);
 }
 
 /* --------------------------------------------------------------------------
-   The panel on the practice surfaces (T78)
+   The panel's frame and scrollbar (T78)
 
-   Every rule below is keyed on `.practice-surface` — the fold's one scoping
-   hook, which T77 put on the surface's own root (`RecordingSurface`). No new
-   mechanism is introduced here: the panel is hosted by that surface on every
-   practice route (the owner's player and the read-only public view), and the
-   markings page hosts the same panel without it, so the hook that separates
-   the two surfaces already separates the two panels. That is why the panel
-   states only what it is, and carries no class of its own saying which
-   surface it is on. (T78 landed after T77 and was re-keyed onto this hook;
-   it had briefly carried its own.)
-
-   The split is this: a rule whose selector can only ever match practice markup
-   is written in place among the panel's own rules above (the door, the row,
-   the boxed mark — the markings page carries none of that markup). A rule that
-   could reach the authoring page keeps its shipped declarations untouched, and
-   the direction's version is keyed here. That is what keeps the markings page
-   rendering exactly what it renders today.
+   The panel is one component on every surface that hosts a recording (T95):
+   the practice player, the read-only public view, and the markings page
+   alike, so the frame and the drawn scrollbar below are plain rules rather
+   than rules keyed on which surface hosts the panel. What is left scoped to
+   the browsing markup (the door, the row, the boxed mark) still needs no
+   hook — see the panel's own rules above — because its selector can only
+   ever match that markup; the markings page's row is a different element
+   entirely (`MarkersPanel.tsx`). The list's own `gap` (above) is the one rule
+   here that still differs by surface, and says so where it is declared.
    -------------------------------------------------------------------------- */
 
 /* The frame. The panel is a boxed window rather than an open run of rows: the
-   heading and the door are the window's title, so they render inside the frame
-   that title names, and the list is what scrolls within it — which is why the
-   frame is drawn around the whole panel and not around the list.
+   heading and the door (or, on the markings page, the add controls) are the
+   window's title, so they render inside the frame that title names, and the
+   list is what scrolls within it — which is why the frame is drawn around the
+   whole panel and not around the list.
 
    The frame carries the box's own inset and nothing else: 8px above the head,
    4px at the sides — the inset today's list keeps on its own right — so the
@@ -744,18 +779,9 @@ marked where they are. */
    inset, because the list keeps the inset it has: the last row gives its own
    hairline up instead (above), and the frame's bottom rule is what closes the
    box. */
-.practice-surface .player-markers {
+.player-markers {
   border: 1px solid var(--rule);
   padding: 8px 4px 0;
-}
-
-/* The list's rows are separated by their own rules rather than by daylight
-   between them, so the list closes up and the hairlines do the separating.
-   Nothing else about the list moves: its inset, its cap and its scroll are the
-   list's own (the frame is not the reader's to pay for, and the measured band
-   RecordingSurface sets is a height the list has to keep taking up). */
-.practice-surface .player-marker-list {
-  gap: 0;
 }
 
 /* Styling the bar's *parts* is what makes it a classic scrollbar — drawn,
@@ -772,11 +798,11 @@ marked where they are. */
 
    Squared, and drawn in the sheet's own rule colour, so the bar reads as one
    of the hairlines it runs beside rather than as a chrome widget. */
-.practice-surface .player-marker-list::-webkit-scrollbar {
+.player-marker-list::-webkit-scrollbar {
   width: 10px;
 }
 
-.practice-surface .player-marker-list::-webkit-scrollbar-track {
+.player-marker-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -785,7 +811,7 @@ marked where they are. */
    out of it, which is what makes the bar a margin note rather than a slab
    standing beside a column of 15px text. `background-clip` comes after the
    shorthand that would otherwise reset it. */
-.practice-surface .player-marker-list::-webkit-scrollbar-thumb {
+.player-marker-list::-webkit-scrollbar-thumb {
   background: var(--rule);
   border: 1px solid transparent;
   background-clip: content-box;
@@ -798,106 +824,36 @@ marked where they are. */
    to replace. Guarded on the selector rather than on the properties, since
    supporting the properties is not what takes the override away. */
 @supports not selector(::-webkit-scrollbar) {
-  .practice-surface .player-marker-list {
+  .player-marker-list {
     scrollbar-width: thin;
     scrollbar-color: var(--rule) transparent;
   }
 }
 
-/* The panel's title: the document's face at its smallest, over the panel it
-   names. The shipped direction tracked it out in small caps; the direction's
-   chrome is a grotesque and its content a serif, and a heading set in the
-   serif is a line of the document rather than a label on it. */
-.practice-surface .player-markers-heading {
-  font: 600 12px/16px var(--serif);
-  letter-spacing: 0.08em;
-  text-transform: none;
-  color: var(--ink-2);
-}
-
-/* Content is the document's, chrome is the sans: the clocks and the movement
-   names wear the serif, the movement's band wears the sans. The clock's
-   `min-width` and right alignment are the shared slot's (above) and stay — the
-   `font` shorthand resets `font-variant-numeric`, so the tabular figures are
-   restated after it. */
-.practice-surface .player-marker-time {
-  font: 400 13.5px/22px var(--serif);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
-}
-
 /* The clock of the mark the playhead has gone by takes the pencil — the
    readout's own passed accent — and the reading beside the box comes down to
-   the box's weight: the box is 600, so a passed row is 600 throughout instead
-   of the authoring page's 700 sitting against it. */
-.practice-surface .player-marker-list li.passed .player-marker-time {
+   the box's weight: the box is 600, so a passed row is 600 throughout. */
+.player-marker-list li.passed .player-marker-time {
   color: var(--pencil);
 }
 
-.practice-surface .player-marker-list li.passed .player-marker-title {
+.player-marker-list li.passed .player-marker-title {
   font-weight: 600;
 }
 
-/* The sticky movement headers: an opaque sheet-white band ruled in ink, the
-   name in the document's face. Opaque because the rows scroll under it — the
-   shipped band was a tint, which a boxed letter shows through.
-
-   `box-sizing` is what the band's own width needs. The shipped rule asks for
-   `width: 100%` and 10px of side padding, and the app sets no global
-   `box-sizing` (markings.css says the same), so the padding lands *outside* the
-   width — but only for the orphan divider, which is a `div`: the UA stylesheet
-   already makes the other one, a `button`, `border-box`. The two variants of
-   one band therefore disagree today by its 20px of padding, and the wider one
-   is wider than the list it is in: with `overflow-y: auto` on the list,
-   `overflow-x` computes to `auto` as well, so the band's 20px come back as a
-   horizontal bar under the rows. Inside the frame this ticket draws that bar
-   sits in plain sight, which is how it was found. The band is meant to span its
-   group, so its padding is meant to be inside it. Keyed here rather than fixed
-   in the shipped rule because the markings page renders the orphan divider too:
-   this is the frame's own corner, and the authoring surface keeps today's
-   geometry until its own ticket says otherwise. */
-.practice-surface .player-marker-movement .player-movement-header {
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--ink);
-  background: var(--paper);
-  font: 400 13px/20px var(--sans);
-  color: var(--ink-2);
-}
-
-/* The pointer moves the name to the pencil. The band stays paper, which the
-   rule above already holds — it is four classes to the shipped tint's three,
-   so `#e2e8f0` cannot show through. `background` is restated here anyway, and
-   deliberately: the hovered band is then stated whole in the one rule that
-   draws it, rather than resting on how two selectors elsewhere in this file
-   happen to compare. The restatement is not free-standing either — the same
-   `background` was load-bearing under the single class this block was first
-   keyed on, where the shipped tint *did* win, so its presence is one
-   re-keying away from being necessary again.
-
-   (That shipped `:hover` is now unreachable, since `button.player-movement-header`
-   is rendered only by the browsing panel and this rule beats it everywhere it
-   can match. It stays as the shipped rule it is; retiring it belongs to
-   whoever owns that selector.) */
-.practice-surface .player-marker-movement button.player-movement-header:hover {
-  background: var(--paper);
-  color: var(--pencil);
-}
-
-.practice-surface .player-movement-name {
-  font-family: var(--serif);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-/* The YouTube failure card: the honest state when the video cannot play.
-Browsable-but-muted — the URL stays reachable ("Open on YouTube"), the marks
-stay visible on the stored-duration timeline, and Retry re-runs the load. */
+/* The YouTube failure card, drawn as an editorial note: the alert red on
+un-filled paper inside a hairline, squared off (T95, was practice-only). Only
+the drawing changes — the copy, the URL and the retry are the card's own, and
+the card is what keeps the marks visible across a failure (T38) on every
+surface that can render it. A restyle that cost the way out would leave
+every stylesheet pin here still green, so the way out is asserted as
+behaviour (Player.test.tsx) rather than trusted to this rule. */
 .player-youtube-error {
-  border: 1px solid #fca5a5;
-  background: #fef2f2;
-  color: #7f1d1d;
-  border-radius: 8px;
+  border: 1px solid var(--editorial);
+  border-radius: 0;
+  background: none;
+  color: var(--editorial);
+  font-family: var(--sans);
   padding: 12px 16px;
   margin: 12px 0;
   display: flex;
@@ -911,81 +867,13 @@ stay visible on the stored-duration timeline, and Retry re-runs the load. */
 }
 
 .player-youtube-error a {
-  color: #7f1d1d;
+  color: var(--editorial);
   word-break: break-all;
-}
-
-/* The practice surface wears the direction (T77): the sheet it stands on and the
-   band that opens it.
-
-   The surface is shared — the markings page hosts this same recording, band
-   and failure card (T55) — so every rule below is keyed on the one class that
-   says which surface this is (`.practice-surface`, set by RecordingSurface
-   when the player renders it). The authoring page carries none of it, and the
-   rules above are what it keeps: this fold restyles the player, not the page
-   the marks are authored on.
-
-   The ground could move at all only because it costs no one legibility. The
-   sheet is within a hair of the UA white it replaces, so every ink that read
-   on the old ground still reads on the new one — the panel's quiet time goes
-   from 4.76:1 to 4.63:1, still over the 4.5:1 body text asks — and the
-   direction's own inks are well clear of their thresholds: the ink 17.6:1,
-   the secondary ink 6.2:1, the alert red 8:1, the pencil 7.5:1. (Not asserted
-   anywhere, deliberately: a contrast ratio is a fact about the palette, which
-   is declared once in app.css and pinned there.) */
-
-/* The page ground behind a practice surface is the sheet itself, not a grey
-   box floating on one. The ground belongs to the page rather than to the
-   surface's own box: the rail's side padding, the page's own padding and the
-   navbar's strip — transparent (navbar.css), so the body's ground shows
-   through it — are all the one sheet.
-
-   So the rule is the page's, stated as "this page has a practice surface on
-   it": `:has()` rather than a class on `<body>` or an attribute on the
-   document, because the ground has to follow the surface's presence — appear
-   with the player, and go with it on the authoring page, which renders the
-   same surface without the class. The prototype's own
-   `html[data-direction] body` rule is the thing the fold retires, not the
-   thing it renames. */
-body:has(.practice-surface) {
-  background: var(--paper);
-}
-
-/* The title band: the project's name set in the document's face, over the one
-   heavy rule on the page. Every other rule on the surface is a hairline; this
-   one is 2px of ink, which is what makes the page open like a part rather
-   than like a dashboard. The base rule above stays as the authoring page's
-   band — the same element in the same place, in the face it has today. */
-.practice-surface .player-title {
-  margin: 0 0 22px;
-  padding-bottom: 14px;
-  border-bottom: 2px solid var(--ink);
-  font: 600 27px/1.12 var(--serif);
-  letter-spacing: -0.015em;
-  color: var(--ink);
-}
-
-/* The recording's failure card, drawn as an editorial note: the alert red on
-   un-filled paper inside a hairline, squared off. Only the drawing changes —
-   the copy, the URL and the retry are the card's own, and the card is what
-   keeps the marks visible across a failure (T38). A restyle that cost the way
-   out would leave every stylesheet pin here still green, so the way out is
-   asserted as behaviour (Player.test.tsx) rather than trusted to this rule. */
-.practice-surface .player-youtube-error {
-  border: 1px solid var(--editorial);
-  border-radius: 0;
-  background: none;
-  color: var(--editorial);
-  font-family: var(--sans);
-}
-
-.practice-surface .player-youtube-error a {
-  color: var(--editorial);
 }
 
 /* The retry: squared and ruled in the card's own ink, rather than a rounded
    button left in whatever the browser gives it. */
-.practice-surface .player-youtube-error button {
+.player-youtube-error button {
   border: 1px solid currentColor;
   border-radius: 0;
   background: none;
@@ -996,29 +884,48 @@ body:has(.practice-surface) {
   cursor: pointer;
 }
 
-/* Focus is a pencil rule drawn inside the control it marks, never the browser's
-   glow — the prototype's rule, kept whole, but keyed on the fold's hook rather
-   than on the direction attribute it scoped its copy with.
+/* The page ground (T77, T95): the sheet itself, not a grey box floating on
+   one. The ground belongs to the page rather than to the surface's own box:
+   the rail's side padding, the page's own padding and the navbar's strip —
+   transparent (navbar.css), so the body's ground shows through it — are all
+   the one sheet.
 
-   That keying is not cosmetic here. The prototype's stops were the browsing
-   panel's rows and movement headers and the failure card's retry; the last is
-   the surface's alone, but the first two are not, and neither is the class they
-   are named by: the leading group's divider is a `player-movement-header` on
-   *every* surface, because the authoring panel draws it too (MarkersPanel). It
-   is harmless on the Markings page only for as long as it stays an unfocusable
-   `aria-hidden` div — one markup change from putting a pencil rule on the page
-   this fold must not touch. Keyed on the class, it cannot arrive there at all.
+   `:has()` rather than a class on `<body>` or an attribute on the document,
+   because the ground has to follow the surface's presence — appear with a
+   player, go with a page that renders none. It is keyed on the title band
+   every recording surface draws (`.player-title`) rather than on which kind
+   of surface it is: the fold once scoped the ground to the practice player
+   alone and left the markings page's own ground untouched (T77); T95 retires
+   that distinction, so the condition left is only "a recording is on this
+   page", true of the markings page too.
 
-   The focus stops this surface actually has are the three the prototype drew,
-   plus the way through to the markings page — the one other focus stop on this
-   screen, which would otherwise be a lone browser glow among pencil rules.
+   The ground could move at all only because it costs no one legibility. The
+   sheet is within a hair of the UA white it replaces, so every ink that read
+   on the old ground still reads on the new one — the panel's quiet time goes
+   from 4.76:1 to 4.63:1, still over the 4.5:1 body text asks — and the
+   direction's own inks are well clear of their thresholds: the ink 17.6:1,
+   the secondary ink 6.2:1, the alert red 8:1, the pencil 7.5:1. (Not asserted
+   anywhere, deliberately: a contrast ratio is a fact about the palette, which
+   is declared once in app.css and pinned there.) */
+body:has(.player-title) {
+  background: var(--paper);
+}
 
-   Inset by the width of the rule, so the mark sits on the control's own edge
-   rather than ringing it. */
-.practice-surface .player-marker-list .player-marker-row:focus-visible,
-.practice-surface .player-movement-header:focus-visible,
-.practice-surface .player-markings-open:focus-visible,
-.practice-surface .player-youtube-error button:focus-visible {
+/* Focus is a pencil rule drawn inside the control it marks, never the
+   browser's glow — the prototype's rule, kept whole (T95, was keyed on the
+   fold's practice-only hook). Inset by the width of the rule, so the mark
+   sits on the control's own edge rather than ringing it.
+
+   The leading group's divider (`.player-movement-header` with no movement) is
+   an unfocusable `aria-hidden` div on every surface today, so this stop is
+   presently reachable only through a real movement's header button, which the
+   markings page never renders — but the rule is unconditional now, matching
+   every other rule of this fold, rather than a defence against markup that
+   does not exist. */
+.player-marker-list .player-marker-row:focus-visible,
+.player-movement-header:focus-visible,
+.player-markings-open:focus-visible,
+.player-youtube-error button:focus-visible {
   outline: 2px solid var(--pencil);
   outline-offset: -2px;
 }

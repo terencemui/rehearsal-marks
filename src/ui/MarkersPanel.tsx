@@ -660,16 +660,14 @@ export function MarkersPanel({
   const groups = groupMarkers(markers, movements);
 
   return (
-    // The panel is one component on two surfaces (T78): the practice surfaces
-    // — the owner's player and the read-only public view — and the markings
-    // page's authoring column. The direction is the practice panel's and the
-    // authoring page is explicitly out of it (it keeps ADR-0007's settled row
-    // anatomy), so the stylesheet needs to tell them apart — and it does, with
-    // no help from here: both hosts render this panel inside `RecordingSurface`
-    // (T55), which carries the fold's one hook, `.practice-surface`, on the
-    // practice surfaces and not on the authoring page. So the panel states only
-    // what it is, and which surface it is on is already the surface's own to
-    // say.
+    // The panel is one component on every surface that hosts a recording
+    // (T55, T78, T95): the practice surfaces — the owner's player and the
+    // read-only public view — and the markings page's authoring column. It
+    // wears the direction on all of them now; what the authoring column keeps
+    // of ADR-0007's settled row anatomy (the clock slot, the trash glyph) is
+    // the `authoring` branch below, not a class the stylesheet keys on. So the
+    // panel states only what it is, and which branch renders is already the
+    // caller's own to say.
     <section className="player-markers" aria-label="Markers">
       <MarkersHead>
         {authoring !== undefined ? (

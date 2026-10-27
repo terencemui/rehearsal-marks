@@ -2021,16 +2021,18 @@ describe('App — one code path (T73)', () => {
   });
 });
 
-describe('App — the panel wears the direction on the practice surfaces only (T78)', () => {
-  it('frames the panel on the player and the public view, and not on the markings page', async () => {
-    // The panel is one component on two surfaces, and what tells them apart is
-    // the fold's one hook: the practice routes render the panel inside
-    // `RecordingSurface`'s `.practice-surface` root, and the markings page
-    // renders the same panel inside the same surface without it (T77). So the
-    // panel carries no class of its own saying which surface it is on — this is
-    // where the two readings are compared on the same project, in the DOM the
-    // app actually renders: the route each surface is reached by, whether the
-    // hook is over the panel, the boxed mark, and the head each one carries.
+describe('App — the panel wears the direction on every surface now (T78, T95)', () => {
+  it('frames the panel on the player, the public view, and the markings page alike', async () => {
+    // T78 drew the panel's frame and boxed mark for the practice routes alone,
+    // keyed on the fold's scoping hook (`.practice-surface`, T77). T95 retires
+    // that hook: the frame, the scrollbar and the movement bands are the whole
+    // panel's now, on every route that hosts it, and the markings page is no
+    // longer the one surface excepted. What still tells the surfaces apart is
+    // the markup the panel itself chooses — the door and the boxed mark are
+    // the browsing panel's alone, and the markings page's own add controls and
+    // plain label are `MarkersPanel`'s authoring branch (`MarkersPanel.tsx`),
+    // not a class this fold ever reached. This is where the three readings are
+    // compared on the same project, in the DOM the app actually renders.
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
@@ -2042,65 +2044,64 @@ describe('App — the panel wears the direction on the practice surfaces only (T
     // markings page inside the frame with the heading it belongs to.
     await navigateTo('/projects/p1');
     await waitForPlayerSettled();
-    const owner = container.querySelector('.practice-surface .player-markers');
+    const owner = container.querySelector('.player-markers');
     expect(owner).not.toBeNull();
     expect(owner!.querySelector('.player-markers-head .player-markings-open')).not.toBeNull();
     expect(owner!.querySelector('.player-marker-row .player-marker-mark')).not.toBeNull();
 
     // The read-only public view is a practice surface too — the same panel,
-    // worn the same way, and reached by the other route. A frame keyed on the
-    // owner's page alone would pass everything above and fail here.
+    // worn the same way, and reached by the other route.
     await navigateTo('/gallery/p1');
     await waitForPlayerSettled();
-    expect(container.querySelector('.practice-surface .player-markers')).not.toBeNull();
+    expect(container.querySelector('.player-markers')).not.toBeNull();
     expect(container.querySelector('.player-marker-mark')).not.toBeNull();
 
     // The markings page's column is the authoring one: the same panel and the
-    // same rows, with the add controls in place of the door — and the fold's
-    // hook is not over it, which is the whole of what keeps the frame and the
-    // box off this page.
+    // same rows, with the add controls in place of the door. It wears the
+    // fold's frame too now — there is no hook left to keep it off — and it is
+    // the authoring markup, not a missing class, that still keeps the door and
+    // the boxed mark off this page.
     await navigateTo('/projects/p1/markings');
     await waitForPlayerSettled();
     const authoring = container.querySelector('.player-markers');
     expect(authoring).not.toBeNull();
-    expect(container.querySelector('.practice-surface')).toBeNull();
-    expect(container.querySelector('.practice-surface .player-markers')).toBeNull();
     expect(authoring!.querySelector('.markings-add-controls')).not.toBeNull();
     expect(authoring!.querySelector('.player-markings-open')).toBeNull();
     expect(container.querySelector('.player-marker-mark')).toBeNull();
   });
 });
 
-describe('App — the practice surface is the sheet (T77)', () => {
-  it('grounds both routes that render a player, and leaves the authoring page alone', async () => {
-    // The ground and the band are the page's, and the surface they belong to is
-    // the one the markings page hosts too (T55) — so the fold's one hook has to
-    // be a fact about the page, and it is: a practice surface is on it, or it is
-    // not. Asserted at this seam because the class is what every rule of the
-    // fold hangs off, and because "the Markings page renders exactly as it does
-    // today" is only true while the class is absent there — the stylesheet pins
-    // in Player.test.tsx say nothing about which pages carry it.
+describe('App — the sheet stands under every recording surface (T77, T95)', () => {
+  it('grounds all three routes that render a recording, the markings page included', async () => {
+    // T77 drew the ground and the band for the practice routes alone, keyed on
+    // the fold's one hook (`.practice-surface`) and withheld from the markings
+    // page. T95 retires that hook: `RecordingSurface` no longer renders the
+    // class at all, so the ground now follows the title band every recording
+    // surface draws (`:has(.player-title)`), and the markings page — which
+    // hosts that same surface (T55) — stands on the sheet too. Asserted at this
+    // seam because it is a fact about which *pages* carry the ground, which the
+    // stylesheet pins in Player.test.tsx do not say.
     const api = fakeProjectsApi();
     api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
     const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
     const { container, navigateTo } = renderApp({ api, controller, initialEntry: '/projects/p1' });
     await waitForPlayerSettled();
 
-    // The owner's player: the band is inside the marked surface, so the rules
-    // that key on the class reach it.
-    expect(container.querySelector('.practice-surface .player-title')).not.toBeNull();
+    // The owner's player: the band stands with no scoping class on it.
+    expect(container.querySelector('.practice-surface')).toBeNull();
+    expect(container.querySelector('.player-title')).not.toBeNull();
 
     // The read-only public view is the same player, and takes the sheet with it
-    // — the second of the two routes, and the one a rule written against the
+    // — the second of the three routes, and the one a rule written against the
     // owner's page alone would miss.
     await navigateTo('/gallery/p1');
     expect(await screen.findByRole('heading', { name: 'Brahms Op. 118 No. 2' })).toBeInTheDocument();
     await waitForPlayerSettled();
-    expect(container.querySelector('.practice-surface .player-title')).not.toBeNull();
+    expect(container.querySelector('.player-title')).not.toBeNull();
 
-    // The authoring page renders the same recording surface and keeps today's
-    // look: the band is there (it is the shared surface's), and the class is
-    // not — which is the whole of what keeps the direction off this page.
+    // The authoring page renders the same recording surface, and now takes the
+    // ground and the band's own direction with it too — the third route, and
+    // the one this fold used to except.
     await navigateTo('/projects/p1/markings');
     await waitForPlayerSettled();
     expect(container.querySelector('.player-title')).not.toBeNull();
