@@ -2108,12 +2108,14 @@ describe('App — the practice surface is the sheet (T77)', () => {
   });
 });
 
-describe('App — the stave is every recording surface’s strip (T79, T98)', () => {
-  it('draws the stave on every route that renders a recording, and the plain bar on none of them', async () => {
-    // The strip is the shared surface's *timeline slot*: every host fills it
-    // with the stave now, the markings page included (T98) — so it is a fact
-    // about the shared surface rather than about which route you are on, and
-    // it is asserted on all three routes for exactly that reason.
+describe('App — the stave is the practice surfaces’ strip (T79)', () => {
+  it('draws the stave on both routes that render a practice surface, and leaves the markings page its bar', async () => {
+    // The strip is the shared surface's *timeline slot*: the practice surfaces
+    // fill it with the stave, and the markings page passes nothing and keeps
+    // the shipped bar. That slot is the whole of what makes the stave — and so
+    // ADR-0003's reversal, which puts the marks on the strip one ticket later —
+    // the player's business rather than the authoring page's, and it is a fact
+    // about which route you are on, so it is asserted where the routes are.
     const api = fakeProjectsApi();
     api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
     const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
@@ -2134,12 +2136,12 @@ describe('App — the stave is every recording surface’s strip (T79, T98)', ()
     expect(container.querySelectorAll('.player-stave-line')).toHaveLength(5);
     expect(container.querySelector('.player-timeline-bar')).toBeNull();
 
-    // The authoring page renders the same recording surface and now hands it
-    // the same stave (T98): the surface the marks are authored on is not
-    // half-restyled under the student (ADR-0007), in either direction.
+    // The authoring page renders the same recording surface and keeps the
+    // shipped timeline bar, drawing no stave at all: the surface the marks are
+    // authored on is not half-restyled under the student (ADR-0007).
     await navigateTo('/projects/p1/markings');
     await waitForPlayerSettled();
-    expect(container.querySelectorAll('.player-stave-line')).toHaveLength(5);
-    expect(container.querySelector('.player-timeline-bar')).toBeNull();
+    expect(container.querySelector('.player-timeline-bar')).not.toBeNull();
+    expect(container.querySelector('.player-stave')).toBeNull();
   });
 });
