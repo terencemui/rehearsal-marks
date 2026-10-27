@@ -65,6 +65,20 @@ function multiMovement(overrides = {}) {
 }
 
 /**
+ * A movement and a mark standing on its own start — the student's ordinary
+ * case (#220): a boundary placed by ear and the first mark of that movement
+ * placed by ear land at the same instant.
+ */
+function markOnMovementStart(overrides = {}) {
+  return project({
+    visibility: 'private',
+    markers: [marker('m1', 15), marker('m2', 20)],
+    movements: [{ id: 'mv1', name: 'I. Allegro', start: 15 }],
+    ...overrides,
+  });
+}
+
+/**
  * A mark's row on the markings page, in the one shape that page gives it — the
  * container holding the label and the clock, each a seek control of its own, a
  * click anywhere else on it jumping exactly as the row's single button did
@@ -1195,6 +1209,121 @@ describe('a mark can be corrected: nudge and typed time (T57)', () => {
 
     expect(api.get('p1')?.markers.map((m) => m.time)).toEqual([10, 20]);
     expect(api.saveProject).not.toHaveBeenCalled();
+  });
+});
+
+describe('the first marker of a movement can still be corrected (#220)', () => {
+  it('corrects the mark when its own row is clicked, not the boundary standing with it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(markOnMovementStart());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    // The first marker stands on the movement's own start. A click on its row
+    // asks for the mark, and the mark is what the block lands on — not the
+    // boundary at the same instant.
+    await user.click(markerRows(container)[0]);
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
+    expect(container.querySelector('.markings-movement-header .markings-row-time')).toBeNull();
+  });
+
+  it('corrects the boundary when its own band is clicked, not the mark standing with it', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(markOnMovementStart());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(movementJumps(container)[0]);
+    expect(screen.getByRole('group', { name: 'Re-time movement I. Allegro' })).toBeInTheDocument();
+    expect(
+      within(
+        container.querySelectorAll<HTMLElement>('.markings-movement-header')[0],
+      ).getByLabelText('Time for movement I. Allegro'),
+    ).toHaveValue('00:15.000');
+    // The mark at the same instant is left alone: no field on its row.
+    expect(markerRows(container)[0].querySelector('.markings-row-time')).toBeNull();
+  });
+
+  it('corrects the mark the arrow keys walk onto, even standing on a boundary', async () => {
+    const api = fakeProjectsApi();
+    api.seed(markOnMovementStart());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await userEvent.setup().keyboard('{ArrowDown}');
+
+    expect(controller.getCurrentTime()).toBe(15);
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
+  });
+
+  it('lands a mark just placed with M on its own row, even placed on a boundary', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(
+      project({
+        visibility: 'private',
+        markers: [],
+        movements: [{ id: 'mv1', name: 'I. Allegro', start: 15 }],
+      }),
+    );
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+    act(() => controller.emitPlayback({ duration: 372 }));
+    act(() => controller.seek(15));
+
+    await user.keyboard('m');
+
+    // ADR-0007: the mark `M` lands is the mark the controls are on the instant
+    // it exists — even one placed on a movement's own start.
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Correct marker A' })).toBeInTheDocument();
+  });
+
+  it('goes back to following the playhead once it moves off the chosen row', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(markOnMovementStart());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+
+    // The recording moving on is what clears a chosen row — nothing else has
+    // to notice and let go of it.
+    act(() => controller.emitPlayback({ currentTime: 20 }));
+    expect(within(correctingRow(container)!).getByText('B')).toBeInTheDocument();
+  });
+
+  it('forgets a chosen row for good, rather than reviving it on an unrelated return to its instant', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    api.seed(markOnMovementStart());
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 372 })) });
+    const { container } = renderApp({ api, controller, initialEntry: '/projects/p1/markings' });
+    await waitForPlayerSettled();
+
+    await user.click(markerRows(container)[0]);
+    expect(within(correctingRow(container)!).getByText('A')).toBeInTheDocument();
+
+    // Two plain seeks that cancel out and land back on the mark's own instant
+    // — neither is a fresh word for the mark, so the choice does not come
+    // back with them: the tie nothing named goes to the boundary, exactly as
+    // `activeRowId` says it should.
+    await user.keyboard('{ArrowRight}');
+    await user.keyboard('{ArrowLeft}');
+
+    expect(controller.getCurrentTime()).toBe(15);
+    expect(screen.getByRole('group', { name: 'Re-time movement I. Allegro' })).toBeInTheDocument();
   });
 });
 

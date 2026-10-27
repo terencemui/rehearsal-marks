@@ -199,8 +199,9 @@ export interface MarkersPanelProps {
   /**
    * A row was clicked. The player jumps to the marker and never interrupts
    * playback — this is the jump and only the jump. On the markings page the
-   * seek is also what makes the row the active one, and so the row carrying the
-   * correction block (T64), which needs no separate word from the click.
+   * click is also the row's own word for which row it asked for (#220): a
+   * mark's row, even one standing on a movement boundary, which the playhead
+   * alone cannot tell apart from it.
    */
   onSeek(marker: LabeledMarker): void;
   /** A movement header was clicked. The player jumps to the movement's start. */
@@ -1410,10 +1411,11 @@ function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authori
   /**
    * The jump the row's own button makes — the browsing row's whole row, and the
    * label on the markings page, whose clock jumps through `Clock` (T70). The
-   * click is the jump and only the jump: seeking lands the playhead on this
-   * mark, which is the whole of what makes the row the active one, and the
-   * active row is the one carrying the block (T64) — so the click needs no
-   * separate word to say which row is being corrected.
+   * click is the jump, and on the markings page it is also this mark's own word
+   * for which row it asked for (#220): a mark standing on a movement's own
+   * start seeks to the same instant the boundary would, so the seek alone
+   * cannot tell the two rows apart — `onSeek` is handed the marker so the page
+   * can.
    *
    * The control gives the focus up afterwards, because it is a pointer target
    * and not a focus stop: left focused, the next Space would re-activate it —
