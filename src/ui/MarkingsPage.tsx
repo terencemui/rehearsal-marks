@@ -9,6 +9,7 @@ import {
   createMovement,
   errorMessage,
   formatTime,
+  FRAME_EPSILON,
   moveMarker,
   moveMovement,
   nudgedTime,
@@ -287,6 +288,16 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
     setPinnedId(null);
   }, []);
 
+  /**
+   * The id a gesture most recently asked for — a click on a row or a band, an
+   * arrow walk landing on a mark, or `M` placing one (#220). `activeRowId`
+   * cannot break a tie between a mark and a boundary at the same instant,
+   * because the playhead alone cannot say which of the two a reader meant; the
+   * gesture is the one place that fact exists, so it is kept here rather than
+   * re-derived.
+   */
+  const [chosenId, setChosenId] = useState<string | null>(null);
+
   const status = useSyncExternalStore(autosave.subscribe, autosave.status);
   /**
    * The row the correction block is on (T64): the row a caret is holding, else
@@ -297,8 +308,32 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * exists, with the block already on it and its time ready to be made exact.
    */
   const activeRow = activeRowId(labeled, record.movements, elapsed);
-  /** What the block is actually on: the pin where a caret holds one, the active row otherwise. */
-  const blockRow = pinnedId ?? activeRow;
+  /**
+   * The chosen row, while the playhead is still standing where it was chosen
+   * (#220) — null once the recording moves on, or once the row itself is gone.
+   * Read off the live record rather than a time captured at choosing time, so
+   * a chosen row that is nudged away from under the playhead stops being
+   * chosen without anything having to notice and clear it.
+   */
+  const chosenMarker = labeled.find((marker) => marker.id === chosenId) ?? null;
+  const chosenMovement = record.movements.find((movement) => movement.id === chosenId) ?? null;
+  const chosenTime = chosenMarker?.time ?? chosenMovement?.start ?? null;
+  const chosen =
+    chosenTime !== null && Math.abs(chosenTime - elapsed) <= FRAME_EPSILON ? chosenId : null;
+  // The recording moving on forgets the choice for good, rather than merely
+  // ignoring it: without this, a later seek that happens to land back on the
+  // same instant — two arrow presses that cancel out, say — would revive a
+  // choice no gesture made this time, over the tie-break `activeRowId` would
+  // otherwise give it.
+  useEffect(() => {
+    if (chosenId !== null && chosen === null) setChosenId(null);
+  }, [chosenId, chosen]);
+  /**
+   * What the block is actually on: the pin where a caret holds one, else the
+   * row a gesture chose while the playhead still stands on it, else the active
+   * row — `activeRowId`'s own tie-break, boundary over mark.
+   */
+  const blockRow = pinnedId ?? chosen ?? activeRow;
   /**
    * Whether `Shift` is held, read once for the page (T71) and handed to the
    * correction decks. It is read here rather than inside the block because the
@@ -357,12 +392,17 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
    * Places a mark where the recording is — the playhead the student is hearing,
    * never zero and never a guess. The domain derives its label and sorts it into
    * place, so a mark placed out of order still lands in order.
+   *
+   * The mark it places is the chosen row (#220): a mark landing on a boundary
+   * is still the row the controls land on, which is what ADR-0007 promises.
    */
   const addAtPlayhead = useCallback((): void => {
+    const placed = createMarker(controller.getCurrentTime());
     mutate((current) => ({
       ...current,
-      markers: addMarker(current.markers, createMarker(controller.getCurrentTime())),
+      markers: addMarker(current.markers, placed),
     }));
+    setChosenId(placed.id);
   }, [controller, mutate]);
 
   /**
@@ -645,6 +685,9 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
       if (blockMarker !== null) nudge(blockMarker, delta);
       else if (blockMovement !== null) nudgeMovement(blockMovement, delta);
     },
+    // The walk says which mark it reached (#220): it can land on a mark
+    // standing on a boundary, and that mark is the row the walk asked for.
+    onReachMarker: (marker) => setChosenId(marker.id),
   });
 
   const authoring: MarkersAuthoring = {
@@ -769,8 +812,18 @@ function MarkingsSurface({ autosave, controller }: MarkingsSurfaceProps) {
               // a click, so it is never stale: a mark placed a moment ago is the
               // row the playhead has just passed.
               blockRowId={blockRow}
-              onSeek={(marker) => controller.seek(marker.time)}
-              onSeekMovement={(movement) => controller.seek(movement.start)}
+              onSeek={(marker) => {
+                // The click says which row it asked for (#220): a mark's row,
+                // even one standing on a boundary.
+                setChosenId(marker.id);
+                controller.seek(marker.time);
+              }}
+              onSeekMovement={(movement) => {
+                // The click says which row it asked for (#220): the band,
+                // even over a mark standing on it.
+                setChosenId(movement.id);
+                controller.seek(movement.start);
+              }}
               maxHeight={markersMaxHeight ?? undefined}
               authoring={authoring}
             />
