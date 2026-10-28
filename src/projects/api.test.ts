@@ -154,6 +154,16 @@ describe('sortGalleryGroups', () => {
     expect(sortGalleryGroups(mixed, 'oldest').map((g) => g.videoId)).toEqual(['new', 'old']);
   });
 
+  it('keeps the read’s order among cards of equal age, and reverses it on oldest', () => {
+    const tied = groupGalleryProjects([
+      summary({ id: 'p1', videoId: 'aaa', createdAt: 1_000 }),
+      summary({ id: 'p2', videoId: 'bbb', createdAt: 1_000 }),
+    ]);
+
+    expect(sortGalleryGroups(tied, 'newest').map((g) => g.videoId)).toEqual(['aaa', 'bbb']);
+    expect(sortGalleryGroups(tied, 'oldest').map((g) => g.videoId)).toEqual(['bbb', 'aaa']);
+  });
+
   it('does not mutate its input', () => {
     const before = groups.map((g) => g.videoId);
     sortGalleryGroups(groups, 'oldest');

@@ -183,6 +183,11 @@ export function filterGalleryGroups(
   );
 }
 
+/** A card's age: the date of its newest published project. */
+function age(group: GalleryGroup): number {
+  return Math.max(...group.projects.map((project) => project.createdAt));
+}
+
 /** The gallery's orders; every one ranks recording cards, never single projects. */
 export type GallerySort = 'newest' | 'oldest';
 
@@ -195,7 +200,7 @@ export function sortGalleryGroups(
   groups: readonly GalleryGroup[],
   sort: GallerySort,
 ): GalleryGroup[] {
-  const newestFirst = [...groups].sort((a, b) => b.projects[0].createdAt - a.projects[0].createdAt);
+  const newestFirst = [...groups].sort((a, b) => age(b) - age(a));
   return sort === 'newest' ? newestFirst : newestFirst.reverse();
 }
 
