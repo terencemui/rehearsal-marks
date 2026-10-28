@@ -67,7 +67,7 @@ _Avoid_: youtube key, video key
 ### The player
 
 **Timeline**:
-The full-width click-to-seek strip below the split — the recording's own clock, with the elapsed time under its left end and the total duration under its right. The practice surface draws it as a stave — the drawing's name in the code, not a second word for the strip: five hairlines ruled across the recording's whole length, a heavier bar line where each movement begins, a final barline at the right edge, a pencil rule at the playhead, and the project's marks in boxes at the times they occupy. The Markings page keeps the plain filled bar. A movement's bar line is a rule and not a mark.
+The full-width click-to-seek strip below the split — the recording's own clock, with the elapsed time under its left end and the total duration under its right. The practice surface draws it as a stave — the drawing's name in the code, not a second word for the strip: five hairlines ruled across the recording's whole length, a heavier bar line where each movement begins, a final barline at the right edge, a pencil rule at the playhead, and the project's marks in boxes at the times they occupy. A movement's bar line is a rule and not a mark.
 _Avoid_: ruler, tick bar, scrubber
 
 **Active row**:

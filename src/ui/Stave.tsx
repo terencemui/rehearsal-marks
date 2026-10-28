@@ -63,9 +63,8 @@ export interface StaveProps {
  * name under the stretch it names, and a final barline at the end.
  *
  * It stands in the shared surface's *timeline slot* (`RecordingSurface`), which
- * is the one thing that makes "the player only" true of it: the markings page
- * passes no timeline and keeps the shipped bar, so the authoring surface is not
- * half-restyled under the student (ADR-0007, spec #172).
+ * the markings page hands this same component to as well (T98) — the drawing
+ * is not rebuilt for the authoring surface, only handed over.
  *
  * **It carries the marks** (T80), and that is the reversal ADR-0003 recorded:
  * the strip was ruled to carry no marks, and the band above the hairlines —

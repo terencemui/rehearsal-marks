@@ -36,6 +36,8 @@ Supporting choices:
   > _Amended 2026-10-21 — the Help tab was removed (T85, spec #195), taking this line and the test that pinned it. `docs/keyboard-reference.md` remains the repo's keyboard reference; the stave described above is unchanged._
   >
   > _Noted 2026-10-21 (T89, #201) — the `HelpTab.test.tsx` references above are historical._ That file was deleted with Help, so the paragraph claiming it pins the Help line now describes a test that does not exist; it stands as the record of a check once made, not of one still in place. `docs/keyboard-reference.md` remains as a repo document with no in-app consumer and no mirror test — the keys it lists are the app's, but nothing surfaces the list and nothing holds it to the real handlers. That is the accepted cost of removing Help, recorded rather than discovered later.
+  >
+  > _Noted 2026-10-27 (T98, #224) — the Markings page no longer keeps the plain filled bar._ The clause above saying "the authoring surface" is untouched "because it is handed no strip of its own" is superseded: ADR-0007's own amendment (#225) now carries that reversal. The stave described above is the one drawing; which surfaces receive it is ADR-0007's to say.
 
 ## Consequences
 
