@@ -6,9 +6,15 @@
 
    The list itself wears the direction now too (T96): every rule below that
    draws a row, a band, a correction or a refusal reads it off `app.css`'s
-   tokens rather than a colour or a face of its own. The save bar and the two
-   Add controls above the list are a later ticket's — this one is the list the
-   playhead moves through and what a reader corrects on it. */
+   tokens rather than a colour or a face of its own.
+
+   The chrome around it wears it now too (T97): the save bar, the two Add
+   controls, the empty column's prompt and the leave prompt all read the
+   same tokens. Save changes is the one pencil-ruled control the page has —
+   the direction spends its fill on the mark the playhead has passed, never
+   on a button — and Add marker and Add movement keep ADR-0007's own
+   difference between the common act and the rarer one by taking the ink
+   rule and the hairline respectively. */
 
 /* The save bar above the recording: the status line, the commit control when
    the project waits for one, and the consequence that control carries. Flex
@@ -28,61 +34,77 @@
   margin-bottom: 0;
 }
 
+/* The page's one pencil-ruled control (T97): the direction has no filled
+   button, and the pencil's own fill is spent on the mark the playhead has
+   passed (`player.css`'s `.player-marker-mark`), not on a control. The
+   hover is the wash, the direction's neutral tint — not a fill of the
+   pencil itself, which stays the one ink the control is drawn in. */
 .markings-save {
   padding: 6px 14px;
-  border: 1px solid #0f766e;
-  border-radius: 6px;
-  background: #0f766e;
-  color: #fff;
+  border: 1px solid var(--pencil);
+  border-radius: 0;
+  background: none;
+  color: var(--pencil);
   cursor: pointer;
-  font: 600 13px/18px system-ui, sans-serif;
+  font: 600 13px/18px var(--sans);
 }
 
 .markings-save:hover:not(:disabled) {
-  background: #115e59;
-  border-color: #115e59;
+  background: var(--wash);
 }
 
 /* Nothing to commit — the control is present so the mode is legible, and
-   inert so it never claims a write it would not make. */
+   inert so it never claims a write it would not make: the hairline and the
+   quiet ink, as every inert control on this column now reads (T97). */
 .markings-save:disabled {
-  border-color: #cbd5e1;
-  background: #e2e8f0;
-  color: #94a3b8;
+  border-color: var(--rule);
+  color: var(--ink-2);
   cursor: default;
 }
 
 /* The consequence, before the write: what saving does to a project that is
-   already out in the world. Its own line under the control it belongs to. */
+   already out in the world. Its own line under the control it belongs to —
+   a footnote in the secondary ink and the chrome face (T97), not the alert
+   ink: an explanation is not a fault, and the two are told apart by more
+   than their wording so a save that has actually failed (below) still reads
+   as the louder fact. */
 .markings-save-note {
   flex-basis: 100%;
   margin: 0;
   max-width: 68ch;
-  font: 400 13px/19px system-ui, sans-serif;
-  color: #92400e;
+  font: 400 13px/19px var(--sans);
+  color: var(--ink-2);
 }
 
-/* The Add control, in the column's head where the marks it adds will land. */
+/* The Add control, in the column's head where the marks it adds will land.
+   Ruled in the ink (T97): placing a mark is the common act ADR-0007 draws
+   heavier than placing a boundary, below. */
 .markings-add {
   padding: 4px 12px;
-  border: 1px solid #0f766e;
-  border-radius: 6px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
   background: none;
-  color: #0f766e;
+  color: var(--ink);
   cursor: pointer;
-  font: 600 12px/18px system-ui, sans-serif;
+  font: 600 12px/18px var(--sans);
   white-space: nowrap;
 }
 
+/* The ink coming up to the pencil (T97), the same hover every ink-ruled
+   control on this page shares (`.markings-nudge:hover`,
+   `.markings-movement-confirm button:hover`) — never a fill. */
 .markings-add:hover:not(:disabled) {
-  background: #f0fdfa;
+  border-color: var(--pencil);
+  color: var(--pencil);
 }
 
 /* The recording has not settled: the playhead means nothing yet, so the
-   control is inert rather than placing a mark at zero. */
+   control is inert rather than placing a mark at zero. The hairline and the
+   quiet ink (T97) — shared with Add movement's own disabled rule below, so
+   both read as the same inert state. */
 .markings-add:disabled {
-  border-color: #cbd5e1;
-  color: #94a3b8;
+  border-color: var(--rule);
+  color: var(--ink-2);
   cursor: default;
 }
 
@@ -453,10 +475,12 @@
 /* The empty column beside the recording. It sits where the markers panel
    would, under the same small heading, so a project with marks and a project
    without read as the same column in two states rather than two surfaces. */
+/* The document's face (T97): the empty column's own prose is content, read
+   the way the panel's rows are, not chrome. */
 .markings-empty-copy {
   margin: 0;
-  font: 400 15px/22px system-ui, sans-serif;
-  color: #475569;
+  font: 400 15px/22px var(--serif);
+  color: var(--ink-2);
 }
 
 /* The key that fills the column, once a recording is playing — the direction's
@@ -484,26 +508,28 @@
 }
 
 /* The boundary control. Quieter than Add marker — placing a movement is the
-   rarer act, and the two side by side would otherwise read as equal weight. */
+   rarer act, and the two side by side would otherwise read as equal weight.
+   The hairline (T97), where Add marker above takes the ink rule. */
 .markings-add-movement {
   padding: 4px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
   background: none;
-  color: #334155;
+  color: var(--ink-2);
   cursor: pointer;
-  font: 600 12px/18px system-ui, sans-serif;
+  font: 600 12px/18px var(--sans);
   white-space: nowrap;
 }
 
 .markings-add-movement:hover:not(:disabled) {
-  background: #f8fafc;
+  border-color: var(--pencil);
+  color: var(--pencil);
 }
 
-/* The recording has not settled: there is no playhead to set a boundary at. */
+/* The recording has not settled: there is no playhead to set a boundary at.
+   Already the hairline and the quiet ink at rest (T97), so the control's own
+   disabled state restates nothing — it simply loses the hover above. */
 .markings-add-movement:disabled {
-  border-color: #e2e8f0;
-  color: #94a3b8;
   cursor: default;
 }
 
