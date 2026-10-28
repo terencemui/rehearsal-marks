@@ -223,11 +223,12 @@ describe('GalleryScreen', () => {
       expect(container).not.toHaveTextContent(/\b(100|1) views?\b/i);
 
       // Hot: 100 views is +2, far more than the ~0 weeks of age separating them.
+      // One view scores like none, so Weigle and Honeck tie and the newer wins.
       await user.selectOptions(sort, 'hot');
       expect(titles()).toEqual([
         expect.stringContaining('Daniel Harding'),
-        expect.stringContaining('Sebastian Weigle'),
         expect.stringContaining('Manfred Honeck'),
+        expect.stringContaining('Sebastian Weigle'),
       ]);
     });
 
