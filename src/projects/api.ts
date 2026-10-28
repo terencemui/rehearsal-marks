@@ -183,6 +183,27 @@ export function filterGalleryGroups(
   );
 }
 
+/** A card's age: the date of its newest published project. */
+function age(group: GalleryGroup): number {
+  return Math.max(...group.projects.map((project) => project.createdAt));
+}
+
+/** The gallery's orders; every one ranks recording cards, never single projects. */
+export type GallerySort = 'newest' | 'oldest';
+
+/**
+ * Orders recording cards by age — the date of the card's newest published
+ * project. Newest is the read's own order; Oldest is exactly its reverse.
+ * Runs after grouping and filtering.
+ */
+export function sortGalleryGroups(
+  groups: readonly GalleryGroup[],
+  sort: GallerySort,
+): GalleryGroup[] {
+  const newestFirst = [...groups].sort((a, b) => age(b) - age(a));
+  return sort === 'newest' ? newestFirst : newestFirst.reverse();
+}
+
 /**
  * The default API for the real app, built from the deployment env, or null
  * when the app is not wired to a Supabase project — the signal the app's env

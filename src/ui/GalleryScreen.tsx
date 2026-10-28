@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import type { ReactNode, SyntheticEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { formatRulerTime } from '../playback/ruler';
-import { filterGalleryGroups, groupGalleryProjects } from '../projects';
-import type { GalleryGroup, ProjectsApi } from '../projects';
+import { filterGalleryGroups, groupGalleryProjects, sortGalleryGroups } from '../projects';
+import type { GalleryGroup, GallerySort, ProjectsApi } from '../projects';
 import './gallery.css';
 
 export interface GalleryScreenProps {
@@ -79,6 +79,9 @@ function Thumbnail({ videoId }: { videoId: string }) {
  * replace, so a refresh restores the results, and the filter is a pure rule
  * beside the grouping helper. The count and the no-match state speak in
  * recordings, the unit the gallery now shows.
+ *
+ * The sort control (Newest, Oldest) orders whatever the search leaves: group,
+ * then filter, then sort.
  */
 export function GalleryScreen({ api }: GalleryScreenProps) {
   const navigate = useNavigate();
@@ -86,6 +89,8 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   const query = searchParams.get('q') ?? '';
   /** The gallery's groups; null while the read is in flight. */
   const [groups, setGroups] = useState<GalleryGroup[] | null>(null);
+  /** The order — the gallery's own state, not the URL, so leaving resets it. */
+  const [sort, setSort] = useState<GallerySort>('newest');
   const [readFailed, setReadFailed] = useState(false);
   /** Bumped by the error card's Retry — re-runs the read. */
   const [attempt, setAttempt] = useState(0);
@@ -122,7 +127,7 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   // The read is in flight — nothing to paint until it lands.
   if (groups === null) return null;
   const emptyServer = groups.length === 0;
-  const matching = emptyServer ? [] : filterGalleryGroups(groups, query);
+  const matching = emptyServer ? [] : sortGalleryGroups(filterGalleryGroups(groups, query), sort);
   return (
     <GalleryFrame>
       {/* The live region every state shares: a search announces its count,
@@ -146,6 +151,15 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
             Clear search
           </button>
         </>
+      )}
+      {!emptyServer && (
+        <label className="gallery-sort">
+          Sort by
+          <select value={sort} onChange={(event) => setSort(event.target.value as GallerySort)}>
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+          </select>
+        </label>
       )}
       <ol className="gallery-grid">
         {matching.map((group) => {

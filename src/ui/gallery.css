@@ -157,3 +157,28 @@
   outline: 2px solid var(--pencil);
   outline-offset: 1px;
 }
+
+/* The sort control: a quiet label and a square select in the page's own ink. */
+.gallery-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-2);
+}
+
+.gallery-sort select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: none;
+  font: 600 14px/1 var(--sans);
+  color: var(--ink);
+}
+
+.gallery-sort select:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 1px;
+}
