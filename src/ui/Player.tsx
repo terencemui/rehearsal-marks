@@ -131,8 +131,7 @@ export function Player({ autosave, controller, readOnly = false, markingsHref }:
       onRetryLoad={session.retryLoad}
       // The stave (T79): the practice surface's own drawing of the strip below
       // the split, handed to the shared surface's timeline slot. The markings
-      // page passes none and keeps the shipped bar, which is what keeps this
-      // fold's reversal of ADR-0003 on the player alone.
+      // page hands the same component to the same slot (T98).
       timeline={
         <Stave
           markers={labeled}

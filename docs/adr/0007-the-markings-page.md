@@ -6,6 +6,7 @@
 **Amended — 2026-09-24 (#152):** the active row's own anatomy — its clock becomes the time field, its alias is text until it is active, and Delete becomes a trash glyph. Also under the Decision's key bullet, below; the prototype that settled it is on the `prototype/markings-rows` branch.
 **Amended — 2026-10-21 (#192):** the in-app prompt arms on a failed save, in either mode. Under the Decision's "Unsaved changes block the exit" bullet, below.
 **Amended — 2026-10-27 (#220):** a gesture naming a row is honoured while the playhead still stands on it, so a mark standing on a boundary stays reachable. Under the `M` bullet's own amendment, below.
+**Amended — 2026-10-27 (#225):** the containment T77 and T78 built — the hook that kept the shipped direction off this page — is retired; the fold's rules and the strip below the recording are now both surfaces'. Under the Decision's lead paragraph, below.
 
 ## Context
 
@@ -21,6 +22,10 @@ The review machinery built for server-side projects has also never fired in ange
 ## Decision
 
 **A project's markings are authored on a page of their own.** The **Markings page** is a routed surface at its own URL, hosting its own player, where a project's owner edits what the recording carries: its markers and its movements. ADR-0003's posture is untouched — the practice surface stays playback-only and gains no editing affordance, only a quiet way through.
+
+> _Amended 2026-10-27 — the containment T77 and T78 built is retired; the fold's rules and the stave are now both surfaces' (#225)._ T78 drew the markers panel in the shipped direction on the practice surface only, and said why in as many words: it introduces "the fold's one scoping hook," keyed on the one distinction the panel already received — the authoring page passes its authoring behaviour, the practice surfaces do not. That hook — `RecordingSurface`'s `practiceSurface` flag — held the direction to the player alone through T77 and T78, while this page kept pre-fold CSS of its own. **The hook is retired rather than left inert.** T95 (#221) made the rules it gated unconditional — the page ground, the title band, the panel's frame and scrollbar, the movement bands and clocks, the failure card — so the Markings page draws them for free, from the one rule that now serves both surfaces. T98 (#224) closed the last difference: the authoring page hands `RecordingSurface`'s timeline slot the same **stave** this ADR described the player drawing, in place of the plain filled bar the page drew until then. The hook survives only where the two surfaces still differ for a reason, and each survivor says so in a comment.
+>
+> **What this traded:** a page that could be restyled on its own, for two surfaces that cannot drift apart. The hook bought the Markings page's look its own lever — change the page without touching the player — and spent six tickets' worth of that lever drawing it a direction visibly behind the one surface it was meant to match. **Rejected: mirroring the direction a second time, under the authoring page's own selectors.** Copying each promoted rule into `markings.css` under its own selectors would have kept that lever and reached the same pixels, but it is the second place every future rule has to be remembered and kept in step by hand — the drift this fold exists to close, reopened one stylesheet over.
 
 Supporting choices:
 
