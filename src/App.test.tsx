@@ -2021,18 +2021,19 @@ describe('App — one code path (T73)', () => {
   });
 });
 
-describe('App — the panel wears the direction on every surface now (T78, T95)', () => {
+describe('App — the panel wears the direction on every surface now (T78, T95, T96)', () => {
   it('frames the panel on the player, the public view, and the markings page alike', async () => {
     // T78 drew the panel's frame and boxed mark for the practice routes alone,
     // keyed on the fold's scoping hook (`.practice-surface`, T77). T95 retires
     // that hook: the frame, the scrollbar and the movement bands are the whole
     // panel's now, on every route that hosts it, and the markings page is no
-    // longer the one surface excepted. What still tells the surfaces apart is
-    // the markup the panel itself chooses — the door and the boxed mark are
-    // the browsing panel's alone, and the markings page's own add controls and
-    // plain label are `MarkersPanel`'s authoring branch (`MarkersPanel.tsx`),
-    // not a class this fold ever reached. This is where the three readings are
-    // compared on the same project, in the DOM the app actually renders.
+    // longer the one surface excepted. The door is still the browsing panel's
+    // alone — the markings page's own add controls are `MarkersPanel`'s
+    // authoring branch's (`MarkersPanel.tsx`) in its place — but the boxed
+    // mark is no longer one of the differences: T96 draws the authoring row's
+    // label in the same box, so the three readings share it too. This is
+    // where the three readings are compared on the same project, in the DOM
+    // the app actually renders.
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(serverProject({ id: 'p1', name: 'Brahms Op. 118 No. 2', duration: 372 }));
@@ -2059,15 +2060,15 @@ describe('App — the panel wears the direction on every surface now (T78, T95)'
     // The markings page's column is the authoring one: the same panel and the
     // same rows, with the add controls in place of the door. It wears the
     // fold's frame too now — there is no hook left to keep it off — and it is
-    // the authoring markup, not a missing class, that still keeps the door and
-    // the boxed mark off this page.
+    // the authoring markup, not a missing class, that still keeps the door off
+    // this page; the boxed mark (T96) is drawn here too.
     await navigateTo('/projects/p1/markings');
     await waitForPlayerSettled();
     const authoring = container.querySelector('.player-markers');
     expect(authoring).not.toBeNull();
     expect(authoring!.querySelector('.markings-add-controls')).not.toBeNull();
     expect(authoring!.querySelector('.player-markings-open')).toBeNull();
-    expect(container.querySelector('.player-marker-mark')).toBeNull();
+    expect(authoring!.querySelector('.player-marker-mark')).not.toBeNull();
   });
 });
 
