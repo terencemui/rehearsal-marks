@@ -220,11 +220,33 @@ describe('GalleryScreen', () => {
         expect.stringContaining('Sebastian Weigle'),
         expect.stringContaining('Manfred Honeck'),
       ]);
-      expect(container).not.toHaveTextContent('100');
+      expect(container).not.toHaveTextContent(/\b(100|1) views?\b/i);
 
       // Hot: 100 views is +2, far more than the ~0 weeks of age separating them.
       await user.selectOptions(sort, 'hot');
-      expect(titles()[0]).toContain('Daniel Harding');
+      expect(titles()).toEqual([
+        expect.stringContaining('Daniel Harding'),
+        expect.stringContaining('Sebastian Weigle'),
+        expect.stringContaining('Manfred Honeck'),
+      ]);
+    });
+
+    it('filters by search before ordering on Most popular', async () => {
+      const user = userEvent.setup();
+      const api = fakeProjectsApi();
+      seedThree(api);
+      await api.recordView('p2');
+      await api.recordView('p3');
+      await api.recordView('p3');
+      renderGallery(api, '/?q=sinfonie');
+
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Sort by' }), 'popular');
+
+      expect(titles()).toEqual([
+        expect.stringContaining('Daniel Harding'),
+        expect.stringContaining('Manfred Honeck'),
+      ]);
+      expect(screen.getByRole('status')).toHaveTextContent('2 recordings found.');
     });
   });
 
