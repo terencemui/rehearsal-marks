@@ -21,12 +21,15 @@ export interface FakeProjectsApi extends ProjectsApi {
   seed(project: ServerProject): void;
   /** The current stored project, for asserting post-operation state. */
   get(id: string): ServerProject | undefined;
+  /** A project's recorded views — 0 for one never viewed or never stored. */
+  viewCount(id: string): number;
   /** The next call to this operation rejects with a fetch-failed error. */
   failNext(method: keyof ProjectsApi): void;
 }
 
 export function fakeProjectsApi(): FakeProjectsApi {
   const projects = new Map<string, ServerProject>();
+  const views = new Map<string, number>();
   const failing = new Set<keyof ProjectsApi>();
 
   function throwIfFailing(method: keyof ProjectsApi): void {
@@ -60,6 +63,7 @@ export function fakeProjectsApi(): FakeProjectsApi {
       duration: project.duration,
       markerCount: project.markers.length,
       createdAt: project.createdAt,
+      viewCount: views.get(project.id) ?? 0,
     };
   }
 
@@ -197,6 +201,15 @@ export function fakeProjectsApi(): FakeProjectsApi {
       }
       return publicProject(project);
     }),
+
+    recordView: vi.fn(async (id: string): Promise<void> => {
+      throwIfFailing('recordView');
+      const project = projects.get(id);
+      // Like the function: published public rows count, anything else is a silent no-op.
+      if (project?.visibility === 'public' && project.publicationStatus === 'published') {
+        views.set(id, (views.get(id) ?? 0) + 1);
+      }
+    }),
   };
 
   return {
@@ -206,6 +219,9 @@ export function fakeProjectsApi(): FakeProjectsApi {
     },
     get(id) {
       return projects.get(id);
+    },
+    viewCount(id) {
+      return views.get(id) ?? 0;
     },
     failNext(method) {
       failing.add(method);

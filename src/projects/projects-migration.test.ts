@@ -21,6 +21,12 @@ const grantsMigrationUrl = resolve(
   'supabase/migrations/20261021000000_client_execute_grants.sql',
 );
 
+/** The T101 view-count migration — the column, its one writer, and who may call it. */
+const viewsMigrationUrl = resolve(
+  process.cwd(),
+  'supabase/migrations/20261028000000_project_views.sql',
+);
+
 /**
  * The baseline migration's contracts, pinned the way the seed test pins the
  * seed: what an actor can and cannot read or write is the database's own rule,
@@ -281,5 +287,52 @@ describe('the client execute grant migration', () => {
     expect(migration).not.toMatch(/^\s*grant\b/mi);
     // The maintainer's path runs as service_role or postgres.
     expect(migration).not.toMatch(/^\s*revoke[^;\n]*\b(service_role|postgres)\b/mi);
+  });
+});
+
+/**
+ * The view-count migration (T101). The count is public-facing data nobody may
+ * write directly, so the contract is the shape of its one writer: the column,
+ * the function's scope and grants, and that a view is not an edit.
+ */
+describe('the project views migration', () => {
+  const migration = readFileSync(viewsMigrationUrl, 'utf8');
+
+  it('adds a not-null, non-negative view_count defaulting to 0', () => {
+    expect(migration).toMatch(
+      /add column view_count integer not null default 0\s+check \(view_count >= 0\)/,
+    );
+  });
+
+  it('grants no client role a write on the column', () => {
+    expect(migration).not.toMatch(/grant (insert|update|all)/i);
+  });
+
+  it('counts only published public projects, as security definer, returning nothing', () => {
+    expect(migration).toMatch(/function public\.record_project_view\(p_id uuid\)\s+returns void/);
+    expect(migration).toMatch(/security definer/);
+    expect(migration).toMatch(/set view_count = view_count \+ 1/);
+    expect(migration).toMatch(/visibility = 'public'\s+and publication_status = 'published'/);
+  });
+
+  it('is callable by anon and authenticated, with public revoked', () => {
+    expect(migration).toMatch(
+      /revoke execute on function public\.record_project_view\(uuid\) from public;/,
+    );
+    expect(migration).toMatch(
+      /grant execute on function public\.record_project_view\(uuid\) to anon, authenticated;/,
+    );
+  });
+
+  it('does not stamp updated_at when only the count moves', () => {
+    expect(migration).toMatch(
+      /create or replace trigger projects_set_updated_at[\s\S]*?when \(old\.view_count is not distinct from new\.view_count\)/,
+    );
+    expect(migration).not.toMatch(/updated_at\s*=/);
+  });
+
+  it('never drops or renames', () => {
+    expect(migration).not.toMatch(/\bdrop\s+(table|function|policy|trigger|index|column)\b/i);
+    expect(migration).not.toMatch(/\brename\s+to\b/i);
   });
 });

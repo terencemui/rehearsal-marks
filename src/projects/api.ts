@@ -19,6 +19,8 @@ import {
   getPublicProject as fetchPublicProject,
   listPublishedForVideo as fetchPublishedForVideo,
   listPublishedProjects as fetchPublishedProjects,
+  postProjectsJson,
+  recordView as fetchRecordView,
   readProjectsConfig,
 } from './read';
 import type { Marker, Movement, Naming } from '../domain';
@@ -45,6 +47,8 @@ export interface PublicProjectSummary {
   markerCount: number;
   /** Epoch ms — the gallery's "newest first" sort. */
   createdAt: number;
+  /** Page loads of the read-only view, undeduped (T101) — carried, not yet shown. */
+  viewCount: number;
 }
 
 /**
@@ -120,6 +124,12 @@ export interface ProjectsApi {
   listPublishedForVideo(videoId: string): Promise<PublicProjectSummary[]>;
   /** One published public project, or null when it doesn't exist or isn't visible. */
   getPublicProject(id: string): Promise<PublicProject | null>;
+  /**
+   * Counts one view of a published public project (T101). The server ignores
+   * any other id without saying so; callers treat a rejection as nothing to
+   * surface — a view that fails to record never costs anyone the page.
+   */
+  recordView(id: string): Promise<void>;
 }
 
 /** One recording's group in the gallery: the canonical title and its projects, newest first. */
@@ -225,5 +235,6 @@ export function createDefaultProjectsApi(
     listPublishedProjects: () => fetchPublishedProjects(readDeps),
     listPublishedForVideo: (videoId) => fetchPublishedForVideo(videoId, readDeps),
     getPublicProject: (id) => fetchPublicProject(id, readDeps),
+    recordView: (id) => fetchRecordView(id, { config, postJson: postProjectsJson }),
   };
 }

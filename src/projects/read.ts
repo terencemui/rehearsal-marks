@@ -62,13 +62,13 @@ export interface ProjectsReadDependencies {
  * dependency). Content (`movements`) stays off the list read — a gallery of
  * summaries has no use for it.
  */
-const LIST_SELECT = 'id,name,recording_title,video_id,duration,created_at,markers';
+const LIST_SELECT = 'id,name,recording_title,video_id,duration,created_at,view_count,markers';
 /**
  * The read-only view's projection: the summary's facts plus the full content.
  * `naming` is here and not on `LIST_SELECT` because only this read renders
  * marks — a gallery entry names none.
  */
-const DETAIL_SELECT = 'id,name,recording_title,video_id,duration,created_at,markers,movements,naming';
+const DETAIL_SELECT = 'id,name,recording_title,video_id,duration,created_at,view_count,markers,movements,naming';
 
 /** The projects query root with the read projection and the published filter. */
 function projectsQuery(
@@ -134,6 +134,42 @@ export async function getPublicProject(
   const rows = parseRows(body);
   if (rows.length === 0) return null;
   return publicProjectFromRow(rows[0]);
+}
+
+/** What recording a view needs: a POST that throws on network or HTTP failure, and the config. */
+export interface RecordViewDependencies {
+  postJson: (url: string, headers: Record<string, string>, body: unknown) => Promise<void>;
+  config: ProjectsConfig | null;
+}
+
+/**
+ * Counts one view of a project through the `record_project_view` function —
+ * the only way the count moves. The server ignores any id that isn't a
+ * published public project and answers the same either way, so there is
+ * nothing to read back. An id that can't name a row is skipped before the call.
+ */
+export async function recordView(
+  id: string,
+  { postJson, config }: RecordViewDependencies,
+): Promise<void> {
+  if (config === null || !UUID_PATTERN.test(id)) return;
+  const url = new URL('/rest/v1/rpc/record_project_view', config.supabaseUrl);
+  await postJson(url.toString(), anonHeaders(config.anonKey), { p_id: id });
+}
+
+/** The real view POST, with the same timeout the reads carry. */
+export async function postProjectsJson(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+): Promise<void> {
+  const response = await fetch(url, {
+    method: 'POST',
+    signal: AbortSignal.timeout(5_000),
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw invalidResponse();
 }
 
 /** The schema's key shape — the id a `projects` row can carry. */
@@ -211,6 +247,7 @@ function summaryFromRow(raw: unknown): PublicProjectSummary {
     duration: numberField(row, 'duration'),
     markerCount: markers.length,
     createdAt: stampField(row, 'created_at'),
+    viewCount: numberField(row, 'view_count'),
   };
 }
 

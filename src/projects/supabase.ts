@@ -24,7 +24,7 @@ import type { AuthEnv } from '../auth';
  * adds the anonymous reads from `read.ts` to build the full interface. */
 export function createSupabaseProjectsApi(
   env: AuthEnv,
-): Omit<ProjectsApi, 'listPublishedProjects' | 'listPublishedForVideo' | 'getPublicProject'> {
+): Omit<ProjectsApi, 'listPublishedProjects' | 'listPublishedForVideo' | 'getPublicProject' | 'recordView'> {
   const client = createClient(env.url, env.anonKey);
 
   return {
