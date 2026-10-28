@@ -15,3 +15,7 @@ Single-context: one `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/ag
 ### Prototypes
 
 Throwaway design explorations are kept on their own branches as primary sources, and are never merged to main. They are not stale branches — never delete one in a branch cleanup. See `docs/prototypes.md`.
+
+### Browser verification
+
+Driving Claude in Chrome to test or verify a change (screenshots, clicking through a flow, reading console/network output) burns a lot of context in the main session. Spawn a subagent to do the Claude-in-Chrome work and report its findings back, rather than driving the browser inline.
