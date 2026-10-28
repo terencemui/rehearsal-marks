@@ -12,6 +12,7 @@ function summary(overrides: Partial<PublicProjectSummary>): PublicProjectSummary
     duration: 3036,
     markerCount: 21,
     createdAt: 3_000_000_000,
+    viewCount: 0,
     ...overrides,
   };
 }

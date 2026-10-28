@@ -5,6 +5,7 @@ import {
   listPublishedForVideo,
   listPublishedProjects,
   readProjectsConfig,
+  recordView,
 } from './read';
 import type { ProjectsReadDependencies } from './read';
 
@@ -23,6 +24,7 @@ const ROW = {
   video_id: 'a_B02BZp-5Y',
   duration: 3036,
   created_at: '2026-08-28T12:00:00.000Z',
+  view_count: 7,
   markers: [
     { id: 'm1', time: 34, aliases: ['I. Andante'], createdAt: 1787184000000 },
     { id: 'm2', time: 913, aliases: ['II. Andante'], createdAt: 1787184000000 },
@@ -105,6 +107,7 @@ describe('listPublishedProjects', () => {
         duration: ROW.duration,
         markerCount: 2,
         createdAt: Date.parse(ROW.created_at),
+        viewCount: 7,
       },
     ]);
   });
@@ -162,6 +165,7 @@ describe('getPublicProject', () => {
       duration: ROW.duration,
       markerCount: 2,
       createdAt: Date.parse(ROW.created_at),
+      viewCount: 7,
       markers: fullRow.markers,
       movements: fullRow.movements,
       naming: 'letters',
@@ -234,5 +238,58 @@ describe('createDefaultProjectsApi', () => {
     expect(typeof api?.listPublishedProjects).toBe('function');
     expect(typeof api?.listPublishedForVideo).toBe('function');
     expect(typeof api?.getPublicProject).toBe('function');
+  });
+});
+
+describe('view counts (T101)', () => {
+  it('selects view_count on the gallery and detail reads and maps it to viewCount', async () => {
+    let listUrl = '';
+    const [entry] = await listPublishedProjects(deps(JSON.stringify([ROW]), (u) => (listUrl = u)));
+    expect(new URL(listUrl).searchParams.get('select')).toContain('view_count');
+    expect(entry.viewCount).toBe(7);
+
+    let detailUrl = '';
+    const project = await getPublicProject(ROW.id, deps(JSON.stringify([ROW]), (u) => (detailUrl = u)));
+    expect(new URL(detailUrl).searchParams.get('select')).toContain('view_count');
+    expect(project?.viewCount).toBe(7);
+  });
+
+  it('skips a row whose count is not a number, like any malformed row', async () => {
+    const rows = [{ ...ROW, view_count: 'many' }, { ...ROW, id: 'other' }];
+    expect(await listPublishedProjects(deps(JSON.stringify(rows)))).toHaveLength(1);
+  });
+
+  it('records a view by POSTing the id to the record_project_view function', async () => {
+    const calls: { url: string; headers: Record<string, string>; body: unknown }[] = [];
+    await recordView(ROW.id, {
+      config: GOOD_CONFIG,
+      postJson: async (url, headers, body) => void calls.push({ url, headers, body }),
+    });
+    expect(calls).toEqual([
+      {
+        url: 'https://abc.supabase.co/rest/v1/rpc/record_project_view',
+        headers: { apikey: 'anon-key', Authorization: 'Bearer anon-key' },
+        body: { p_id: ROW.id },
+      },
+    ]);
+  });
+
+  it('makes no call for an unwired deployment or an id that cannot be a uuid', async () => {
+    const postJson = async () => {
+      throw new Error('should not post');
+    };
+    await recordView(ROW.id, { config: null, postJson });
+    await recordView('not-a-uuid', { config: GOOD_CONFIG, postJson });
+  });
+
+  it('lets a failing POST reject, so the caller decides what it costs', async () => {
+    await expect(
+      recordView(ROW.id, {
+        config: GOOD_CONFIG,
+        postJson: async () => {
+          throw new Error('down');
+        },
+      }),
+    ).rejects.toThrow('down');
   });
 });

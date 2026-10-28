@@ -53,6 +53,47 @@ function renderView(project: ServerProject | null, { fail = false }: { fail?: bo
 }
 
 describe('PublicProjectView', () => {
+  it('records exactly one view after a successful read', async () => {
+    const project = publicProject({ publicationStatus: 'published' });
+    const { api } = renderView(project);
+    await screen.findByRole('heading', { name: project.name });
+    await waitForPlayerSettled();
+    expect(api.recordView).toHaveBeenCalledTimes(1);
+    expect(api.recordView).toHaveBeenCalledWith(project.id);
+    expect(api.viewCount(project.id)).toBe(1);
+  });
+
+  it('records no view for a project that is not found or whose read fails', async () => {
+    const missing = renderView(null);
+    await screen.findByRole('heading', { name: 'This project could not be found' });
+    expect(missing.api.recordView).not.toHaveBeenCalled();
+    missing.unmount();
+
+    const failed = renderView(publicProject({ publicationStatus: 'published' }), { fail: true });
+    await screen.findByRole('alert');
+    expect(failed.api.recordView).not.toHaveBeenCalled();
+  });
+
+  it('still renders the project when recording the view fails', async () => {
+    const project = publicProject({ publicationStatus: 'published' });
+    const api = fakeProjectsApi();
+    api.seed(project);
+    api.failNext('recordView');
+    const controller = mockController({ load: vi.fn(async () => ({ duration: 3036 })) });
+    render(
+      <MemoryRouter initialEntries={[`/gallery/${project.id}`]}>
+        <Routes>
+          <Route
+            path="/gallery/:id"
+            element={<PublicProjectView api={api} controllerFactory={() => controller} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('heading', { name: project.name })).toBeInTheDocument();
+    expect(api.recordView).toHaveBeenCalledTimes(1);
+  });
+
   it('plays the project read-only, markers grouped under their movement header', async () => {
     const project = publicProject();
     const { container } = renderView(project);

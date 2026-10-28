@@ -72,6 +72,8 @@ export function PublicProjectView({ api, controllerFactory }: PublicProjectViewP
         built = { autosave, controller };
         setSession(built);
         setState('ready');
+        // Fire-and-forget: a failed count never costs the visitor the page.
+        void api.recordView(id).catch(() => {});
       })
       .catch(() => {
         if (cancelled || idRef.current !== id) return;
