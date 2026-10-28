@@ -273,12 +273,12 @@ in the side column is where the marks show. */
    each movement's name under the stretch it names, and the clock still reading
    at the two ends.
 
-   Every selector here can only ever match practice markup — the strip is built
-   by `Stave` and handed to the shared surface's timeline slot, which the
-   markings page passes nothing to — so none of it needs a hook, exactly as
-   the panel's own practice-only rules (the door, the row, the boxed mark)
-   need none. The bar above is what the authoring page keeps, and these rules
-   sit beside it rather than replacing it for the same reason.
+   The strip is built by `Stave` and handed to the shared surface's timeline
+   slot — both the practice surface and the markings page do (T98) — so none
+   of it needs a hook, exactly as the panel's own practice-only rules (the
+   door, the row, the boxed mark) need none. The bar above is what a caller
+   that passes no timeline still gets, and these rules sit beside it rather
+   than replacing it.
    -------------------------------------------------------------------------- */
 
 /* The strip: the air under the recording today's bar kept, and one click

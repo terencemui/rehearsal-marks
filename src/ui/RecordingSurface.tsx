@@ -56,16 +56,16 @@ export interface RecordingSurfaceProps {
   side: (markersMaxHeight: number | null) => ReactNode;
   /**
    * The recording's clock below the split, when the caller has one of its own.
-   * Absent — the markings page, which passes nothing — the surface draws the
-   * full-width click-to-seek bar it has always drawn, so this prop changes
-   * nothing for a caller that does not pass it.
+   * Absent, the surface draws the full-width click-to-seek bar it has always
+   * drawn, so this prop changes nothing for a caller that does not pass it —
+   * both current callers do (T79, T98), and the fallback is what a future one
+   * gets for free.
    *
    * It is a slot rather than a second prop telling the surface which clock to
-   * draw, and that is what makes "the player only" true of the stave (T79): the
-   * practice surface builds its own strip (`Stave`) and hands it over, while
-   * the markings page passes nothing and keeps the shipped bar untouched. A
+   * draw: the practice surface and the markings page each build their own
+   * strip (`Stave`) and hand it over, the same component both times (T98). A
    * stave also *needs* to be a slot — it is elements at positions, structure no
-   * stylesheet can invent from a flat bar — so the swap has to happen at the
+   * stylesheet can invent from a flat bar — so the swap had to happen at the
    * surface that owns the slot rather than by restyling what the bar renders.
    */
   timeline?: ReactNode;
@@ -87,12 +87,11 @@ export interface RecordingSurfaceProps {
  * The recording's clock is a single strip below the split (T38), spanning the
  * full content width — a click-to-seek surface with the elapsed time under its
  * left end and the total duration under its right. What that strip is *drawn*
- * as is the caller's (`timeline`): the markings page draws the filled bar this
- * surface has always drawn, and the practice surface draws the stave (T79).
- * The stave carries the marks (T80) — the practice strip is where they are
- * drawn now, and the panel stays the complete list beside it — while the
- * markings page's bar, which no ticket has restyled, carries none: the
- * authoring surface is not half-restyled under the student. The video column
+ * as is the caller's (`timeline`): both the practice surface (T79) and the
+ * markings page (T98) draw the stave, which carries the marks (T80) — the
+ * strip is where they are drawn, and the panel stays the complete list
+ * beside it on both pages. A caller that passes nothing gets the plain
+ * filled bar this surface has always drawn, carrying none. The video column
  * keeps only the recording (the audio layer's own ruler band is hidden with
  * CSS).
  *
