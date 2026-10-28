@@ -198,20 +198,35 @@ function age(group: GalleryGroup): number {
   return Math.max(...group.projects.map((project) => project.createdAt));
 }
 
+/** A card's views: the sum over all its published projects. */
+function views(group: GalleryGroup): number {
+  return group.projects.reduce((sum, project) => sum + project.viewCount, 0);
+}
+
+/** Reddit's hot score, tuned for low traffic: a week of age is worth a 10× view count. */
+function hotScore(group: GalleryGroup): number {
+  return Math.log10(Math.max(views(group), 1)) + age(group) / 1000 / 604_800;
+}
+
 /** The gallery's orders; every one ranks recording cards, never single projects. */
-export type GallerySort = 'newest' | 'oldest';
+export type GallerySort = 'hot' | 'newest' | 'oldest' | 'popular';
 
 /**
- * Orders recording cards by age — the date of the card's newest published
- * project. Newest is the read's own order; Oldest is exactly its reverse.
- * Runs after grouping and filtering.
+ * Orders recording cards. Newest orders by age — the date of the card's newest
+ * published project — and Oldest is exactly its reverse; Hot and Most popular
+ * rank by score and views, and every tie falls back to newest first. Hot's
+ * score is absolute, so it needs no clock. Runs after grouping and filtering.
  */
 export function sortGalleryGroups(
   groups: readonly GalleryGroup[],
   sort: GallerySort,
 ): GalleryGroup[] {
   const newestFirst = [...groups].sort((a, b) => age(b) - age(a));
-  return sort === 'newest' ? newestFirst : newestFirst.reverse();
+  if (sort === 'newest') return newestFirst;
+  if (sort === 'oldest') return newestFirst.reverse();
+  // Array.sort is stable, so equal keys keep their newest-first order.
+  const key = sort === 'hot' ? hotScore : views;
+  return newestFirst.sort((a, b) => key(b) - key(a));
 }
 
 /**
