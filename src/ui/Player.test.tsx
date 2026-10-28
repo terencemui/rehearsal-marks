@@ -648,18 +648,16 @@ describe('Player — the readout wears the direction (T73)', () => {
 });
 
 describe('Player — the markers panel wears the direction (T78)', () => {
-  // The panel is one component on two surfaces: the practice player and the
-  // public view on one side, the markings page's authoring column on the other.
-  // The direction's panel is the practice one's — the authoring page keeps
-  // ADR-0007's settled row anatomy, its clock slot and its trash glyph,
-  // unchanged — so the fold needs a hook, and it already has one: both hosts
-  // render this panel inside `RecordingSurface` (T55), which carries
-  // `.practice-surface` on the practice surfaces and not on the authoring page
-  // (T77). So every rule here that could reach either surface is keyed on that
-  // hook, and the panel itself carries no second class saying which surface it
-  // is on. Rules whose selector can only ever match practice markup
-  // (`.player-markings-open`, `.player-marker-row`, `.player-marker-mark`) need
-  // no hook and are written where they belong.
+  // The panel is one component on every surface that hosts a recording: the
+  // practice player, the public view, and the markings page's authoring
+  // column (T55). T78 drew the frame and the boxed mark for the practice
+  // player alone, keyed on a scoping hook (`.practice-surface`) the fold
+  // carried on `RecordingSurface`'s root; T95 retires that hook, since the
+  // panel's frame, its scrollbar, its heading and its movement bands turned
+  // out to belong to every surface, not just the practice one. What is left
+  // keyed to nothing but its own selector (`.player-markings-open`,
+  // `.player-marker-row`, `.player-marker-mark`) is the markup that can only
+  // ever be the browsing panel's — the markings page renders none of it.
   //
   // jsdom computes no layout, so what a rule *draws* is a stylesheet fact and
   // is pinned as source text — the convention the tests above already use.
@@ -672,14 +670,14 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     // title names. The frame is a hairline in the rule colour — one rule among
     // the hairlines it encloses — and it has no rounded corner, because the
     // direction has none anywhere.
-    const frame = ruleText(playerCss, '.practice-surface .player-markers');
+    const frame = ruleText(playerCss, '.player-markers');
     expect(frame).toContain('border: 1px solid var(--rule);');
     expect(frame).not.toContain('border-radius');
   });
 
   it('puts the panel’s heading inside the frame — the panel’s own head, not the list’s', async () => {
     const { container } = await renderLoadedPlayer();
-    const panel = container.querySelector('.practice-surface .player-markers');
+    const panel = container.querySelector('.player-markers');
     expect(panel).not.toBeNull();
     // The head is the panel's child: the frame is drawn around the title, not
     // around the list with the title left outside it.
@@ -688,20 +686,23 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     expect(head!.querySelector('.player-markers-heading')?.textContent).toBe('Markers');
   });
 
-  it('keeps the list’s own inset, cap, scroll and sticky headers', () => {
+  it('keeps the list’s own inset, cap and scroll, and closes a practice list’s rows up', () => {
     // The frame is the panel's, so the list is not restyled to make room for
-    // it: its inset, its cap and its scrolling are today's, and the sticky
-    // movement headers are still the list's own bands. The one thing the
-    // practice hook says about the list is that its rows close up — the rules
-    // between them do the separating now, so there is no daylight to add.
+    // it: its inset, its cap and its scrolling are today's.
     const list = ruleText(playerCss, '.player-marker-list');
     expect(list).toContain('padding: 0 4px 0 0;');
     expect(list).toContain('max-height: 320px;');
     expect(list).toContain('overflow-y: auto;');
-    const practice = ruleText(playerCss, '.practice-surface .player-marker-list');
-    expect(practice).toContain('gap: 0;');
-    expect(practice).not.toContain('padding');
-    expect(practice).not.toContain('max-height');
+    // A list of browsing rows gives up the daylight between them — the
+    // hairlines under each row do the separating instead (above). The
+    // markings page's own row carries no such hairline yet (T96/T97's to
+    // draw), so the gap stays put there: this `:has()` is the one place left
+    // that still has to tell the two surfaces apart, now that the hook is
+    // gone, because the two rows genuinely differ in what they can give up.
+    expect(list).toContain('gap: 2px;');
+    expect(ruleText(playerCss, '.player-marker-list:has(.player-marker-row)')).toContain(
+      'gap: 0;',
+    );
     expect(ruleText(playerCss, '.player-marker-movement')).toContain('position: sticky;');
   });
 
@@ -806,16 +807,13 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     // it is scrolled, which is the moment the reader has stopped asking) with a
     // classic one. Squared, and in the sheet's own rule colour, so the bar
     // reads as one of the hairlines it runs beside.
-    expect(
-      ruleText(playerCss, '.practice-surface .player-marker-list::-webkit-scrollbar'),
-    ).toContain('width: 10px;');
-    expect(
-      ruleText(playerCss, '.practice-surface .player-marker-list::-webkit-scrollbar-track'),
-    ).toContain('background: transparent;');
-    const thumb = ruleText(
-      playerCss,
-      '.practice-surface .player-marker-list::-webkit-scrollbar-thumb',
+    expect(ruleText(playerCss, '.player-marker-list::-webkit-scrollbar')).toContain(
+      'width: 10px;',
     );
+    expect(ruleText(playerCss, '.player-marker-list::-webkit-scrollbar-track')).toContain(
+      'background: transparent;',
+    );
+    const thumb = ruleText(playerCss, '.player-marker-list::-webkit-scrollbar-thumb');
     expect(thumb).toContain('background: var(--rule);');
     expect(thumb).toContain('border-radius: 0;');
     // The paint is kept off the transparent border that reserves its inset, and
@@ -844,76 +842,54 @@ describe('Player — the markers panel wears the direction (T78)', () => {
     // `border-box`, so the two disagreed. A list with `overflow-y: auto` has
     // `overflow-x: auto` computed alongside it, so those 20px came back as a
     // second scrollbar under the rows, in plain sight inside the frame.
-    expect(
-      ruleText(
-        playerCss,
-        '.practice-surface .player-marker-movement .player-movement-header',
-      ),
-    ).toContain('box-sizing: border-box;');
+    const band = ruleText(playerCss, '.player-marker-movement .player-movement-header');
+    expect(band).toContain('box-sizing: border-box;');
     // The band is meant to span its group, so its padding is inside it: the
-    // band's own opaque paper and ink rule are what the practice rule is for.
-    const band = ruleText(
-      playerCss,
-      '.practice-surface .player-marker-movement .player-movement-header',
-    );
+    // band's own opaque paper and ink rule are the direction's.
     expect(band).toContain('background: var(--paper);');
     expect(band).toContain('border-bottom: 1px solid var(--ink);');
   });
 
   it('keeps the band at paper under the pointer, and moves its name to the pencil', () => {
-    // The shipped hover tints the band by `#e2e8f0`. On a practice band that
-    // tint must not show: the band's own rule carries the fold's hook — four
-    // classes to the shipped selector's three — so the paper holds, and the
-    // hover rule states it anyway so the pointer's appearance is whole in one
-    // rule rather than resting on that comparison.
+    // The shipped hover tinted the band by `#e2e8f0`; the direction's own
+    // hover keeps it at paper and moves the name to the pencil instead, and
+    // there is now one rule for it rather than a shipped one and an override.
     const hover = ruleText(
-      playerCss,
-      '.practice-surface .player-marker-movement button.player-movement-header:hover',
-    );
-    expect(hover).toContain('background: var(--paper);');
-    expect(hover).toContain('color: var(--pencil);');
-    // The shipped tint is still the shipped rule's, for whoever owns that
-    // selector — it is just no longer reachable on a practice band.
-    const shipped = ruleText(
       playerCss,
       '.player-marker-movement button.player-movement-header:hover',
     );
-    expect(shipped).toContain('background: #e2e8f0;');
+    expect(hover).toContain('background: var(--paper);');
+    expect(hover).toContain('color: var(--pencil);');
+    expect(hover).not.toContain('#e2e8f0');
   });
 
-  it('leaves the markings page’s own rules alone', () => {
-    // The assertion this ticket did not reach the markings page with: the panel
-    // is shared, so the hook has to be the only thing separating the two
-    // surfaces. Everything the panel's unhooked rules say is the authoring
-    // page's — the weight a passed row's title takes, the clock's colour, the
-    // heading's tracked capitals, the movement name's ink — and none of it
-    // moved. MarkingsPage.test.tsx pins the page itself; this is the negative
-    // space that keeps those pins true.
-    expect(ruleText(playerCss, '.player-markers-heading')).toContain('text-transform: uppercase;');
-    expect(ruleText(playerCss, '.player-markers-heading')).toContain('color: #94a3b8;');
-    expect(ruleText(playerCss, '.player-marker-time')).toContain('color: #64748b;');
+  it('wears the direction on the markings page too', () => {
+    // T95: the hook that kept these rules off the markings page is retired,
+    // so the panel's own heading, clock and movement-name ink are the
+    // direction's everywhere the panel renders — MarkingsPage.test.tsx never
+    // pinned the shipped values, so there is no behaviour suite this leaves
+    // behind.
+    expect(ruleText(playerCss, '.player-markers-heading')).toContain('text-transform: none;');
+    expect(ruleText(playerCss, '.player-marker-time')).toContain('color: var(--ink-2);');
     expect(ruleText(playerCss, '.player-marker-list li.passed .player-marker-title')).toContain(
-      'font-weight: 700;',
+      'font-weight: 600;',
     );
-    expect(ruleText(playerCss, '.player-movement-name')).toContain('color: #0f172a;');
-    // And the new look exists nowhere but the practice panel: the frame and the
-    // box are not rules of their own for the authoring page to fall into.
-    expect(playerCss).not.toContain('\n.player-markers {');
-    expect(playerCss).not.toContain('\n.player-marker-mark {');
+    expect(ruleText(playerCss, '.player-movement-name')).toContain('color: var(--ink);');
   });
 });
 
 /** The first of the focus rule's stops — the selector the rule is read by. */
-const FOCUS_STOP = '.practice-surface .player-marker-list .player-marker-row:focus-visible';
+const FOCUS_STOP = '.player-marker-list .player-marker-row:focus-visible';
 
-describe('Player — the surface wears the direction (T77)', () => {
-  // The ground and the band. The surface both player routes render is the same
-  // surface the markings page hosts (T55), so the fold needs one thing to key
-  // on, and it is the distinction the two hosts already carry: a practice
-  // surface is on the page, or it is not. The markup says so once
-  // (RecordingSurface), and every rule here hangs off it — which is why the
-  // Markings page's own pins are the other half of the claim and are left
-  // untouched.
+describe('Player — the surface wears the direction (T77, T95)', () => {
+  // The ground and the band. T77 drew these for the practice player alone,
+  // keyed on a scoping hook (`.practice-surface`) the fold carried on
+  // `RecordingSurface`'s root and withheld from the markings page. T95
+  // retires that hook: the ground, the band, the failure card and the focus
+  // rule turned out to belong to every surface that renders a recording, so
+  // `RecordingSurface` no longer renders the class at all, and the rules
+  // below are plain selectors. App.test.tsx drives all three routes and
+  // checks that the Markings page now carries this same look.
 
   /**
    * Every rule this ticket adds, as its declarations — the surface's own text,
@@ -925,40 +901,33 @@ describe('Player — the surface wears the direction (T77)', () => {
    */
   function surfaceRules(): string[] {
     return [
-      ruleText(playerCss, 'body:has(.practice-surface)'),
-      ruleText(playerCss, '.practice-surface .player-title'),
-      ruleText(playerCss, '.practice-surface .player-youtube-error'),
-      ruleText(playerCss, '.practice-surface .player-youtube-error a'),
-      ruleText(playerCss, '.practice-surface .player-youtube-error button'),
+      ruleText(playerCss, 'body:has(.player-title)'),
+      ruleText(playerCss, '.player-title'),
+      ruleText(playerCss, '.player-youtube-error'),
+      ruleText(playerCss, '.player-youtube-error a'),
+      ruleText(playerCss, '.player-youtube-error button'),
       ruleText(playerCss, FOCUS_STOP),
     ];
   }
 
-  it('marks the practice surface, and only the practice surface', async () => {
-    // The class is the fold's one hook: the band, the failure card and the
-    // ground all hang off it, and the markings page — which renders this same
-    // surface — must carry none of them (its own pins are that claim's other
-    // half; App.test.tsx drives the three routes).
+  it('renders the band and the recording with no scoping class of its own', async () => {
+    // T95 retired the hook: the surface the player renders carries no class
+    // telling it apart from the one the markings page hosts (App.test.tsx
+    // checks that the two now look alike).
     const { container } = await renderLoadedPlayer();
-
-    const surface = container.querySelector('.practice-surface');
-    expect(surface).not.toBeNull();
-    // The band and the recording are inside the marked subtree, not beside it:
-    // a class on a sibling would leave the rules matching nothing.
-    expect(surface?.querySelector('.player-title')).not.toBeNull();
-    expect(surface?.querySelector('.player-practice-split')).not.toBeNull();
+    expect(container.querySelector('.practice-surface')).toBeNull();
+    expect(container.querySelector('.player-title')).not.toBeNull();
+    expect(container.querySelector('.player-practice-split')).not.toBeNull();
   });
 
-  it('grounds the page in the sheet, while a practice surface is on it', () => {
+  it('grounds the page in the sheet, wherever a recording surface stands on it', () => {
     // The ground belongs to the page and not to the surface's box: the rail's
     // side padding, the page's own padding and the navbar's strip — which is
     // transparent (navbar.css), so the body's ground shows through it — are all
-    // the one sheet. So the rule is the page's, keyed on the surface's presence
-    // rather than on a document attribute: the prototype set one
-    // (`data-direction`) and the fold ships no such thing.
-    expect(ruleText(playerCss, 'body:has(.practice-surface)')).toContain(
-      'background: var(--paper);',
-    );
+    // the one sheet. Keyed on the title band every recording surface draws
+    // (`.player-title`) rather than on which kind of surface it is (T95) —
+    // the markings page draws that band too, and now takes the ground with it.
+    expect(ruleText(playerCss, 'body:has(.player-title)')).toContain('background: var(--paper);');
   });
 
   it('sets the project’s name in the document’s face over a heavy rule', () => {
@@ -966,7 +935,7 @@ describe('Player — the surface wears the direction (T77)', () => {
     // so it takes the document's face, and the band under it is the one rule on
     // the page drawn heavy rather than hairline — 2px of ink, where every other
     // rule on the surface is 1px of the sheet's own rule colour.
-    const band = ruleText(playerCss, '.practice-surface .player-title');
+    const band = ruleText(playerCss, '.player-title');
     expect(band).toContain('font: 600 27px/1.12 var(--serif);');
     expect(band).toContain('letter-spacing: -0.015em;');
     expect(band).toContain('color: var(--ink);');
@@ -978,8 +947,9 @@ describe('Player — the surface wears the direction (T77)', () => {
     // The recording's own failure is the document's business too: a note in the
     // direction's alert red, squared and un-filled, rather than the rounded
     // pink alert it has been. Its copy is chrome rather than content, so it
-    // takes the chrome face.
-    const card = ruleText(playerCss, '.practice-surface .player-youtube-error');
+    // takes the chrome face. The card renders alike on both surfaces (T55), so
+    // one rule now draws it rather than a shipped rule and a practice override.
+    const card = ruleText(playerCss, '.player-youtube-error');
     expect(card).toContain('border: 1px solid var(--editorial);');
     expect(card).toContain('border-radius: 0;');
     expect(card).toContain('background: none;');
@@ -989,10 +959,8 @@ describe('Player — the surface wears the direction (T77)', () => {
     // The way out keeps the card's ink — the URL and the retry are the card's
     // own contents, not a second surface — and the retry is squared and ruled
     // in it rather than left a rounded button in an inherited grey.
-    expect(ruleText(playerCss, '.practice-surface .player-youtube-error a')).toContain(
-      'color: var(--editorial);',
-    );
-    const retry = ruleText(playerCss, '.practice-surface .player-youtube-error button');
+    expect(ruleText(playerCss, '.player-youtube-error a')).toContain('color: var(--editorial);');
+    const retry = ruleText(playerCss, '.player-youtube-error button');
     expect(retry).toContain('border: 1px solid currentColor;');
     expect(retry).toContain('border-radius: 0;');
     expect(retry).toContain('color: inherit;');
@@ -1023,24 +991,22 @@ describe('Player — the surface wears the direction (T77)', () => {
   });
 
   it('draws focus as an inset pencil rule, never the browser’s glow', () => {
-    // Every stop is keyed on the fold's one hook, and that keying is the claim
-    // this test is really making. One of the names in the list is not the
-    // player's alone: the leading group's divider is a `player-movement-header`
-    // on the authoring page too (MarkersPanel draws it for both panels), and it
-    // is harmless there only while it stays an unfocusable `aria-hidden` div. A
-    // bare selector would put a pencil rule on the Markings page the day that
-    // div became a button — so the list is pinned whole, and every line of it
-    // has to carry the class. Inset, because the rule is drawn inside the
-    // control it marks rather than ringing it; the declarations are read out of
-    // the stylesheet like every other rule on the surface.
+    // The four stops carried the fold's practice-only hook; T95 drops it from
+    // all four, since three of them (`.player-marker-row`, `.player-markings-open`,
+    // and the leading divider's unfocusable `.player-movement-header`) can
+    // only ever be reached on the markup the hook used to require anyway, and
+    // the fourth (the failure card's retry) is shared markup the direction now
+    // reaches on both surfaces regardless. Inset, because the rule is drawn
+    // inside the control it marks rather than ringing it; the declarations are
+    // read out of the stylesheet like every other rule on the surface.
     const focus = ruleText(playerCss, FOCUS_STOP);
     expect(focus).toContain('outline: 2px solid var(--pencil);');
     expect(focus).toContain('outline-offset: -2px;');
     expect(ruleSelectors(playerCss, FOCUS_STOP)).toEqual([
       FOCUS_STOP,
-      '.practice-surface .player-movement-header:focus-visible',
-      '.practice-surface .player-markings-open:focus-visible',
-      '.practice-surface .player-youtube-error button:focus-visible',
+      '.player-movement-header:focus-visible',
+      '.player-markings-open:focus-visible',
+      '.player-youtube-error button:focus-visible',
     ]);
   });
 

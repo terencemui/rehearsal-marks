@@ -199,8 +199,9 @@ export interface MarkersPanelProps {
   /**
    * A row was clicked. The player jumps to the marker and never interrupts
    * playback — this is the jump and only the jump. On the markings page the
-   * seek is also what makes the row the active one, and so the row carrying the
-   * correction block (T64), which needs no separate word from the click.
+   * click is also the row's own word for which row it asked for (#220): a
+   * mark's row, even one standing on a movement boundary, which the playhead
+   * alone cannot tell apart from it.
    */
   onSeek(marker: LabeledMarker): void;
   /** A movement header was clicked. The player jumps to the movement's start. */
@@ -660,16 +661,14 @@ export function MarkersPanel({
   const groups = groupMarkers(markers, movements);
 
   return (
-    // The panel is one component on two surfaces (T78): the practice surfaces
-    // — the owner's player and the read-only public view — and the markings
-    // page's authoring column. The direction is the practice panel's and the
-    // authoring page is explicitly out of it (it keeps ADR-0007's settled row
-    // anatomy), so the stylesheet needs to tell them apart — and it does, with
-    // no help from here: both hosts render this panel inside `RecordingSurface`
-    // (T55), which carries the fold's one hook, `.practice-surface`, on the
-    // practice surfaces and not on the authoring page. So the panel states only
-    // what it is, and which surface it is on is already the surface's own to
-    // say.
+    // The panel is one component on every surface that hosts a recording
+    // (T55, T78, T95): the practice surfaces — the owner's player and the
+    // read-only public view — and the markings page's authoring column. It
+    // wears the direction on all of them now; what the authoring column keeps
+    // of ADR-0007's settled row anatomy (the clock slot, the trash glyph) is
+    // the `authoring` branch below, not a class the stylesheet keys on. So the
+    // panel states only what it is, and which branch renders is already the
+    // caller's own to say.
     <section className="player-markers" aria-label="Markers">
       <MarkersHead>
         {authoring !== undefined ? (
@@ -1410,10 +1409,11 @@ function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authori
   /**
    * The jump the row's own button makes — the browsing row's whole row, and the
    * label on the markings page, whose clock jumps through `Clock` (T70). The
-   * click is the jump and only the jump: seeking lands the playhead on this
-   * mark, which is the whole of what makes the row the active one, and the
-   * active row is the one carrying the block (T64) — so the click needs no
-   * separate word to say which row is being corrected.
+   * click is the jump, and on the markings page it is also this mark's own word
+   * for which row it asked for (#220): a mark standing on a movement's own
+   * start seeks to the same instant the boundary would, so the seek alone
+   * cannot tell the two rows apart — `onSeek` is handed the marker so the page
+   * can.
    *
    * The control gives the focus up afterwards, because it is a pointer target
    * and not a focus stop: left focused, the next Space would re-activate it —

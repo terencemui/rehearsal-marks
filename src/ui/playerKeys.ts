@@ -43,6 +43,15 @@ export interface PlayerKeysOptions {
    * that may not change a row carry no key that could.
    */
   onNudge?: (delta: number) => void;
+  /**
+   * ↑/↓ landed on `marker` (#220). The seek alone does not say which mark it
+   * reached — a mark standing on a boundary and the boundary itself seek to
+   * the same instant — so the walk announces it, which is what lets the
+   * markings page correct the mark the walk actually reached rather than the
+   * boundary the playhead cannot tell it apart from. Supplied only by the
+   * markings page, for the same reason `onNudge` is.
+   */
+  onReachMarker?: (marker: LabeledMarker) => void;
 }
 
 /**
@@ -75,6 +84,7 @@ export function usePlayerKeys({
   inert = false,
   onAddMarker,
   onNudge,
+  onReachMarker,
 }: PlayerKeysOptions): void {
   const keyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   keyDownRef.current = (event: KeyboardEvent) => {
@@ -170,16 +180,19 @@ export function usePlayerKeys({
     if (plainArrows && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       // ↑/↓ jump between markers anchored at the live playhead, wrapping at
       // the ends. Jumping never touches playback state, and it never selects
-      // (ADR-0003) — the markings page needs nothing more of it, because the
-      // seek lands the playhead on the mark it reached and the correction
-      // controls follow the playhead (T64). A key with nothing to jump to is
-      // left alone, so arrow scrolling still works.
+      // (ADR-0003). The seek alone does not say which mark it reached — a mark
+      // standing on a boundary seeks to the same instant the boundary would —
+      // so `onReachMarker` announces it (#220), which is what lets the
+      // markings page correct the mark the walk landed on rather than the
+      // boundary the playhead cannot tell it apart from. A key with nothing to
+      // jump to is left alone, so arrow scrolling still works.
       const anchor = controller.getCurrentTime();
       const target =
         event.key === 'ArrowDown' ? nextMarker(markers, anchor) : previousMarker(markers, anchor);
       if (target === null) return;
       event.preventDefault();
       controller.seek(target.time);
+      onReachMarker?.(target);
       return;
     }
   };
