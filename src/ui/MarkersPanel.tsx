@@ -1500,7 +1500,13 @@ function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authori
               title={`Jump to ${identity}`}
               onClick={seek}
             >
-              {marker.label}
+              {/* The direction's own signature, at row scale (T78) — and now
+                  here too (T96): a rehearsal mark drawn as a score draws it, a
+                  letter in a ruled box. `.player-marker-mark` is the browsing
+                  row's own box; the authoring row sits in the same
+                  `.player-marker-list` and so takes the same rule, hollow or
+                  filled by the same `li.passed` the browsing row answers to. */}
+              <span className="player-marker-mark">{marker.label}</span>
             </button>
           )}
           {carrying ? (
@@ -1509,6 +1515,13 @@ function MarkerRow({ marker, naming, passed, carrying, duration, onSeek, authori
               className="markings-alias-slot markings-row-alias"
               defaultValue={storedAlias}
               aria-label={`Alias for marker ${identity}`}
+              // The quiet hint (T96): the one field on the page that says
+              // nothing about what it takes when it is empty — a label box,
+              // a clock and a trash glyph all show what they are, and this is
+              // the one left to guess at without it. Shown only here, on the
+              // one row that is ever a form, which is what answers the
+              // shipped objection to a hint repeated down every row.
+              placeholder="marker name"
               // The caret is in the row's own field, so the row is the one being
               // worked on whatever the playhead does next (T64, T69) — the twin
               // of the same gesture in the time field, and the reason a name

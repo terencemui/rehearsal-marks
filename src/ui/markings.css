@@ -2,7 +2,13 @@
    band, the split, the timeline and the markers panel are all shared with the
    practice surface, and their styles live in player.css. What is this page's
    own: the empty first paint, the editing controls the panel's rows grow, and
-   the save bar that carries the commit and the consequence of making one. */
+   the save bar that carries the commit and the consequence of making one.
+
+   The list itself wears the direction now too (T96): every rule below that
+   draws a row, a band, a correction or a refusal reads it off `app.css`'s
+   tokens rather than a colour or a face of its own. The save bar and the two
+   Add controls above the list are a later ticket's — this one is the list the
+   playhead moves through and what a reader corrects on it. */
 
 /* The save bar above the recording: the status line, the commit control when
    the project waits for one, and the consequence that control carries. Flex
@@ -95,44 +101,46 @@
    A movement's header is this row too (T70) — the same class, one step out and
    filled as a band — so that a boundary's delete control and the delete
    controls of the marks beneath it are one column and their readings are one
-   reading, by being the same row rather than by two rules agreeing. */
+   reading, by being the same row rather than by two rules agreeing.
+
+   The face and the ink are the direction's content voice (T96) — the same
+   serif and the same quiet ink the browsing row reads in (`player.css`'s
+   `.player-marker-row`), at the same 24px leading the boxed label needs to
+   clear its own rule. The row stopped being a button in T67 and lost the
+   metrics that came with one, so they are stated here, in the browsing row's
+   own words. */
 .markings-row {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 7px 10px 7px 16px;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
-  /* The browsing row's metrics, declared here because nothing above declares
-     any: this app sets a font per element and never globally, so a row that
-     declared none would read in the document default — 16px serif — beside
-     the same row on the practice surface at 15px system-ui. The row stopped
-     being a `<button class="player-marker-row">` in T67 and lost the metrics
-     that came with the button; they are the row's own, so they are stated
-     here, in the browsing row's own words (player.css). */
-  font: 400 15px/22px system-ui, sans-serif;
-  color: #334155;
+  font: 400 15px/24px var(--serif);
+  color: var(--ink-2);
 }
 
+/* The ink coming up to the pencil, never a fill (T96) — the browsing row's own
+   hover, which this row now shares rather than a tinted pill of its own. */
 .markings-row:hover {
-  background: #f1f5f9;
+  color: var(--pencil);
 }
 
-/* The passed marker's tint: the browsing row takes it on the button it *is*,
-   and this row takes it on the container it holds, so the row the playhead has
-   last gone by reads the same on both surfaces. It outranks the hover above,
-   as it does there. */
+/* The passed marker's row (T96): the direction has no tint band, so the row
+   simply comes up to full ink, exactly as the browsing row does — the state
+   is the label's box now (below), filled with the pencil, not a wash behind
+   the whole row. It outranks the hover above, as the browsing row's does. */
 .player-marker-list li.passed .markings-row {
-  background: #ecfdf5;
-  color: #0f172a;
+  color: var(--ink);
 }
 
-/* The same tint's accent, on the reading that row now shows (T68). The clock
-   turns teal as its row is passed (player.css), and the field replaces the
-   clock — so without this the active row, which is usually the passed one,
-   would be the one row whose time stopped saying so. */
+/* The same accent, on the reading that row now shows (T68, T96): the exact
+   time takes the clock's place, and the clock already turns to the pencil
+   when its row is passed (`player.css`, `li.passed .player-marker-time`) — so
+   without this the active row, which is usually the passed one, would be the
+   one row whose time stopped saying so. */
 .player-marker-list li.passed .markings-row-time {
-  color: #0f766e;
+  color: var(--pencil);
 }
 
 /* The row's two seek controls are buttons, and a button brings its own chrome:
@@ -170,9 +178,17 @@
    width the box renders only when this line is on it. Every occupant keeps the
    field's own right inset — 6px of padding and 1px of border — and pushes the
    reading to the right end of the slot, which is what keeps the digits from
-   shifting sideways as one replaces the other. */
+   shifting sideways as one replaces the other.
+
+   92px is the one size re-measured for the faces that actually render here
+   (T96), not the monospace-derived 104px carried over from before the direction
+   reached this row: the exact-time field's own serif digits are the wider
+   occupant at its 13px (a single-digit-hour reading measures ~81px with its own
+   insets), and 92px keeps room past that for a two-digit hour besides — the
+   clock's inherited 15px reading (the row's own size, taken through
+   `font-size: inherit` below) is narrower still. */
 .player-markers {
-  --markings-clock-slot: 104px;
+  --markings-clock-slot: 92px;
 }
 
 .markings-row .player-marker-time,
@@ -229,7 +245,14 @@
    shrinks to a floor, ellipsising a long name rather than pushing the clock off
    the row. The alias is the only control in the row that may give way at all —
    the slot the time occupies is fixed at its full reading (T68) and the trash
-   is a glyph, and both are sized for what they have to show. */
+   is a glyph, and both are sized for what they have to show.
+
+   The face is the row's own content serif (T96), inherited by no form control
+   and so stated again here, in the row's own words — at the field's own
+   shorter line, not the row's 24px: the row's leading is what the boxed
+   label needs to clear its own rule, and the slot taking it too would make
+   the field the tallest thing in the row and move every row's own height,
+   which is exactly what this slot exists to hold still. */
 .markings-alias-slot {
   box-sizing: border-box;
   flex: 1 1 64px;
@@ -238,19 +261,12 @@
   min-width: 60px;
   padding: 4px 6px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* The row's own face at the row's own size, so the name beside the label
-     reads as one line with it — the browsing row prints `label — alias` as one
-     face, and this is the same reading. The face is declared here rather than
-     inherited because the field shape cannot inherit either it or the ink: a
-     form control takes neither from its parent. The line is the field's own
-     height rather than the row's 22px, which keeps the slot — and so every
-     row's own height — what it was before the name moved into it. */
-  font: 400 15px/18px system-ui, sans-serif;
-  color: #334155;
+  font: 400 15px/18px var(--serif);
+  color: var(--ink-2);
 }
 
 /* A project kept by measure (T72) names its marks with the alias alone, so the
@@ -269,23 +285,31 @@
 }
 
 /* The field the name is typed into, on the row the playhead is on (T69): the
-   same slot, in the ink a field is drawn in. It arrives with no placeholder —
-   an empty name is an empty slot, and a hint repeated down the panel would read
-   as content. */
+   same slot, in the ink a field is drawn in — the direction's own rule and
+   paper rather than a colour of their own. Its rule may add only ink to the
+   box declared above (T96: no padding, no border width, no width, no face —
+   the slot owns every one of those already). */
 .markings-row-alias {
-  border-color: #cbd5e1;
-  background: #fff;
+  border-color: var(--rule);
+  background: var(--paper);
+}
+
+/* The quiet hint (T96): the one field on the page with a placeholder, read in
+   the secondary ink so it never reads as a name already written. */
+.markings-row-alias::placeholder {
+  color: var(--ink-2);
 }
 
 .markings-row-alias:focus {
-  outline: 2px solid #0f766e;
+  outline: 2px solid var(--pencil);
   outline-offset: -1px;
 }
 
 /* The delete control both kinds of row carry (T66) — one rule, one component,
    so a mark's trash and a movement's are the same glyph at the same size rather
-   than two drawings that happen to agree. The danger ink is the control's, and
-   the glyph is stroked in `currentColor`, so that ink is the icon's too.
+   than two drawings that happen to agree. The danger ink is the direction's
+   editorial red (T96), and the glyph is stroked in `currentColor`, so that ink
+   is the icon's too.
 
    It is a flex box rather than a text button because it no longer has text to
    take its line box from: the glyph is the whole of what it shows, and the
@@ -296,51 +320,49 @@
   align-items: center;
   padding: 4px 6px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 0;
   background: none;
-  color: #b91c1c;
+  color: var(--editorial);
   cursor: pointer;
 }
 
 .markings-delete:hover {
-  background: #fef2f2;
+  background: var(--wash);
 }
 
-/* The alias the domain refused, under the row that broke the rule. */
+/* A refusal, under the row that caused it — the alias's, or the exact time's
+   inside the correction block below. Read in the direction's one alert ink
+   (T96), the same red the trash and a refused boundary read in. */
 .markings-row-error {
   margin: 2px 0 4px 16px;
-  font: 400 12px/17px system-ui, sans-serif;
-  color: #9a3412;
+  font: 400 12px/17px var(--sans);
+  color: var(--editorial);
 }
 
-/* The row the correction block is on (T57, T64). A ring rather than a tint,
-   because the tint is already spoken for: it marks the passed marker's row,
-   which moves on its own, while the block's row is the active row — usually
-   that one, a boundary's when the playhead sits on a boundary — and, while a
-   caret is in a time field, whichever row the caret is holding it on. Both can
-   be true of one row, and each still reads as itself.
+/* The row carrying the correction block (T57, T64, T96): a pencil rule down
+   the item's own left margin, not a ring around it — the direction draws a
+   field's own focus as an inset outline (`.markings-row-alias:focus` above,
+   `.markings-row-time:focus` below), and the active row is usually the row
+   whose field holds that outline, so the two marks have to read as two
+   different things. A `box-shadow` paints without taking any layout width,
+   which is what keeps the mark from moving anything in the row as the
+   playhead arrives on it — an `outline` would have done the same, but reads
+   as the ring this deliberately is not.
 
-   On a mark it wraps the whole item — the row and the correction block under
-   it — so the block reads as belonging to the row above it rather than as
-   another row of the list. On a movement it is the block's own item, under the
-   header: the header's `<li>` is the list's sticky band, and the ring is about
-   the row the correction is on, which the band is not.
-
-   It is an outline, and inset, for two reasons: an outline is painted over the
-   row's own background instead of under it, so the ring survives the passed
-   row's tint, and an inset one cannot be clipped by the list's scroll box when
-   the row carrying the block sits at its edge. */
+   On a mark it is the whole item — the row and the correction block under it —
+   so the rule reads as belonging to the row above it rather than as another
+   row of the list. On a movement it is the block's own item, under the header
+   (T59, T96): the header's `<li>` is the list's sticky band, and the mark is
+   about the row the correction is on, which the band is not. */
 .player-marker-list li.correcting {
-  border-radius: 8px;
-  outline: 2px solid #0f766e;
-  outline-offset: -2px;
+  box-shadow: inset 3px 0 0 var(--pencil);
 }
 
 /* The correction decks on the row carrying them: the four nudges — a deck each
-   side — and the domain's refusal when it makes one. Its own inset and tint, so
-   the controls read as a panel that belongs to the row above them rather than
-   as more rows of the list — the row the exact time is typed into is the row
-   itself (T68), and this is what is left under it.
+   side — and the domain's refusal when it makes one. No fill, no frame, no
+   radius of their own any more (T96) — the left-margin rule above is what
+   says this belongs to the row, so the decks need no tray to say it a second
+   time, and each nudge is its own hairline box (below).
 
    The two decks are pushed to the ends of one line (`space-between`'s work done
    by the plus deck's own auto margin, which keeps doing it after a wrap), so the
@@ -356,11 +378,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin: 2px 0 4px 16px;
-  padding: 6px 8px;
-  border: 1px solid #99f6e4;
-  border-radius: 6px;
-  background: #f0fdfa;
+  margin: 2px 0 6px 16px;
+  padding: 4px 0;
 }
 
 .markings-nudge-deck {
@@ -375,51 +394,53 @@
 
 /* The exact time, at the millisecond precision a correction is made in. Its
    width, its text alignment and its side insets are the slot's (T68), which it
-   shares with the clock it replaces; what is its own is the way it reads. */
+   shares with the clock it replaces; what is its own is the way it reads — the
+   direction's content serif and tabular figures (T96), not a monospace face,
+   over the direction's rule and paper. */
 .markings-row-time {
   padding: 4px 6px;
-  border: 1px solid #cbd5e1;
-  border-radius: 5px;
-  background: #fff;
-  font: 400 13px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  font: 400 13px/18px var(--serif);
   font-variant-numeric: tabular-nums;
-  color: #334155;
+  color: var(--ink);
 }
 
 .markings-row-time:focus {
-  outline: 2px solid #0f766e;
+  outline: 2px solid var(--pencil);
   outline-offset: -1px;
 }
 
-/* A nudge control, in its deck. All four are held to the width of the widest
-   label the deck can show — `±0.5s`, five characters of the monospace face the
-   strip is set in — because two of them are the same control saying two things:
-   the halves read `±0.5s` and, while `Shift` is held, `±1s` (T71). Without the
-   floor the two would narrow as the modifier went down, moving the strip — and
-   the control under the pointer — in the middle of the gesture the widening is
-   for.
+/* A nudge control, in its deck (T96): a hairline-ruled square box in the
+   direction's chrome sans, tabular figures throughout. All four are held to
+   one width — the wider of the two labels the halves read, `±0.5s` — so the
+   two that change their words (`±0.5s` to `±1s` under `Shift`, T71) keep the
+   width they had while the modifier is down, and a control does not resize
+   under the finger reaching for it.
 
-   `ch` is a character of the element's own font, and this font is monospaced,
-   so five of them are the five glyphs of the wider label exactly; the tenths
-   are five characters in either state and are simply not shrunk by it. No
-   `box-sizing` here, so the declared width is the content's and the label's
-   padding and border are added to it, as they are for a label at its own
-   width — which is what makes the pinned box and the natural one the same
-   size. */
+   The pin is a measured pixel width rather than `ch`, which the old rule kept
+   only by also keeping a monospace face (T96 retires both): a proportional
+   face's `ch` is the width of its `0`, not of a `−`, a `.` or an `s`, so it
+   cannot be trusted to hold a label it was never measured against. 36px is
+   `−0.5s` set in the production face at its production size — Public Sans,
+   600 weight, 12px, tabular — with a few pixels to spare. */
 .markings-nudge {
-  min-width: 5ch;
+  min-width: 36px;
   padding: 4px 8px;
-  border: 1px solid #99f6e4;
-  border-radius: 5px;
-  background: #fff;
-  color: #0f766e;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
   cursor: pointer;
-  font: 600 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 600 12px/18px var(--sans);
   font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .markings-nudge:hover {
-  background: #ccfbf1;
+  border-color: var(--pencil);
+  color: var(--pencil);
 }
 
 /* The refused time's guidance, on its own line under the field it belongs to —
@@ -438,14 +459,16 @@
   color: #475569;
 }
 
-/* The key that fills the column, once a recording is playing. */
+/* The key that fills the column, once a recording is playing — the direction's
+   own box (T96), an ink rule and the chrome sans rather than a monospace key
+   cap: the last monospace face in the column. */
 .markings-empty-copy kbd {
   padding: 1px 5px;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  background: #f8fafc;
-  font: 600 13px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #0f172a;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: none;
+  font: 600 13px/18px var(--sans);
+  color: var(--ink);
 }
 
 /* The two things a markings column can be given (T56, T58): a mark, and a
@@ -487,13 +510,14 @@
 /* A boundary that could not be placed, under the control that asked. It takes
    a line of its own: a create that refused left no movement behind, so the
    complaint names the movement already in the way rather than one of its own
-   headers. */
+   headers. Read in the direction's one alert ink (T96), as every refusal on
+   this column now is. */
 .markings-add-error {
   flex: 1 0 100%;
   margin: 0;
   text-align: right;
-  font: 400 12px/17px system-ui, sans-serif;
-  color: #9a3412;
+  font: 400 12px/17px var(--sans);
+  color: var(--editorial);
 }
 
 /* A movement's header on the markings page (T58) — and now a marker's row
@@ -502,11 +526,14 @@
 
    The row lays it out, and this rule carries only what is the band's own: the
    one step out to the panel's inset — a mark's row is indented from the edge a
-   boundary sits at — and the divider the band is, filled against the list's
-   white. The gap, the right padding, the slot, the typeface and the control
-   order are the row's, declared there once, which is what makes the two kinds
-   of row one row: nothing here may restate them, or the two could drift again
-   by being laid out in two places.
+   boundary sits at — and the divider the band is, wearing the direction's own
+   ink rule and paper (T96) rather than a grey fill, as the browsing header's
+   band already does (`player.css`'s `.player-movement-header`).
+
+   The gap, the right padding, the slot, the typeface and the control order are
+   the row's, declared there once, which is what makes the two kinds of row one
+   row: nothing here may restate them, or the two could drift again by being
+   laid out in two places.
 
    The base rule says a row is a seek target; this one is not. A marker row is
    clickable at every pixel that is not a control, because a click anywhere in
@@ -520,35 +547,35 @@
    would set all four. */
 .player-marker-movement .markings-movement-header {
   padding-left: 10px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ink);
   border-radius: 0;
-  background: #f1f5f9;
+  background: var(--paper);
   cursor: default;
 }
 
-/* The movement's name, editable in place. It keeps the browsing header's
-   accent — semibold ink, so the movements still read as the section headers —
-   and shows its edges only under the pointer or the caret, so a list of
-   boundaries reads as names rather than as a form. */
+/* The movement's name, editable in place (T96): the direction's content serif
+   at the band's own weight — semibold, ink — so the movements still read as
+   the section headers, and shows its edges only under the pointer or the
+   caret, so a list of boundaries reads as names rather than as a form. */
 .markings-movement-name {
   flex: 1 1 auto;
   min-width: 0;
   padding: 2px 6px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 0;
   background: none;
-  font: 600 15px/22px system-ui, sans-serif;
-  color: #0f172a;
+  font: 600 15px/24px var(--serif);
+  color: var(--ink);
 }
 
 .markings-movement-name:hover {
-  border-color: #cbd5e1;
+  border-color: var(--rule);
 }
 
 .markings-movement-name:focus {
-  border-color: #cbd5e1;
-  background: #fff;
-  outline: 2px solid #0f766e;
+  border-color: var(--rule);
+  background: var(--paper);
+  outline: 2px solid var(--pencil);
   outline-offset: -1px;
 }
 
@@ -556,7 +583,7 @@
    until the student replaces it. */
 .markings-movement-name::placeholder {
   font-weight: 400;
-  color: #94a3b8;
+  color: var(--ink-2);
 }
 
 /* The movement's start is the row's shared clock (T70), so its padding, border
@@ -564,9 +591,10 @@
    band adds is the fill a mark's clock has no need of: on a mark's row the
    pointer's feedback is the row's own hover, and that fill is the band's own
    colour — a band cannot light up against itself. So the clock is where the
-   band says the pointer is on something it can do. */
+   band says the pointer is on something it can do. The wash is the shell's own
+   neutral tint (T96), not a grey of this band's choosing. */
 .player-marker-movement .markings-movement-header .player-marker-time:hover {
-  background: #e2e8f0;
+  background: var(--wash);
 }
 
 /* The movement's Delete (T59), in the header beside the clock, is the shared
@@ -577,7 +605,11 @@
 /* The movement's delete question, under the header that raised it and inside
    the same band. It takes the width the header's controls leave rather than a
    column of its own: the sentence is longer than they are, and a question about
-   a movement belongs to that movement's band and no other. */
+   a movement belongs to that movement's band and no other. It wears the
+   direction now too (T96): the ink rule and paper the band above already
+   draws, the chrome sans, and the two answers ruled in ink — never a fill
+   until an answer is reached for, and the destructive one alone in the
+   editorial red. */
 .markings-movement-confirm {
   display: flex;
   flex-wrap: wrap;
@@ -585,10 +617,10 @@
   gap: 8px;
   margin: 0;
   padding: 6px 10px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f1f5f9;
-  font: 400 13px/19px system-ui, sans-serif;
-  color: #334155;
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+  font: 400 13px/19px var(--sans);
+  color: var(--ink-2);
 }
 
 /* Width and style only, never the `border` shorthand: this selector is more
@@ -598,22 +630,33 @@
   padding: 3px 10px;
   border-width: 1px;
   border-style: solid;
-  border-color: #cbd5e1;
-  border-radius: 5px;
-  background: #fff;
-  color: #334155;
+  border-color: var(--ink);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
   cursor: pointer;
-  font: 600 12px/18px system-ui, sans-serif;
+  font: 600 12px/18px var(--sans);
 }
 
-/* The answer that carries the deletion, in the app's danger colour — the same
-   pairing the account control and the workspace rows use for the same act. */
+.markings-movement-confirm button:hover {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+/* The answer that carries the deletion, in the direction's one alert ink (T96)
+   — the same pairing the account control uses for its own one-way door
+   (`user.css`'s `.user-menu-danger`). */
 .markings-movement-confirm .markings-movement-confirm-delete {
-  border-color: #b91c1c;
-  color: #b91c1c;
+  border-color: var(--editorial);
+  color: var(--editorial);
 }
 
 .markings-movement-confirm .markings-movement-confirm-delete:hover {
-  background: #b91c1c;
-  color: #fff;
+  /* Restated, not inherited: the generic `button:hover` above also sets
+     border-color, and beats this rule's own non-hover border-color by being
+     a `:hover` rule itself — left unset here, the delete answer would hover
+     into a red fill behind a pencil-blue border. */
+  border-color: var(--editorial);
+  background: var(--editorial);
+  color: var(--paper);
 }

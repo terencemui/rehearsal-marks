@@ -262,8 +262,12 @@ function movementTimes(container: HTMLElement): string[] {
 const CLOCK_SLOT_RULE =
   /\.markings-row \.player-marker-time,\s*\.markings-row \.markings-row-time \{[^}]*box-sizing:\s*border-box;[^}]*width:\s*var\(--markings-clock-slot\);[^}]*text-align:\s*right;/;
 
-/** The slot's one size: the widest reading a recording can hold, h:mm:ss.mmm (T68). */
-const CLOCK_SLOT_WIDTH = /--markings-clock-slot:\s*104px;/;
+/**
+ * The slot's one size: the widest reading a recording can hold, h:mm:ss.mmm,
+ * re-measured for the direction's own faces rather than the monospace one the
+ * figure used to be derived from (T96).
+ */
+const CLOCK_SLOT_WIDTH = /--markings-clock-slot:\s*92px;/;
 
 /** Waits past the autosave debounce, so a write that was going to happen has. */
 async function pastDebounce(): Promise<void> {
@@ -1494,10 +1498,11 @@ describe('a half-second step, and four nudges in two decks (T71)', () => {
     expect(ruleBody('.markings-correct')).toMatch(/flex-wrap:\s*wrap;/);
     expect(ruleBody('.markings-nudge-deck-plus')).toMatch(/margin-left:\s*auto;/);
 
-    // One width for all four, and the wider of the two labels the halves read:
-    // five characters of the monospace face the strip is set in. The two that
+    // One width for all four, and the wider of the two labels the halves read,
+    // pinned as a measured pixel width in the direction's own chrome face
+    // rather than a `ch` that assumed a monospace one (T96). The two that
     // change their words keep the width they had while the modifier is down.
-    expect(ruleBody('.markings-nudge')).toMatch(/min-width:\s*5ch;/);
+    expect(ruleBody('.markings-nudge')).toMatch(/min-width:\s*36px;/);
   });
 });
 
@@ -1844,7 +1849,7 @@ describe('the exact time moves into the active row (T68)', () => {
     // The passed row's accent reaches the field as it reached the clock it
     // replaces — the active row is usually the passed one, and it is the one
     // row whose reading is not a clock (T68).
-    expect(markingsCss).toMatch(/li\.passed \.markings-row-time \{[^}]*color:\s*#0f766e;/);
+    expect(markingsCss).toMatch(/li\.passed \.markings-row-time \{[^}]*color:\s*var\(--pencil\);/);
   });
 });
 
@@ -1886,12 +1891,14 @@ describe('the alias sits beside the label, text until its row is active (T69)', 
     expect(container.querySelector('.markings-row-alias')).toBeNull();
 
     // The playhead lands on the unnamed row, and that row becomes the field —
-    // seeded empty, and empty means empty: no hint stands in for a name.
+    // seeded empty, and now showing the quiet hint (T96): the one field on the
+    // page that says nothing about what it takes when it has nothing in it,
+    // shown only here because this is the one row that is ever a form.
     await user.click(unnamed);
     expect(controller.getCurrentTime()).toBe(20);
     const field = aliasField(container);
     expect(field).toHaveValue('');
-    expect(field).not.toHaveAttribute('placeholder');
+    expect(field).toHaveAttribute('placeholder', 'marker name');
     // The row the playhead is on reads its time to the millisecond, in the slot
     // its clock occupied (T68): the clock it had as a row of the list is gone.
     expect(rowReading(unnamed)).toEqual(['B', '', '00:20.000']);
@@ -2094,12 +2101,13 @@ describe('the alias slot is one box in two shapes (T69)', () => {
     // Nothing above this row declares a font: the app sets a face per element
     // and never globally, so a row that declares none reads in the document
     // default — 16px serif — where the practice surface's identical row reads
-    // 15px system-ui. The markings row stopped being a button in T67 and lost
-    // the metrics that came with the button, so the row's own rule states them
-    // again, in the browsing row's words (player.css).
+    // the direction's own 15px content serif (T96). The markings row stopped
+    // being a button in T67 and lost the metrics that came with the button, so
+    // the row's own rule states them again, in the browsing row's words
+    // (player.css).
     const row = ruleBody('.markings-row');
-    expect(row).toMatch(/font:\s*400 15px\/22px system-ui, sans-serif;/);
-    expect(row).toMatch(/color:\s*#334155;/);
+    expect(row).toMatch(/font:\s*400 15px\/24px var\(--serif\);/);
+    expect(row).toMatch(/color:\s*var\(--ink-2\);/);
     // And the name beside the label is that same reading at that same size: the
     // browsing row prints `label — alias` as one line of one face, so the slot
     // is where that face is declared — it cannot be inherited, because the
