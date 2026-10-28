@@ -34,13 +34,13 @@ function renderGallery(api: FakeProjectsApi = fakeProjectsApi(), initialEntry = 
     }, [location.pathname]);
     return null;
   }
-  const { container } = render(
+  const { container, unmount } = render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <Probe />
       <GalleryScreen api={api} />
     </MemoryRouter>,
   );
-  return { currentPath: () => currentPath, container };
+  return { currentPath: () => currentPath, container, unmount };
 }
 
 describe('GalleryScreen', () => {
@@ -112,6 +112,67 @@ describe('GalleryScreen', () => {
       expect.stringContaining('Sebastian Weigle'),
       expect.stringContaining('Daniel Harding'),
     ]);
+  });
+
+  describe('sort', () => {
+    function seedThree(api: FakeProjectsApi) {
+      api.seed(galleryProject({ createdAt: 3_000 }));
+      api.seed(
+        galleryProject({
+          id: 'p2',
+          createdAt: 1_000,
+          videoId: 'bbbbbbbbbbb',
+          recordingTitle: 'Bruckner: 7. Sinfonie — Daniel Harding',
+        }),
+      );
+      api.seed(
+        galleryProject({
+          id: 'p3',
+          createdAt: 2_000,
+          videoId: 'ccccccccccc',
+          recordingTitle: 'Strauss: Till Eulenspiegel — Sebastian Weigle',
+        }),
+      );
+    }
+    const titles = () => screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+
+    it('offers a labelled Newest/Oldest control, Newest selected first', async () => {
+      const api = fakeProjectsApi();
+      seedThree(api);
+      renderGallery(api);
+
+      const sort = await screen.findByRole('combobox', { name: 'Sort by' });
+      expect(sort).toHaveValue('newest');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Newest', 'Oldest']);
+    });
+
+    it('reverses the cards on Oldest, keeping the search and the URL', async () => {
+      const user = userEvent.setup();
+      const api = fakeProjectsApi();
+      seedThree(api);
+      renderGallery(api, '/?q=sinfonie');
+
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Sort by' }), 'oldest');
+
+      expect(titles()).toEqual([
+        expect.stringContaining('Daniel Harding'),
+        expect.stringContaining('Manfred Honeck'),
+      ]);
+      expect(screen.getByRole('status')).toHaveTextContent('2 recordings found.');
+    });
+
+    it('resets to Newest when the gallery remounts', async () => {
+      const user = userEvent.setup();
+      const api = fakeProjectsApi();
+      seedThree(api);
+      const first = renderGallery(api);
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Sort by' }), 'oldest');
+      first.unmount();
+
+      renderGallery(api);
+
+      expect(await screen.findByRole('combobox', { name: 'Sort by' })).toHaveValue('newest');
+    });
   });
 
   it('opens the recording’s oldest published project at /gallery/:id', async () => {

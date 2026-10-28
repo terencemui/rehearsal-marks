@@ -5,8 +5,19 @@
  * search rule the gallery renders (T87), and the two PostgREST adapters that
  * fetch it.
  */
-export { createDefaultProjectsApi, filterGalleryGroups, groupGalleryProjects } from './api';
-export type { GalleryGroup, ProjectsApi, PublicProject, PublicProjectSummary } from './api';
+export {
+  createDefaultProjectsApi,
+  filterGalleryGroups,
+  groupGalleryProjects,
+  sortGalleryGroups,
+} from './api';
+export type {
+  GalleryGroup,
+  GallerySort,
+  ProjectsApi,
+  PublicProject,
+  PublicProjectSummary,
+} from './api';
 export type {
   ProjectSummary,
   ProjectUpdate,

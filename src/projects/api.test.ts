@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterGalleryGroups, groupGalleryProjects } from './api';
+import { filterGalleryGroups, groupGalleryProjects, sortGalleryGroups } from './api';
 import type { PublicProjectSummary } from './api';
 
 /** A gallery entry builder — a recording's project, defaults so tests name only what varies. */
@@ -116,5 +116,47 @@ describe('filterGalleryGroups', () => {
 
   it('drops a group no row and no title matches', () => {
     expect(filterGalleryGroups(groups, 'nothing like this')).toEqual([]);
+  });
+});
+
+describe('sortGalleryGroups', () => {
+  // Card age is the newest project's date: aaa (3000) > ccc (2000) > bbb (1000).
+  const groups = groupGalleryProjects([
+    summary({ id: 'p1', videoId: 'aaa', createdAt: 3_000 }),
+    summary({ id: 'p3', videoId: 'ccc', createdAt: 2_000 }),
+    summary({ id: 'p2', videoId: 'bbb', createdAt: 1_000 }),
+  ]);
+
+  it('newest keeps the read’s order: newest card first', () => {
+    expect(sortGalleryGroups(groups, 'newest').map((g) => g.videoId)).toEqual([
+      'aaa',
+      'ccc',
+      'bbb',
+    ]);
+  });
+
+  it('oldest is exactly newest reversed', () => {
+    expect(sortGalleryGroups(groups, 'oldest').map((g) => g.videoId)).toEqual([
+      'bbb',
+      'ccc',
+      'aaa',
+    ]);
+  });
+
+  it('ranks a card by its newest project, not its oldest', () => {
+    const mixed = groupGalleryProjects([
+      summary({ id: 'p1', videoId: 'old', createdAt: 5_000 }),
+      summary({ id: 'p2', videoId: 'new', createdAt: 4_000 }),
+      summary({ id: 'p3', videoId: 'old', createdAt: 100 }),
+    ]);
+
+    expect(sortGalleryGroups(mixed, 'newest').map((g) => g.videoId)).toEqual(['old', 'new']);
+    expect(sortGalleryGroups(mixed, 'oldest').map((g) => g.videoId)).toEqual(['new', 'old']);
+  });
+
+  it('does not mutate its input', () => {
+    const before = groups.map((g) => g.videoId);
+    sortGalleryGroups(groups, 'oldest');
+    expect(groups.map((g) => g.videoId)).toEqual(before);
   });
 });
