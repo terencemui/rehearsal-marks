@@ -1,5 +1,10 @@
 /* The leave prompt (T60): the one question the markings page asks before it
-   lets its owner walk away from work they have not committed. */
+   lets its owner walk away from work they have not committed. It wears the
+   direction now too (T97) — the loudest thing on the page when it appears,
+   so it is a paper sheet in an ink rule rather than a card of its own, with
+   its two answers as ruled boxes, exactly as the movement's own delete
+   question already draws its pair (`markings.css`'s
+   `.markings-movement-confirm`). */
 
 /* The page's own content stays visible behind the question — the owner is
    being asked about what they can still see, not taken somewhere else. The
@@ -19,15 +24,15 @@
 .unsaved-dialog {
   max-width: 30rem;
   padding: 20px 22px;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 32px rgb(15 23 42 / 24%);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
 }
 
 .unsaved-dialog-question {
   margin: 0 0 16px;
-  font: 400 15px/22px system-ui, sans-serif;
-  color: #1e293b;
+  font: 400 15px/22px var(--serif);
+  color: var(--ink);
 }
 
 .unsaved-dialog-actions {
@@ -46,33 +51,35 @@
   padding: 6px 14px;
   border-width: 1px;
   border-style: solid;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
-  font: 600 13px/18px system-ui, sans-serif;
+  font: 600 13px/18px var(--sans);
 }
 
-/* Stay carries the page's own accent: it is the answer that keeps the work,
-   and the one a stray Return should land on. */
+/* Stay keeps the work, and is the one a stray Return should land on — quiet
+   in the ink rather than filled, since the direction spends no fill on a
+   button (T97). */
 .unsaved-dialog-stay {
-  border-color: #0f766e;
-  background: #0f766e;
-  color: #fff;
+  border-color: var(--ink);
+  background: none;
+  color: var(--ink);
 }
 
 .unsaved-dialog-stay:hover {
-  background: #115e59;
-  border-color: #115e59;
+  border-color: var(--pencil);
+  color: var(--pencil);
 }
 
-/* Discard keeps the destructive colour its verb earns, so the two answers
-   never read as a plain yes/no. */
+/* Discard keeps the destructive ink its verb earns, so the two answers never
+   read as a plain yes/no — the direction's one alert ink (T97), the same
+   pairing the movement's delete answer and the save line's retry use. */
 .unsaved-dialog-discard {
-  border-color: #b91c1c;
+  border-color: var(--editorial);
   background: none;
-  color: #b91c1c;
+  color: var(--editorial);
 }
 
 .unsaved-dialog-discard:hover {
-  background: #b91c1c;
-  color: #fff;
+  background: var(--editorial);
+  color: var(--paper);
 }
