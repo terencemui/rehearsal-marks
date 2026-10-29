@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode, SyntheticEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { formatRulerTime } from '../playback/ruler';
 import { filterGalleryGroups, groupGalleryProjects, sortGalleryGroups } from '../projects';
 import type { GalleryGroup, GallerySort, ProjectsApi } from '../projects';
@@ -91,14 +91,14 @@ function Thumbnail({ videoId }: { videoId: string }) {
  *
  * The search (T87) is the URL's `?q=`: the navbar writes it with history
  * replace, so a refresh restores the results, and the filter is a pure rule
- * beside the grouping helper. The count and the no-match state speak in
- * recordings, the unit the gallery now shows.
+ * beside the grouping helper. The count speaks in recordings, the unit the
+ * gallery now shows — a zero count needs no further explanation, and
+ * clearing the search is the field's own job (T105).
  *
  * The sort control (Hot, Newest, Oldest, Most popular) orders whatever the search leaves: group,
  * then filter, then sort.
  */
 export function GalleryScreen({ api }: GalleryScreenProps) {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
   /** The gallery's groups; null while the read is in flight. */
@@ -171,18 +171,6 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
             ? ''
             : `${countLabel(matching.length, 'recording')} found.`}
       </p>
-      {!emptyServer && matching.length === 0 && (
-        <>
-          <p className="gallery-empty">No recordings match “{query.trim()}”.</p>
-          <button
-            type="button"
-            className="gallery-action"
-            onClick={() => navigate('/', { replace: true })}
-          >
-            Clear search
-          </button>
-        </>
-      )}
       <ol className="gallery-grid">
         {matching.map((group) => {
           const project = oldestProject(group);
