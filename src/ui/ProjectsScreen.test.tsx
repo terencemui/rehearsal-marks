@@ -10,6 +10,7 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     id: 'project-1',
     name: 'Brahms Op. 118 No. 2',
     recordingTitle: 'Brahms: Klavierstücke, Op. 118',
+    videoId: 'dQw4w9WgXcQ',
     duration: 123.456,
     markerCount: 2,
     naming: 'letters',

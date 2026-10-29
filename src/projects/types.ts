@@ -62,6 +62,8 @@ export interface ProjectSummary {
   id: string;
   name: string;
   recordingTitle: string;
+  /** The 11-character YouTube video ID — backs the row's thumbnail. */
+  videoId: string;
   /** Seconds, float. */
   duration: number;
   markerCount: number;
@@ -196,6 +198,7 @@ export function summarizeProject(project: ServerProject): ProjectSummary {
     id: project.id,
     name: project.name,
     recordingTitle: project.recordingTitle,
+    videoId: project.videoId,
     duration: project.duration,
     markerCount: project.markers.length,
     naming: project.naming,
