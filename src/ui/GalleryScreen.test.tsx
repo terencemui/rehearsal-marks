@@ -138,14 +138,19 @@ describe('GalleryScreen', () => {
     }
     const titles = () => screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
 
-    it('offers a labelled Newest/Oldest control, Newest selected, cards newest first', async () => {
+    it('offers a labelled sort control, Hot selected, cards in order', async () => {
       const api = fakeProjectsApi();
       seedThree(api);
       renderGallery(api);
 
       const sort = await screen.findByRole('combobox', { name: 'Sort by' });
-      expect(sort).toHaveValue('newest');
-      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Newest', 'Oldest']);
+      expect(sort).toHaveValue('hot');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+        'Hot',
+        'Newest',
+        'Oldest',
+        'Most popular',
+      ]);
       expect(titles()).toEqual([
         expect.stringContaining('Manfred Honeck'),
         expect.stringContaining('Sebastian Weigle'),
@@ -185,7 +190,7 @@ describe('GalleryScreen', () => {
       expect(screen.getByText('No recordings match “nothing like this”.')).toBeInTheDocument();
     });
 
-    it('resets to Newest when the gallery remounts', async () => {
+    it('resets to Hot when the gallery remounts', async () => {
       const user = userEvent.setup();
       const api = fakeProjectsApi();
       seedThree(api);
@@ -195,7 +200,54 @@ describe('GalleryScreen', () => {
 
       renderGallery(api);
 
-      expect(await screen.findByRole('combobox', { name: 'Sort by' })).toHaveValue('newest');
+      expect(await screen.findByRole('combobox', { name: 'Sort by' })).toHaveValue('hot');
+    });
+
+    it('ranks by views on Most popular and Hot, with ties newest first and no count on the card', async () => {
+      const user = userEvent.setup();
+      const api = fakeProjectsApi();
+      seedThree(api);
+      // Harding (oldest) gets 100 views; Weigle 1.
+      for (let i = 0; i < 100; i++) await api.recordView('p2');
+      await api.recordView('p3');
+      const { container } = renderGallery(api);
+      const sort = await screen.findByRole('combobox', { name: 'Sort by' });
+
+      await user.selectOptions(sort, 'popular');
+
+      expect(titles()).toEqual([
+        expect.stringContaining('Daniel Harding'),
+        expect.stringContaining('Sebastian Weigle'),
+        expect.stringContaining('Manfred Honeck'),
+      ]);
+      expect(container).not.toHaveTextContent(/\b(100|1) views?\b/i);
+
+      // Hot: 100 views is +2, far more than the ~0 weeks of age separating them.
+      // One view scores like none, so Weigle and Honeck tie and the newer wins.
+      await user.selectOptions(sort, 'hot');
+      expect(titles()).toEqual([
+        expect.stringContaining('Daniel Harding'),
+        expect.stringContaining('Manfred Honeck'),
+        expect.stringContaining('Sebastian Weigle'),
+      ]);
+    });
+
+    it('filters by search before ordering on Most popular', async () => {
+      const user = userEvent.setup();
+      const api = fakeProjectsApi();
+      seedThree(api);
+      await api.recordView('p2');
+      await api.recordView('p3');
+      await api.recordView('p3');
+      renderGallery(api, '/?q=sinfonie');
+
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Sort by' }), 'popular');
+
+      expect(titles()).toEqual([
+        expect.stringContaining('Daniel Harding'),
+        expect.stringContaining('Manfred Honeck'),
+      ]);
+      expect(screen.getByRole('status')).toHaveTextContent('2 recordings found.');
     });
   });
 
