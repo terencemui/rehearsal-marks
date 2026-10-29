@@ -377,10 +377,10 @@ describe('App Projects workspace', () => {
     await screen.findByRole('heading', { name: VIDEO_TITLE });
     await waitForPlayerSettled();
 
-    // The account menu's My projects is the way home now — the player carries
+    // The account menu's My Projects is the way home now — the player carries
     // no nav of its own (T45, T86).
     await openAccountMenu(user);
-    await user.click(screen.getByRole('link', { name: 'My projects' }));
+    await user.click(screen.getByRole('link', { name: 'My Projects' }));
 
     await waitForWorkspaceRow(VIDEO_TITLE);
     expect(await api.listMyProjects()).toHaveLength(1);
@@ -498,9 +498,9 @@ describe('App Projects workspace', () => {
     await user.click(wordmark());
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
 
-    // And the account menu's My projects is the way back.
+    // And the account menu's My Projects is the way back.
     await openAccountMenu(user);
-    await user.click(screen.getByRole('link', { name: 'My projects' }));
+    await user.click(screen.getByRole('link', { name: 'My Projects' }));
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
   });
 
@@ -673,7 +673,7 @@ describe('App user sign-in', () => {
     expect(screen.getByRole('button', { name: 'Ava Cellist' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument();
     // The menu's items are back, and the safe way out is still there.
-    expect(screen.getByRole('link', { name: 'My projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'My Projects' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete account' })).toBeInTheDocument();
   });
 
@@ -823,7 +823,7 @@ describe('App durable workspace state (T43)', () => {
     await user.click(wordmark());
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
     await openAccountMenu(user);
-    await user.click(screen.getByRole('link', { name: 'My projects' }));
+    await user.click(screen.getByRole('link', { name: 'My Projects' }));
 
     // The guidance is still under the input it explains, and the input still
     // carries the invalid state.
@@ -1057,7 +1057,7 @@ describe('The account control (T86)', () => {
 
     const menu = await openAccountMenu(user);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    expect(within(menu).getByRole('link', { name: 'My projects' })).toHaveAttribute(
+    expect(within(menu).getByRole('link', { name: 'My Projects' })).toHaveAttribute(
       'href',
       '/projects',
     );
@@ -1076,7 +1076,7 @@ describe('The account control (T86)', () => {
     await signIn(user, auth);
 
     await openAccountMenu(user);
-    expect(screen.getByRole('link', { name: 'My projects' })).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'My Projects' })).toHaveFocus();
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('group', { name: 'Account' })).not.toBeInTheDocument();
@@ -1138,11 +1138,11 @@ describe('The account control (T86)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete account' }));
 
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
-    expect(screen.queryByRole('link', { name: 'My projects' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'My Projects' })).not.toBeInTheDocument();
     expect(screen.getByText(/every project you've created/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.getByRole('link', { name: 'My projects' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'My Projects' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument();
   });
 
@@ -1953,7 +1953,7 @@ describe('App create-from-link lands on the markings page (T63, amending T46)', 
     // Their own return to Projects finds the saved project in the list.
     const user = userEvent.setup();
     await openAccountMenu(user);
-    await user.click(screen.getByRole('link', { name: 'My projects' }));
+    await user.click(screen.getByRole('link', { name: 'My Projects' }));
     await waitForWorkspaceRow(VIDEO_TITLE);
     expect(await api.listMyProjects()).toHaveLength(1);
   });

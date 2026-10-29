@@ -47,7 +47,7 @@ function LegalLine({ onNavigate }: { onNavigate?: () => void }) {
  * The account control: the navbar's one authentication surface (T86).
  * Anonymous visitors see the legal line to the left of Sign in — one 32px row,
  * so the bar keeps one height in both auth states. A signed-in user sees their
- * name and a chevron, opening a disclosure with My projects, the legal line,
+ * name and a chevron, opening a disclosure with My Projects, the legal line,
  * Sign out, and the account-deletion path; Delete account replaces the items
  * with the existing warning. An unconfigured deployment never renders here at
  * all — the app gates on the env (T51).
@@ -172,7 +172,7 @@ export function UserControl({ state, onSignIn, onSignOut, onDeleteAccount }: Use
               ) : (
                 <>
                   <Link to="/projects" className="user-menu-item" onClick={close}>
-                    My projects
+                    My Projects
                   </Link>
                   <div className="user-menu-legal">
                     <LegalLine onNavigate={close} />
