@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode, SyntheticEvent } from 'react';
+import type { ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { formatRulerTime } from '../playback/ruler';
 import { filterGalleryGroups, groupGalleryProjects, sortGalleryGroups } from '../projects';
 import type { GalleryGroup, GallerySort, ProjectsApi } from '../projects';
+import { Thumbnail } from './Thumbnail';
 import './gallery.css';
 
 export interface GalleryScreenProps {
@@ -43,35 +44,6 @@ function countLabel(count: number, noun: string): string {
 /** The project a recording's card opens: its oldest published set. */
 function oldestProject(group: GalleryGroup) {
   return group.projects[group.projects.length - 1];
-}
-
-/**
- * The recording's still, decorative beside the title the card already names.
- * hq720 is the high-resolution still; not every upload has one, so a failed
- * load steps down to the medium still, and a second failure hides the image
- * rather than leaving a broken frame.
- */
-function Thumbnail({ videoId }: { videoId: string }) {
-  function handleError(event: SyntheticEvent<HTMLImageElement>): void {
-    const image = event.currentTarget;
-    if (image.dataset.fallback === 'true') {
-      image.hidden = true;
-      return;
-    }
-    image.dataset.fallback = 'true';
-    image.src = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
-  }
-
-  return (
-    <img
-      className="gallery-thumb"
-      src={`https://i.ytimg.com/vi/${videoId}/hq720.jpg`}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      onError={handleError}
-    />
-  );
 }
 
 /**
@@ -178,7 +150,7 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
             <li key={group.videoId}>
               <Link className="gallery-card" to={`/gallery/${project.id}`}>
                 <span className="gallery-image">
-                  <Thumbnail videoId={group.videoId} />
+                  <Thumbnail videoId={group.videoId} className="gallery-thumb" />
                   <span className="gallery-duration">{formatRulerTime(group.duration)}</span>
                 </span>
                 <h3 className="gallery-card-title">{group.recordingTitle}</h3>
