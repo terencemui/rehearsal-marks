@@ -121,6 +121,10 @@ async function signIn(
 
 /** Types a link into the create surface's link input and submits it. */
 async function pasteLink(user: ReturnType<typeof userEvent.setup>, url: string) {
+  // The create surface is closed by default (T109); open it when the form
+  // isn't already up (e.g. a pending rejection left it open).
+  const trigger = screen.queryByRole('button', { name: '+ New project' });
+  if (trigger !== null) await user.click(trigger);
   await user.type(screen.getByLabelText(/paste a YouTube link/i), url);
   await user.click(screen.getByRole('button', { name: /create from link/i }));
 }
@@ -310,6 +314,7 @@ describe('App create from a YouTube link', () => {
     await signIn(user, auth);
 
     expect(screen.getByRole('region', { name: 'Create project' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '+ New project' }));
     expect(screen.getByLabelText(/paste a YouTube link/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/audio file/i)).not.toBeInTheDocument();
   });
@@ -790,6 +795,7 @@ describe('App published-project peek', () => {
     const { auth } = renderApp({ api });
     await signIn(user, auth);
 
+    await user.click(screen.getByRole('button', { name: '+ New project' }));
     await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
 
     // The 400ms debounce settles, then the count lands under the input.
@@ -803,6 +809,7 @@ describe('App published-project peek', () => {
     const { auth } = renderApp({ api });
     await signIn(user, auth);
 
+    await user.click(screen.getByRole('button', { name: '+ New project' }));
     await user.type(screen.getByLabelText(/paste a YouTube link/i), YOUTUBE_CANONICAL);
 
     // The peek stays away — the count is a convenience, never a promise.
