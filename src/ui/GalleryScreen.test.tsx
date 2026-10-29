@@ -138,15 +138,15 @@ describe('GalleryScreen', () => {
     }
     const titles = () => screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
 
-    it('offers a labelled sort control, Hot selected, cards in order', async () => {
+    it('offers a labelled sort control, Trending selected, cards in order', async () => {
       const api = fakeProjectsApi();
       seedThree(api);
       renderGallery(api);
 
       const sort = await screen.findByRole('combobox', { name: 'Sort by' });
-      expect(sort).toHaveValue('hot');
+      expect(sort).toHaveValue('trending');
       expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
-        'Hot',
+        'Trending',
         'Newest',
         'Oldest',
         'Most popular',
@@ -190,7 +190,7 @@ describe('GalleryScreen', () => {
       expect(screen.getByRole('status')).toHaveTextContent('0 recordings found.');
     });
 
-    it('resets to Hot when the gallery remounts', async () => {
+    it('resets to Trending when the gallery remounts', async () => {
       const user = userEvent.setup();
       const api = fakeProjectsApi();
       seedThree(api);
@@ -200,10 +200,10 @@ describe('GalleryScreen', () => {
 
       renderGallery(api);
 
-      expect(await screen.findByRole('combobox', { name: 'Sort by' })).toHaveValue('hot');
+      expect(await screen.findByRole('combobox', { name: 'Sort by' })).toHaveValue('trending');
     });
 
-    it('ranks by views on Most popular and Hot, with ties newest first and no count on the card', async () => {
+    it('ranks by views on Most popular and Trending, with ties newest first and no count on the card', async () => {
       const user = userEvent.setup();
       const api = fakeProjectsApi();
       seedThree(api);
@@ -222,9 +222,9 @@ describe('GalleryScreen', () => {
       ]);
       expect(container).not.toHaveTextContent(/\b(100|1) views?\b/i);
 
-      // Hot: 100 views is +2, far more than the ~0 weeks of age separating them.
+      // Trending: 100 views is +2, far more than the ~0 weeks of age separating them.
       // One view scores like none, so Weigle and Honeck tie and the newer wins.
-      await user.selectOptions(sort, 'hot');
+      await user.selectOptions(sort, 'trending');
       expect(titles()).toEqual([
         expect.stringContaining('Daniel Harding'),
         expect.stringContaining('Manfred Honeck'),

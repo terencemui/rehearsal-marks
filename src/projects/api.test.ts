@@ -165,27 +165,27 @@ describe('sortGalleryGroups', () => {
     expect(sortGalleryGroups(tied, 'oldest').map((g) => g.videoId)).toEqual(['bbb', 'aaa']);
   });
 
-  describe('hot and popular', () => {
+  describe('trending and popular', () => {
     const week = 604_800 * 1000;
     const ids = (list: ReturnType<typeof sortGalleryGroups>) => list.map((g) => g.videoId);
 
-    it('hot with zero views ranks by age alone, so new recordings still rise', () => {
-      expect(ids(sortGalleryGroups(groups, 'hot'))).toEqual(['aaa', 'ccc', 'bbb']);
+    it('trending with zero views ranks by age alone, so new recordings still rise', () => {
+      expect(ids(sortGalleryGroups(groups, 'trending'))).toEqual(['aaa', 'ccc', 'bbb']);
     });
 
-    it('hot trades one week of age for 10× the views', () => {
+    it('trending trades one week of age for 10× the views', () => {
       // `old` is a week older with 10× the views: the scores tie, so newest first.
       const tied = groupGalleryProjects([
         summary({ id: 'p1', videoId: 'new', createdAt: 10 * week, viewCount: 1 }),
         summary({ id: 'p2', videoId: 'old', createdAt: 9 * week, viewCount: 10 }),
       ]);
-      expect(ids(sortGalleryGroups(tied, 'hot'))).toEqual(['new', 'old']);
+      expect(ids(sortGalleryGroups(tied, 'trending'))).toEqual(['new', 'old']);
 
       const moreViews = groupGalleryProjects([
         summary({ id: 'p1', videoId: 'new', createdAt: 10 * week, viewCount: 1 }),
         summary({ id: 'p2', videoId: 'old', createdAt: 9 * week, viewCount: 11 }),
       ]);
-      expect(ids(sortGalleryGroups(moreViews, 'hot'))).toEqual(['old', 'new']);
+      expect(ids(sortGalleryGroups(moreViews, 'trending'))).toEqual(['old', 'new']);
     });
 
     it('popular sums a card’s projects’ views, most first', () => {
@@ -197,14 +197,14 @@ describe('sortGalleryGroups', () => {
       expect(ids(sortGalleryGroups(cards, 'popular'))).toEqual(['two', 'one']);
     });
 
-    it('popular and hot break ties newest first', () => {
+    it('popular and trending break ties newest first', () => {
       const zero = groupGalleryProjects([
         summary({ id: 'p1', videoId: 'aaa', createdAt: 3_000 }),
         summary({ id: 'p2', videoId: 'bbb', createdAt: 2_000 }),
         summary({ id: 'p3', videoId: 'ccc', createdAt: 1_000 }),
       ]);
       expect(ids(sortGalleryGroups(zero, 'popular'))).toEqual(['aaa', 'bbb', 'ccc']);
-      expect(ids(sortGalleryGroups(zero, 'hot'))).toEqual(['aaa', 'bbb', 'ccc']);
+      expect(ids(sortGalleryGroups(zero, 'trending'))).toEqual(['aaa', 'bbb', 'ccc']);
     });
   });
 
