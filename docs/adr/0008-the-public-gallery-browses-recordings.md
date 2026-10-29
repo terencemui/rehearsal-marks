@@ -3,6 +3,7 @@
 **Status:** Accepted — 2026-10-21
 **Amends:** ADR-0004's gallery search and gallery measure
 **Prototype:** `proto/gallery-cards` (tip `3080321`) — never merged, never imported
+**Superseded in part — 2026-10-28 (#238):** the sentence "Ordering is by the recording's newest published project, newest first" is superseded by ADR-0009; that order is now Newest, one of four gallery sorts. Everything else here stands.
 
 ## Context
 
