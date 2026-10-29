@@ -3,6 +3,7 @@
 **Status:** Accepted — 2026-10-28
 **Supersedes:** ADR-0008's sentence "Ordering is by the recording's newest published project, newest first."
 **Spec:** #235 (T100–T103)
+**Superseded in part — 2026-10-29 (#247):** every mention of "Hot" is superseded by ADR-0010, which renames the sort to "Trending." The formula, default, and behavior stand.
 
 ## Context
 

@@ -76,7 +76,7 @@ function Thumbnail({ videoId }: { videoId: string }) {
 
 /**
  * The public gallery (T50, T90): the app's front door. One card per recording
- * with a published public project — ordered by the sort (Hot by default), where a recording
+ * with a published public project — ordered by the sort (Trending by default), where a recording
  * ranks by its newest project and its projects' summed views. The
  * card is the recording's own still, its duration, and its canonical title,
  * never the owner's editable project name (T90). Several projects sharing a
@@ -95,7 +95,7 @@ function Thumbnail({ videoId }: { videoId: string }) {
  * gallery now shows — a zero count needs no further explanation, and
  * clearing the search is the field's own job (T105).
  *
- * The sort control (Hot, Newest, Oldest, Most popular) orders whatever the search leaves: group,
+ * The sort control (Trending, Newest, Oldest, Most popular) orders whatever the search leaves: group,
  * then filter, then sort.
  */
 export function GalleryScreen({ api }: GalleryScreenProps) {
@@ -104,7 +104,7 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   /** The gallery's groups; null while the read is in flight. */
   const [groups, setGroups] = useState<GalleryGroup[] | null>(null);
   /** The order — the gallery's own state, not the URL, so leaving resets it. */
-  const [sort, setSort] = useState<GallerySort>('hot');
+  const [sort, setSort] = useState<GallerySort>('trending');
   const [readFailed, setReadFailed] = useState(false);
   /** Bumped by the error card's Retry — re-runs the read. */
   const [attempt, setAttempt] = useState(0);
@@ -152,7 +152,7 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
               value={sort}
               onChange={(event) => setSort(event.target.value as GallerySort)}
             >
-              <option value="hot">Hot</option>
+              <option value="trending">Trending</option>
               <option value="newest">Newest</option>
               <option value="oldest">Oldest</option>
               <option value="popular">Most popular</option>

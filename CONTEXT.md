@@ -77,16 +77,16 @@ _Avoid_: selected row, picked-out row, current row, highlighted row
 ### Gallery and sharing
 
 **Public gallery**:
-The anonymous browse surface: one card per recording with at least one published public project, ordered by the reader's **Gallery sort**, Hot unless they choose otherwise. A card opens the recording's oldest published project, and no account is needed to read or play any of them.
+The anonymous browse surface: one card per recording with at least one published public project, ordered by the reader's **Gallery sort**, Trending unless they choose otherwise. A card opens the recording's oldest published project, and no account is needed to read or play any of them.
 _Avoid_: homepage, catalog, browse
 
 **Gallery sort**:
-The order of the public gallery's cards: **Hot** (the default), **Newest**, **Oldest** or **Most popular**. Every sort ranks recording cards, never individual projects. A card's **age** is the date of its newest published project; its **views** are the sum of the views of all its published projects. Newest orders by age, newest first; Oldest is exactly its reverse; Most popular orders by views, most first. Ties under any sort fall back to newest first. The choice lives in the gallery's own state, not the URL, and resets to Hot when the reader leaves and returns.
+The order of the public gallery's cards: **Trending** (the default), **Newest**, **Oldest** or **Most popular**. Every sort ranks recording cards, never individual projects. A card's **age** is the date of its newest published project; its **views** are the sum of the views of all its published projects. Newest orders by age, newest first; Oldest is exactly its reverse; Most popular orders by views, most first. Ties under any sort fall back to newest first. The choice lives in the gallery's own state, not the URL, and resets to Trending when the reader leaves and returns.
 _Avoid_: ordering, filter, ranking
 
-**Hot**:
+**Trending**:
 The gallery sort that ranks a card by `log10(max(views, 1)) + age_seconds / 604800`, so a recording one week newer ranks the same as one with ten times the views. A recording with no views still scores by its age alone.
-_Avoid_: trending, score
+_Avoid_: hot, score
 
 **View**:
 One count against a published public project, recorded each time anyone opens its read-only page — every time, with no deduplication, and never from the editor. It is never shown in the UI, and recording one changes nothing else about the project.
