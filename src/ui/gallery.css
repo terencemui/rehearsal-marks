@@ -6,6 +6,16 @@
 /* The card grid takes the whole page rail the shell already bounds; the old
    ruled list's prose measure is gone. */
 
+/* The heading's own row — the sort control, when shown, sits right of it,
+   on the heading's text baseline rather than centred against its full
+   line-height. */
+.gallery-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .gallery h2 {
   margin: 0;
   font: 600 27px/1.12 var(--serif);
@@ -158,24 +168,50 @@
   outline-offset: 1px;
 }
 
-/* The sort control: a quiet label and a square select in the page's own ink. */
+/* The sort control: the heading row's right-hand square select, named by its
+   own value alone (no "Sort by" chrome beside a heading that already says
+   what it orders) — the pencil-blue caret is the control's own hand, drawn
+   in place of the browser's. */
 .gallery-sort {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0 0;
-  font: 400 15px/1.5 var(--serif);
-  color: var(--ink-2);
+  position: relative;
+  display: inline-flex;
 }
 
 .gallery-sort select {
+  appearance: none;
   height: 32px;
-  padding: 0 8px;
+  padding: 0 26px 0 10px;
   border: 1px solid var(--ink);
   border-radius: 0;
   background: none;
   font: 600 14px/1 var(--sans);
   color: var(--ink);
+}
+
+/* clip-path rather than the usual transparent-border triangle: every colour
+   this stylesheet paints must be a shell token (App.test.tsx), and a
+   transparent border side has none to name. */
+.gallery-sort::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.gallery-sort:hover select,
+.gallery-sort select:focus-visible {
+  border-color: var(--pencil);
+}
+
+.gallery-sort:hover::after,
+.gallery-sort:focus-within::after {
+  background: var(--pencil);
 }
 
 .gallery-sort select:focus-visible {

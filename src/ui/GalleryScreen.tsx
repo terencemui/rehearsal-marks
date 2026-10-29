@@ -11,11 +11,25 @@ export interface GalleryScreenProps {
   api: ProjectsApi;
 }
 
-/** The gallery's shell — the heading and region the states share. */
-function GalleryFrame({ children }: { children: ReactNode }) {
+/**
+ * The gallery's shell — the heading and region the states share. The sort
+ * control, when there is one, sits in the same row as the heading, right
+ * of it — it is never shown while the frame is used for the loading or
+ * error states.
+ */
+function GalleryFrame({
+  children,
+  sortControl,
+}: {
+  children: ReactNode;
+  sortControl?: ReactNode;
+}) {
   return (
     <section className="gallery" role="region" aria-label="Public gallery">
-      <h2>Gallery</h2>
+      <div className="gallery-header">
+        <h2>Gallery</h2>
+        {sortControl}
+      </div>
       {children}
     </section>
   );
@@ -129,7 +143,24 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
   const emptyServer = groups.length === 0;
   const matching = emptyServer ? [] : sortGalleryGroups(filterGalleryGroups(groups, query), sort);
   return (
-    <GalleryFrame>
+    <GalleryFrame
+      sortControl={
+        !emptyServer && (
+          <span className="gallery-sort">
+            <select
+              aria-label="Sort by"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as GallerySort)}
+            >
+              <option value="hot">Hot</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="popular">Most popular</option>
+            </select>
+          </span>
+        )
+      }
+    >
       {/* The live region every state shares: a search announces its count,
           and an empty result announces zero. It stays mounted, empty, when
           the unfiltered gallery has nothing to announce. */}
@@ -151,17 +182,6 @@ export function GalleryScreen({ api }: GalleryScreenProps) {
             Clear search
           </button>
         </>
-      )}
-      {!emptyServer && (
-        <label className="gallery-sort">
-          Sort by
-          <select value={sort} onChange={(event) => setSort(event.target.value as GallerySort)}>
-            <option value="hot">Hot</option>
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="popular">Most popular</option>
-          </select>
-        </label>
       )}
       <ol className="gallery-grid">
         {matching.map((group) => {
