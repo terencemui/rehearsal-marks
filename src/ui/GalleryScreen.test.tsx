@@ -179,7 +179,7 @@ describe('GalleryScreen', () => {
       expect(titles()[0]).toContain('Manfred Honeck');
     });
 
-    it('keeps the no-match message under Oldest', async () => {
+    it('keeps the zero count under Oldest', async () => {
       const user = userEvent.setup();
       const api = fakeProjectsApi();
       seedThree(api);
@@ -187,7 +187,7 @@ describe('GalleryScreen', () => {
 
       await user.selectOptions(await screen.findByRole('combobox', { name: 'Sort by' }), 'oldest');
 
-      expect(screen.getByText('No recordings match “nothing like this”.')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('0 recordings found.');
     });
 
     it('resets to Hot when the gallery remounts', async () => {
@@ -327,21 +327,14 @@ describe('GalleryScreen', () => {
     expect(screen.queryByText('Published projects, newest first.')).not.toBeInTheDocument();
   });
 
-  it('counts recordings, not projects, and says when none match', async () => {
-    const user = userEvent.setup();
+  it('counts recordings, not projects, even when none match', async () => {
     const api = fakeProjectsApi();
     api.seed(galleryProject({ createdAt: 1_000 }));
     api.seed(galleryProject({ id: 'p2', createdAt: 2_000 }));
-    const { currentPath } = renderGallery(api, '/?q=nothing%20like%20this');
+    renderGallery(api, '/?q=nothing%20like%20this');
 
-    expect(await screen.findByText('No recordings match “nothing like this”.')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('0 recordings found.');
+    expect(await screen.findByRole('status')).toHaveTextContent('0 recordings found.');
     expect(screen.queryAllByRole('link')).toHaveLength(0);
-
-    await user.click(screen.getByRole('button', { name: 'Clear search' }));
-
-    expect(await screen.findAllByRole('link')).toHaveLength(1);
-    expect(currentPath()).toBe('/');
   });
 
   it('surfaces a failed read as an error with a retry that re-runs the read', async () => {

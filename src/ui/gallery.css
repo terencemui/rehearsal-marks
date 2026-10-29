@@ -143,8 +143,8 @@
   color: var(--ink-2);
 }
 
-/* Retry and Clear search are chrome: one square 32px ink box, the pencil on
-   hover or focus, never a fill. */
+/* Retry is chrome: a square 32px ink box, the pencil on hover or focus,
+   never a fill. */
 .gallery-action {
   box-sizing: border-box;
   height: 32px;

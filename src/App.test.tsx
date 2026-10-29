@@ -1473,28 +1473,20 @@ describe('The gallery search (T87)', () => {
     expect(navButton('Open search')).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it('distinguishes an empty server from a query that matches nothing, and clears', async () => {
-    const user = userEvent.setup();
+  it('distinguishes an empty server from a query that matches nothing', async () => {
     const api = fakeProjectsApi();
     seedGallery(api);
-    const { currentSearch } = renderApp({ api, initialEntry: '/?q=nothing like this' });
+    renderApp({ api, initialEntry: '/?q=nothing like this' });
 
-    expect(await screen.findByText('No recordings match “nothing like this”.')).toBeInTheDocument();
     // Zero is still a result count, and the live region announces it.
-    expect(screen.getByRole('status')).toHaveTextContent('0 recordings found.');
-
-    await user.click(screen.getByRole('button', { name: 'Clear search' }));
-
-    expect(await screen.findByRole('link', { name: /Manfred Honeck/ })).toBeInTheDocument();
-    expect(currentSearch()).toBe('');
-    expect(gallerySearch()).toHaveValue('');
+    expect(await screen.findByRole('status')).toHaveTextContent('0 recordings found.');
+    expect(screen.queryByRole('link', { name: /Manfred Honeck/ })).not.toBeInTheDocument();
   });
 
   it('says "No public projects yet." even when the URL carries a query', async () => {
     renderApp({ initialEntry: '/?q=anything' });
 
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
-    expect(screen.queryByText(/No recordings match/)).not.toBeInTheDocument();
   });
 
   it('keeps no draft from one non-gallery page to the next', async () => {
@@ -1583,9 +1575,8 @@ describe('The gallery wears the player’s direction (T88, T90)', () => {
     );
   });
 
-  it('boxes the retry and Clear search in the sans and the direction’s ink', () => {
-    // Retry and Clear search share the rule: chrome is a square 32px ink box,
-    // the same control the navbar carries.
+  it('boxes the retry in the sans and the direction’s ink', () => {
+    // Chrome is a square 32px ink box, the same control the navbar carries.
     expect(galleryCss).toMatch(/\.gallery-action\s*\{[^}]*height:\s*32px/);
     expect(galleryCss).toMatch(/\.gallery-action\s*\{[^}]*border:\s*1px solid var\(--ink\)/);
     expect(galleryCss).toMatch(/\.gallery-action\s*\{[^}]*var\(--sans\)/);
