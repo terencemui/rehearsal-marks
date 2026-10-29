@@ -27,7 +27,10 @@ const PEEK_DEBOUNCE_MS = 400;
 /**
  * The one create surface: paste a YouTube link. Pasting an accepted link
  * creates a project named after the video and opens the player — there is no
- * other way into a project.
+ * other way into a project. Closed by default behind a "+ New project"
+ * trigger (T109); it opens itself back up on mount when a rejection or an
+ * in-flight create is already pending, so guidance is never hidden behind a
+ * button nobody pressed.
  *
  * The field's own value is never validated here: the domain module owns what
  * a YouTube link is, and its guidance comes back through `linkError`. A
@@ -46,6 +49,12 @@ export function CreateProject({
 }: CreateProjectProps) {
   const [url, setUrl] = useState('');
   const [peek, setPeek] = useState<string | null>(null);
+  // Closed by default (T109): a "+ New project" trigger opens it. A pending
+  // rejection or an in-flight create can only exist because the form was
+  // already open, so a remount (e.g. a tab switch and back) must restore
+  // that same openness rather than hide the guidance behind a button nobody
+  // pressed.
+  const [isOpen, setIsOpen] = useState(() => linkError !== null || creatingFromLink);
   const inputId = useId();
   const errorId = useId();
   const peekId = useId();
@@ -86,6 +95,16 @@ export function CreateProject({
     };
   }, [url, countPublished]);
 
+  if (!isOpen) {
+    return (
+      <section aria-label="Create project">
+        <button type="button" aria-expanded={false} onClick={() => setIsOpen(true)}>
+          + New project
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Create project">
       <form
@@ -119,6 +138,19 @@ export function CreateProject({
         />
         <button type="submit" disabled={busy || url.trim() === ''}>
           {creatingFromLink ? 'Creating…' : 'Create from link'}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            // A dismissed rejection must stay dismissed — otherwise the next
+            // remount's "reopen on pending rejection" rule (T109) would spring
+            // the form back open on guidance the user just closed.
+            if (linkError !== null) onLinkEdit?.();
+            setIsOpen(false);
+          }}
+        >
+          Cancel
         </button>
         {peek !== null && (
           <p id={peekId} className="create-project-peek">

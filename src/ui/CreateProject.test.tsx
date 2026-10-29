@@ -9,9 +9,65 @@ function setup(props: Partial<React.ComponentProps<typeof CreateProject>> = {}) 
   return { onLink, ...view };
 }
 
+/** Opens the disclosure when the surface starts closed (no pending rejection). */
+async function open(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '+ New project' }));
+}
+
 describe('CreateProject', () => {
-  it('offers the YouTube link input on the create surface', () => {
+  it('is closed by default, behind a "+ New project" trigger', () => {
     setup();
+
+    const surface = screen.getByRole('region', { name: 'Create project' });
+    expect(surface).toContainElement(screen.getByRole('button', { name: '+ New project' }));
+    expect(screen.queryByLabelText(/paste a YouTube link/i)).not.toBeInTheDocument();
+  });
+
+  it('opens the form on the trigger, and Cancel closes it without creating anything', async () => {
+    const user = userEvent.setup();
+    const { onLink } = setup();
+
+    await open(user);
+    expect(screen.getByLabelText(/paste a YouTube link/i)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/paste a YouTube link/i), 'https://youtu.be/dQw4w9WgXcQ');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByLabelText(/paste a YouTube link/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New project' })).toBeInTheDocument();
+    expect(onLink).not.toHaveBeenCalled();
+  });
+
+  it('marks the trigger as collapsed for assistive tech', () => {
+    setup();
+
+    expect(screen.getByRole('button', { name: '+ New project' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('retires the rejection on Cancel, so it does not spring back open on a remount', async () => {
+    const user = userEvent.setup();
+    const onLinkEdit = vi.fn();
+    setup({ linkError: 'That link points at a playlist.', onLinkEdit });
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onLinkEdit).toHaveBeenCalled();
+  });
+
+  it('opens by default when a rejection is already pending (e.g. after a tab switch)', () => {
+    setup({ linkError: 'That link points at a playlist, not a single video.' });
+
+    expect(screen.getByLabelText(/paste a YouTube link/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/playlist/);
+  });
+
+  it('offers the YouTube link input on the create surface', async () => {
+    const user = userEvent.setup();
+    setup();
+    await open(user);
 
     const surface = screen.getByRole('region', { name: 'Create project' });
     expect(surface).toContainElement(screen.getByLabelText(/paste a YouTube link/i));
@@ -24,6 +80,7 @@ describe('CreateProject', () => {
   it('hands the pasted link to the YouTube pipeline verbatim', async () => {
     const user = userEvent.setup();
     const { onLink } = setup();
+    await open(user);
     const url = 'https://youtu.be/dQw4w9WgXcQ?t=42';
 
     await user.type(screen.getByLabelText(/paste a YouTube link/i), url);
@@ -36,6 +93,7 @@ describe('CreateProject', () => {
   it('submits on Enter, so pasting and hitting return works', async () => {
     const user = userEvent.setup();
     const { onLink } = setup();
+    await open(user);
 
     await user.type(
       screen.getByLabelText(/paste a YouTube link/i),
@@ -48,6 +106,7 @@ describe('CreateProject', () => {
   it('keeps the pasted text after a rejection, so the user can fix it', async () => {
     const user = userEvent.setup();
     const { rerender, onLink } = setup();
+    await open(user);
     const field = screen.getByLabelText(/paste a YouTube link/i);
 
     await user.type(field, 'https://www.youtube.com/playlist?list=PLx');
@@ -55,14 +114,17 @@ describe('CreateProject', () => {
 
     rerender(<CreateProject onLink={onLink} linkError="That link points at a playlist, not a single video." />);
 
-    expect(field).toHaveValue('https://www.youtube.com/playlist?list=PLx');
+    expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveValue(
+      'https://www.youtube.com/playlist?list=PLx',
+    );
     expect(screen.getByRole('alert')).toHaveTextContent(/playlist/);
-    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/paste a YouTube link/i)).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('will not submit an empty or blank field', async () => {
     const user = userEvent.setup();
     const { onLink } = setup();
+    await open(user);
     const submit = screen.getByRole('button', { name: /create from link/i });
 
     expect(submit).toBeDisabled();
@@ -84,7 +146,7 @@ describe('CreateProject', () => {
   });
 
   it('disables the link input and button while any pipeline runs', () => {
-    setup({ busy: true });
+    setup({ linkError: 'That link points at a playlist.', busy: true });
 
     expect(screen.getByLabelText(/paste a YouTube link/i)).toBeDisabled();
     expect(screen.getByRole('button', { name: /create from link/i })).toBeDisabled();
@@ -116,6 +178,7 @@ describe('CreateProject', () => {
     const user = userEvent.setup();
     const onLinkEdit = vi.fn();
     setup({ onLinkEdit });
+    await open(user);
 
     await user.type(screen.getByLabelText(/paste a YouTube link/i), 'https://');
 
