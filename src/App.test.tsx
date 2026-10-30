@@ -141,6 +141,14 @@ async function waitForWorkspaceRow(name: string): Promise<void> {
   });
 }
 
+/** Opens a workspace card's "More" disclosure (T111) so its actions can be reached. */
+async function openCardMore(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<void> {
+  await user.click(screen.getByRole('button', { name: `More for ${name}` }));
+}
+
 /**
  * Drives a link create whose title lookup is held open, then navigates away to
  * the privacy policy while it is still in flight — the shared "create lands
@@ -405,6 +413,7 @@ describe('App Projects workspace', () => {
     const rows = screen.getAllByRole('listitem');
     expect(within(rows[0]).getByText('Newer')).toBeInTheDocument();
 
+    await user.click(within(rows[1]).getByRole('button', { name: /^More/ }));
     await user.click(within(rows[1]).getByRole('button', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Project name' });
     await user.clear(input);
@@ -430,6 +439,7 @@ describe('App Projects workspace', () => {
     await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    await openCardMore(user, 'Brahms Op. 118 No. 2');
     await user.click(screen.getByRole('button', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Project name' });
     await user.clear(input);
@@ -449,6 +459,7 @@ describe('App Projects workspace', () => {
     await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    await openCardMore(user, 'Brahms Op. 118 No. 2');
     await user.click(screen.getByRole('button', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Project name' });
     await user.clear(input);
@@ -468,6 +479,7 @@ describe('App Projects workspace', () => {
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
+    await user.click(within(row).getByRole('button', { name: /^More/ }));
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
     expect(
       screen.getByText('Delete “Brahms Op. 118 No. 2”? This cannot be undone.'),
@@ -488,6 +500,7 @@ describe('App Projects workspace', () => {
 
     api.failNext('saveProject');
     const row = screen.getByRole('listitem');
+    await user.click(within(row).getByRole('button', { name: /^More/ }));
     await user.click(within(row).getByRole('button', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Project name' });
     await user.clear(input);
@@ -554,6 +567,7 @@ describe('App Projects workspace', () => {
     await screen.findByText('Brahms Op. 118 No. 2');
 
     const row = screen.getByRole('listitem');
+    await user.click(within(row).getByRole('button', { name: /^More/ }));
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
 
@@ -726,6 +740,7 @@ describe('App project visibility', () => {
     await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    await openCardMore(user, 'Brahms Op. 118 No. 2');
     await user.click(screen.getByRole('button', { name: 'Make private' }));
 
     expect(await screen.findByText('Private')).toBeInTheDocument();
@@ -741,6 +756,7 @@ describe('App project visibility', () => {
     await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    await openCardMore(user, 'Brahms Op. 118 No. 2');
     await user.click(screen.getByRole('button', { name: 'Make public' }));
 
     expect(await screen.findByText('Pending review')).toBeInTheDocument();
@@ -761,6 +777,7 @@ describe('App project naming', () => {
     await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    await openCardMore(user, 'Brahms Op. 118 No. 2');
     await user.selectOptions(
       screen.getByRole('combobox', { name: 'Naming for Brahms Op. 118 No. 2' }),
       'measures',
@@ -778,6 +795,7 @@ describe('App project naming', () => {
     await signIn(user, auth);
     await screen.findByText('Brahms Op. 118 No. 2');
 
+    await openCardMore(user, 'Brahms Op. 118 No. 2');
     await user.selectOptions(
       screen.getByRole('combobox', { name: 'Naming for Brahms Op. 118 No. 2' }),
       'numbers',

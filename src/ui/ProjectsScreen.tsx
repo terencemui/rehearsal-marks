@@ -127,6 +127,8 @@ export function ProjectsScreen({
 }: ProjectsScreenProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  /** Which card's "More" disclosure is open — at most one at a time (T111). */
+  const [moreOpenId, setMoreOpenId] = useState<string | null>(null);
   /**
    * Terminal state for the edit in flight. Real browsers fire blur when a
    * focused input unmounts, so Enter's commit and Escape's cancel must both
@@ -138,6 +140,19 @@ export function ProjectsScreen({
     renameEditRef.current = { committed: false, cancelled: false };
     setConfirmingId(null);
     setEditingId(id);
+  }
+
+  /**
+   * Toggles a card's disclosure, closing any other card's. Clears the
+   * edit/confirm state along with it — otherwise closing on an armed delete
+   * confirmation would leave it armed, so reopening lands straight back on
+   * "Delete this cannot be undone" and a single further click deletes,
+   * silently skipping the two-step confirmation the control exists to give.
+   */
+  function toggleMore(id: string): void {
+    setMoreOpenId((current) => (current === id ? null : id));
+    setEditingId(null);
+    setConfirmingId(null);
   }
 
   function commitRename(project: ProjectSummary, raw: string): void {
@@ -220,115 +235,132 @@ export function ProjectsScreen({
                   {formatUpdatedAt(project.updatedAt, Date.now())}
                 </p>
                 <div className="workspace-actions">
-                  {/* The markings page, reached from the card (T61) — navigation
-                      like the open above it, and saying what the marks panel's
-                      door to the same page says, so the two ways in read as one
-                      page.
-                      A button rather than the panel's link, deliberately: this
-                      door must go inert with the rest of the card while a create
-                      runs (T61), and an anchor cannot be disabled. It shares the
-                      limitation the open buttons above it already carry — no
-                      cmd-click, no middle-click — which is the card's own
-                      behaviour, not this control's. The name carries the project
-                      because the grid is many cards: a reader walking it hears
-                      which project each door belongs to, and the visible word is
-                      still the name's. */}
+                  {/* Every action beyond opening the project — Markings, Rename,
+                      the visibility toggle, the naming select, Delete — sits
+                      behind this one disclosure (T111), decluttering the card
+                      face T110 built. The name carries the project because the
+                      grid is many cards: a reader walking it hears which
+                      project each door belongs to. */}
                   <button
                     type="button"
                     className="workspace-action"
-                    aria-label={`Markings for ${project.name}`}
+                    aria-haspopup="true"
+                    aria-expanded={moreOpenId === project.id}
+                    aria-label={`More for ${project.name}`}
                     disabled={busy}
-                    onClick={() => onOpenMarkings(project.id)}
+                    onClick={() => toggleMore(project.id)}
                   >
-                    Markings
+                    More
                   </button>
-                  {editingId === project.id ? (
-                    <input
-                      className="workspace-rename-input"
-                      aria-label="Project name"
-                      defaultValue={project.name}
-                      autoFocus
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') commitRename(project, event.currentTarget.value);
-                        if (event.key === 'Escape') {
-                          if (renameEditRef.current !== null) renameEditRef.current.cancelled = true;
-                          // Unmounting the focused input fires blur in real
-                          // browsers — commitRename reads the flag there.
-                          setEditingId(null);
-                        }
-                      }}
-                      onBlur={(event) => commitRename(project, event.currentTarget.value)}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="workspace-action"
-                      onClick={() => beginRename(project.id)}
-                    >
-                      Rename
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="workspace-action"
-                    disabled={busy}
-                    title={view.toggleTitle}
-                    onClick={() => onToggleVisibility(project.id)}
-                  >
-                    {view.toggleLabel}
-                  </button>
-                  {/* How the project names its marks (T72). A select rather than
-                      three buttons, because the card already carries five
-                      controls and the options are the choice itself. The
-                      control is named for the project the way the card's other
-                      controls are, since a reader walking the grid hears which
-                      project each one belongs to. */}
-                  <select
-                    className="workspace-naming"
-                    aria-label={`Naming for ${project.name}`}
-                    title={NAMING_TEXT[project.naming].title}
-                    disabled={busy}
-                    value={project.naming}
-                    onChange={(event) => onSetNaming(project.id, event.currentTarget.value as Naming)}
-                  >
-                    {NAMINGS.map((naming) => (
-                      <option key={naming} value={naming}>
-                        {NAMING_TEXT[naming].label}
-                      </option>
-                    ))}
-                  </select>
-                  {confirmingId === project.id ? (
-                    <span className="workspace-confirm">
-                      <span>Delete “{project.name}”? This cannot be undone.</span>
+                  {moreOpenId === project.id && (
+                    <div className="workspace-more-menu" role="group" aria-label={`More for ${project.name}`}>
+                      {/* The markings page, reached from the card (T61) —
+                          navigation like the open above it, and saying what
+                          the marks panel's door to the same page says, so the
+                          two ways in read as one page.
+                          A button rather than the panel's link, deliberately:
+                          this door must go inert with the rest of the card
+                          while a create runs (T61), and an anchor cannot be
+                          disabled. */}
                       <button
                         type="button"
                         className="workspace-action"
-                        onClick={() => setConfirmingId(null)}
+                        aria-label={`Markings for ${project.name}`}
+                        disabled={busy}
+                        onClick={() => onOpenMarkings(project.id)}
                       >
-                        Cancel
+                        Markings
                       </button>
+                      {editingId === project.id ? (
+                        <input
+                          className="workspace-rename-input"
+                          aria-label="Project name"
+                          defaultValue={project.name}
+                          autoFocus
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter')
+                              commitRename(project, event.currentTarget.value);
+                            if (event.key === 'Escape') {
+                              if (renameEditRef.current !== null)
+                                renameEditRef.current.cancelled = true;
+                              // Unmounting the focused input fires blur in real
+                              // browsers — commitRename reads the flag there.
+                              setEditingId(null);
+                            }
+                          }}
+                          onBlur={(event) => commitRename(project, event.currentTarget.value)}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="workspace-action"
+                          onClick={() => beginRename(project.id)}
+                        >
+                          Rename
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="workspace-action workspace-confirm-delete"
-                        onClick={() => {
-                          setConfirmingId(null);
-                          onDelete(project.id);
-                        }}
+                        className="workspace-action"
+                        disabled={busy}
+                        title={view.toggleTitle}
+                        onClick={() => onToggleVisibility(project.id)}
                       >
-                        Delete
+                        {view.toggleLabel}
                       </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="workspace-action"
-                      onClick={() => {
-                        setEditingId(null);
-                        setConfirmingId(project.id);
-                      }}
-                    >
-                      Delete
-                    </button>
+                      {/* How the project names its marks (T72). A select
+                          rather than three buttons, because the options are
+                          the choice itself. */}
+                      <select
+                        className="workspace-naming"
+                        aria-label={`Naming for ${project.name}`}
+                        title={NAMING_TEXT[project.naming].title}
+                        disabled={busy}
+                        value={project.naming}
+                        onChange={(event) =>
+                          onSetNaming(project.id, event.currentTarget.value as Naming)
+                        }
+                      >
+                        {NAMINGS.map((naming) => (
+                          <option key={naming} value={naming}>
+                            {NAMING_TEXT[naming].label}
+                          </option>
+                        ))}
+                      </select>
+                      {confirmingId === project.id ? (
+                        <span className="workspace-confirm">
+                          <span>Delete “{project.name}”? This cannot be undone.</span>
+                          <button
+                            type="button"
+                            className="workspace-action"
+                            onClick={() => setConfirmingId(null)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="workspace-action workspace-confirm-delete"
+                            onClick={() => {
+                              setConfirmingId(null);
+                              onDelete(project.id);
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="workspace-action"
+                          onClick={() => {
+                            setEditingId(null);
+                            setConfirmingId(project.id);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </li>

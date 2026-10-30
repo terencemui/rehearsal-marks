@@ -80,6 +80,10 @@ _Avoid_: selected row, picked-out row, current row, highlighted row
 The anonymous browse surface: one card per recording with at least one published public project, ordered by the reader's **Gallery sort**, Trending unless they choose otherwise. A card opens the recording's oldest published project, and no account is needed to read or play any of them.
 _Avoid_: homepage, catalog, browse
 
+**Workspace**:
+The signed-in owner's surface: one card per project they created, newest first, reusing the public gallery's own grid, thumbnail, and typography rather than a plain list. A card's thumbnail or title opens the project directly; every other action — Markings, Rename, the visibility toggle, the naming select, Delete — sits behind the card's own "More" disclosure.
+_Avoid_: projects list, dashboard, my projects page
+
 **Gallery sort**:
 The order of the public gallery's cards: **Trending** (the default), **Newest**, **Oldest** or **Most popular**. Every sort ranks recording cards, never individual projects. A card's **age** is the date of its newest published project; its **views** are the sum of the views of all its published projects. Newest orders by age, newest first; Oldest is exactly its reverse; Most popular orders by views, most first. Ties under any sort fall back to newest first. The choice lives in the gallery's own state, not the URL, and resets to Trending when the reader leaves and returns.
 _Avoid_: ordering, filter, ranking
