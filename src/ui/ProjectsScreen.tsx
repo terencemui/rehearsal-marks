@@ -2,12 +2,15 @@ import { useRef, useState } from 'react';
 import { NAMINGS } from '../projects';
 import type { Naming } from '../projects';
 import type { ProjectSummary, PublicationStatus } from '../projects/types';
-import { formatDuration, formatUpdatedAt, validateProjectName } from '../projects/summary';
+import { formatUpdatedAt, validateProjectName } from '../projects/summary';
+import { formatRulerTime } from '../playback/ruler';
 import type { SaveStatus } from '../projects/autosave';
 import { STATUS_TEXT } from './status';
+import { Thumbnail } from './Thumbnail';
+import './gallery.css';
 import './projects.css';
 
-/** The row badge for each review state a *public* project can hold (CONTEXT.md). */
+/** The card badge for each review state a *public* project can hold (CONTEXT.md). */
 const PUBLIC_STATUS: Record<PublicationStatus, { text: string; title: string }> = {
   pending: {
     text: 'Pending review',
@@ -24,12 +27,12 @@ const PUBLIC_STATUS: Record<PublicationStatus, { text: string; title: string }> 
 };
 
 /**
- * What each of the three naming modes reads as in the row's control (T72). The
- * wording is the distinction itself rather than the vocabulary — a project is
- * kept in `A, B, C`, `1, 2, 3` or `Bar numbers` — because the choice is about
- * which name a score uses, and the mode's key says nothing about that. Keyed by
- * the vocabulary so a mode can never be added to the domain and go unspoken
- * here.
+ * What each of the three naming modes reads as in the card's control (T72).
+ * The wording is the distinction itself rather than the vocabulary — a
+ * project is kept in `A, B, C`, `1, 2, 3` or `Bar numbers` — because the
+ * choice is about which name a score uses, and the mode's key says nothing
+ * about that. Keyed by the vocabulary so a mode can never be added to the
+ * domain and go unspoken here.
  */
 const NAMING_TEXT: Record<Naming, { label: string; title: string }> = {
   letters: {
@@ -47,13 +50,13 @@ const NAMING_TEXT: Record<Naming, { label: string; title: string }> = {
 };
 
 /**
- * A row's visibility-derived view — the one place the `visibility` discriminant
- * lives. Public rows show their review badge and offer "Make private"; private
- * rows show a Private tag and offer "Make public" (which returns the project to
- * review). The badge and tag share the title-to-text shape so the row renders
- * them uniformly.
+ * A card's visibility-derived view — the one place the `visibility`
+ * discriminant lives. Public cards show their review badge and offer "Make
+ * private"; private cards show a Private tag and offer "Make public" (which
+ * returns the project to review). The badge and tag share the title-to-text
+ * shape so the card renders them uniformly.
  */
-function rowView(project: ProjectSummary) {
+function visibilityView(project: ProjectSummary) {
   const isPublic = project.visibility === 'public';
   return {
     isPublic,
@@ -68,11 +71,11 @@ function rowView(project: ProjectSummary) {
 }
 
 export interface ProjectsScreenProps {
-  /** The workspace's rows, newest first — the caller owns the list. */
+  /** The workspace's cards, newest first — the caller owns the list. */
   projects: ProjectSummary[];
   /** The save-state line for list mutations (rename, delete, visibility). */
   status: SaveStatus;
-  /** True while any workspace pipeline (link create) runs — rows are inert then. */
+  /** True while any workspace pipeline (link create) runs — cards are inert then. */
   busy?: boolean;
   /** A transient failure the user must see (e.g. a project that won't open). */
   notice?: string | null;
@@ -91,19 +94,24 @@ export interface ProjectsScreenProps {
   /**
    * Sets how the project names its marks (T72); the caller persists and
    * refreshes. It is the project's own setting, not the viewer's, so it is
-   * changed here — where the project is, on the list of them — and reads the
+   * changed here — where the project is, on the card of it — and reads the
    * same to everyone afterwards.
    */
   onSetNaming: (id: string, naming: Naming) => void;
 }
 
 /**
- * The Projects workspace: the list every project lives in, with inline
- * rename, a two-step delete, the save-state line, and the first-run empty
- * state. All persistence happens in the caller — this screen only owns the
- * edit interactions (which row is renaming or confirming). Each row shows its
- * review badge (public projects) or a Private tag, and the visibility toggle
- * that moves a project between the two.
+ * The Projects workspace (T110): a card grid, one card per project, reusing
+ * the gallery's own grid/thumbnail/typography (CONTEXT.md's Public gallery
+ * direction) rather than the plain row list it replaces. A card's thumbnail
+ * or title opens the project directly; every other action — Markings,
+ * inline rename, a two-step delete, the visibility toggle, and the naming
+ * select — stays directly reachable on the card face, unchanged in substance
+ * from the row it replaces. All persistence happens in the caller — this
+ * screen only owns the edit interactions (which card is renaming or
+ * confirming). Each card shows its review badge (public projects) or a
+ * Private tag, and the visibility toggle that moves a project between the
+ * two.
  */
 export function ProjectsScreen({
   projects,
@@ -150,160 +158,183 @@ export function ProjectsScreen({
   }
 
   return (
-    <section aria-label="Projects">
-      <p role="status" data-save-status={status} className="projects-status">
+    <section aria-label="Projects" className="workspace">
+      <p role="status" data-save-status={status} className="workspace-status">
         {STATUS_TEXT[status]}
       </p>
       {notice !== null && (
-        <p role="alert" className="projects-notice">
+        <p role="alert" className="workspace-notice">
           {notice}
         </p>
       )}
       {projects.length === 0 ? (
-        <section className="projects-empty">
-          <h2>No projects yet</h2>
-          <p>Paste a YouTube link above to start marking.</p>
-        </section>
+        <p className="workspace-empty" role="status">
+          No projects yet.
+        </p>
       ) : (
-        <ul className="projects-list">
+        <ol className="gallery-grid">
           {projects.map((project) => {
-            const view = rowView(project);
+            const view = visibilityView(project);
             return (
-            <li key={project.id} className="projects-row">
-              <button
-                type="button"
-                className="projects-open"
-                // Every workspace pipeline holds the working lock, and an
-                // open attempted under it is silently dropped — so the row
-                // must be disabled across all of them. (An open itself is
-                // instant navigation now (T45) — it holds no lock.)
-                disabled={busy}
-                onClick={() => onOpen(project.id)}
-              >
-                <span className="projects-name">
-                  {project.name}
+              <li key={project.id} className="workspace-card">
+                <button
+                  type="button"
+                  className="workspace-thumb-button"
+                  aria-label={`Open ${project.name}`}
+                  // Every workspace pipeline holds the working lock, and an
+                  // open attempted under it is silently dropped — so the
+                  // card must be disabled across all of them. (An open
+                  // itself is instant navigation now (T45) — it holds no
+                  // lock.)
+                  disabled={busy}
+                  onClick={() => onOpen(project.id)}
+                >
+                  <span className="gallery-image">
+                    <Thumbnail videoId={project.videoId} className="gallery-thumb" />
+                    <span className="gallery-duration">{formatRulerTime(project.duration)}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="workspace-title"
+                  disabled={busy}
+                  onClick={() => onOpen(project.id)}
+                >
+                  <span className="workspace-name">{project.name}</span>
                   {view.isPublic ? (
                     <span
-                      className={`projects-badge projects-badge-${project.publicationStatus}`}
+                      className={`workspace-badge workspace-badge-${project.publicationStatus}`}
                       title={view.status.title}
                     >
                       {view.status.text}
                     </span>
                   ) : (
-                    <span className="projects-tag projects-tag-private" title={view.status.title}>
+                    <span className="workspace-tag workspace-tag-private" title={view.status.title}>
                       {view.status.text}
                     </span>
                   )}
-                </span>
-                <span className="projects-meta">
-                  {formatDuration(project.duration)} · {project.markerCount} marker
-                  {project.markerCount === 1 ? '' : 's'} · {formatUpdatedAt(project.updatedAt, Date.now())}
-                </span>
-              </button>
-              {/* The markings page, reached from the row (T61) — navigation
-                  like the open above it, and saying what the marks panel's
-                  door to the same page says, so the two ways in read as one
-                  page.
-                  A button rather than the panel's link, deliberately: this
-                  door must go inert with the rest of the row while a create
-                  runs (T61), and an anchor cannot be disabled. It shares the
-                  limitation the open button above it already carries — no
-                  cmd-click, no middle-click — which is the row's own
-                  behaviour, not this control's. The name carries the project
-                  because the row is one of many: a reader walking the list
-                  hears which project each door belongs to, and the visible
-                  word is still the name's. */}
-              <button
-                type="button"
-                aria-label={`Markings for ${project.name}`}
-                disabled={busy}
-                onClick={() => onOpenMarkings(project.id)}
-              >
-                Markings
-              </button>
-              {editingId === project.id ? (
-                <input
-                  className="projects-rename-input"
-                  aria-label="Project name"
-                  defaultValue={project.name}
-                  autoFocus
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') commitRename(project, event.currentTarget.value);
-                    if (event.key === 'Escape') {
-                      if (renameEditRef.current !== null) renameEditRef.current.cancelled = true;
-                      // Unmounting the focused input fires blur in real
-                      // browsers — commitRename reads the flag there.
-                      setEditingId(null);
-                    }
-                  }}
-                  onBlur={(event) => commitRename(project, event.currentTarget.value)}
-                />
-              ) : (
-                <button type="button" onClick={() => beginRename(project.id)}>
-                  Rename
                 </button>
-              )}
-              <button
-                type="button"
-                disabled={busy}
-                title={view.toggleTitle}
-                onClick={() => onToggleVisibility(project.id)}
-              >
-                {view.toggleLabel}
-              </button>
-              {/* How the project names its marks (T72). A select rather than
-                  three buttons, because the row already carries five controls
-                  and a list of rows has no room for three more: one control,
-                  one reading, and the options are the choice itself. The
-                  control is named for the project the way the row's other
-                  controls are, since a reader walking the list hears which
-                  project each one belongs to. */}
-              <select
-                className="projects-naming"
-                aria-label={`Naming for ${project.name}`}
-                title={NAMING_TEXT[project.naming].title}
-                disabled={busy}
-                value={project.naming}
-                onChange={(event) => onSetNaming(project.id, event.currentTarget.value as Naming)}
-              >
-                {NAMINGS.map((naming) => (
-                  <option key={naming} value={naming}>
-                    {NAMING_TEXT[naming].label}
-                  </option>
-                ))}
-              </select>
-              {confirmingId === project.id ? (
-                <span className="projects-confirm">
-                  <span>Delete “{project.name}”? This cannot be undone.</span>
-                  <button type="button" onClick={() => setConfirmingId(null)}>
-                    Cancel
-                  </button>
+                <p className="workspace-recording">{project.recordingTitle}</p>
+                <p className="workspace-meta">
+                  {project.markerCount} marker{project.markerCount === 1 ? '' : 's'} ·{' '}
+                  {formatUpdatedAt(project.updatedAt, Date.now())}
+                </p>
+                <div className="workspace-actions">
+                  {/* The markings page, reached from the card (T61) — navigation
+                      like the open above it, and saying what the marks panel's
+                      door to the same page says, so the two ways in read as one
+                      page.
+                      A button rather than the panel's link, deliberately: this
+                      door must go inert with the rest of the card while a create
+                      runs (T61), and an anchor cannot be disabled. It shares the
+                      limitation the open buttons above it already carry — no
+                      cmd-click, no middle-click — which is the card's own
+                      behaviour, not this control's. The name carries the project
+                      because the grid is many cards: a reader walking it hears
+                      which project each door belongs to, and the visible word is
+                      still the name's. */}
                   <button
                     type="button"
-                    className="projects-confirm-delete"
-                    onClick={() => {
-                      setConfirmingId(null);
-                      onDelete(project.id);
-                    }}
+                    className="workspace-action"
+                    aria-label={`Markings for ${project.name}`}
+                    disabled={busy}
+                    onClick={() => onOpenMarkings(project.id)}
                   >
-                    Delete
+                    Markings
                   </button>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingId(null);
-                    setConfirmingId(project.id);
-                  }}
-                >
-                  Delete
-                </button>
-              )}
-            </li>
+                  {editingId === project.id ? (
+                    <input
+                      className="workspace-rename-input"
+                      aria-label="Project name"
+                      defaultValue={project.name}
+                      autoFocus
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') commitRename(project, event.currentTarget.value);
+                        if (event.key === 'Escape') {
+                          if (renameEditRef.current !== null) renameEditRef.current.cancelled = true;
+                          // Unmounting the focused input fires blur in real
+                          // browsers — commitRename reads the flag there.
+                          setEditingId(null);
+                        }
+                      }}
+                      onBlur={(event) => commitRename(project, event.currentTarget.value)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="workspace-action"
+                      onClick={() => beginRename(project.id)}
+                    >
+                      Rename
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="workspace-action"
+                    disabled={busy}
+                    title={view.toggleTitle}
+                    onClick={() => onToggleVisibility(project.id)}
+                  >
+                    {view.toggleLabel}
+                  </button>
+                  {/* How the project names its marks (T72). A select rather than
+                      three buttons, because the card already carries five
+                      controls and the options are the choice itself. The
+                      control is named for the project the way the card's other
+                      controls are, since a reader walking the grid hears which
+                      project each one belongs to. */}
+                  <select
+                    className="workspace-naming"
+                    aria-label={`Naming for ${project.name}`}
+                    title={NAMING_TEXT[project.naming].title}
+                    disabled={busy}
+                    value={project.naming}
+                    onChange={(event) => onSetNaming(project.id, event.currentTarget.value as Naming)}
+                  >
+                    {NAMINGS.map((naming) => (
+                      <option key={naming} value={naming}>
+                        {NAMING_TEXT[naming].label}
+                      </option>
+                    ))}
+                  </select>
+                  {confirmingId === project.id ? (
+                    <span className="workspace-confirm">
+                      <span>Delete “{project.name}”? This cannot be undone.</span>
+                      <button
+                        type="button"
+                        className="workspace-action"
+                        onClick={() => setConfirmingId(null)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="workspace-action workspace-confirm-delete"
+                        onClick={() => {
+                          setConfirmingId(null);
+                          onDelete(project.id);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="workspace-action"
+                      onClick={() => {
+                        setEditingId(null);
+                        setConfirmingId(project.id);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </li>
             );
           })}
-        </ul>
+        </ol>
       )}
     </section>
   );

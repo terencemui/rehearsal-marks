@@ -29,7 +29,7 @@ const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabi
  * work and staying with it, not a way to have both.
  *
  * It is a modal, where every other confirmation in the app is inline
- * (`.projects-confirm`, `.user-confirm`), because those confirm a row
+ * (`.workspace-confirm`, `.user-confirm`), because those confirm a row
  * being changed in place and this one confirms leaving the page — there is no
  * row left to answer beside once the answer is *leave*, so the question has to
  * hold the page rather than sit inside it. Holding it is what `aria-modal`

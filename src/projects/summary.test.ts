@@ -1,28 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatUpdatedAt, validateProjectName } from './summary';
-
-describe('formatDuration', () => {
-  it('renders mm:ss.mmm below an hour, whole or fractional', () => {
-    expect(formatDuration(0)).toBe('0:00.000');
-    expect(formatDuration(59.999)).toBe('0:59.999');
-    expect(formatDuration(123.456)).toBe('2:03.456');
-    expect(formatDuration(3599.999)).toBe('59:59.999');
-  });
-
-  it('renders h:mm:ss.mmm from an hour up', () => {
-    expect(formatDuration(3600)).toBe('1:00:00.000');
-    expect(formatDuration(3723.5)).toBe('1:02:03.500');
-  });
-
-  it('rounds to the millisecond on display', () => {
-    expect(formatDuration(59.9996)).toBe('1:00.000');
-  });
-
-  it('clamps negative and non-finite durations to zero', () => {
-    expect(formatDuration(-5)).toBe('0:00.000');
-    expect(formatDuration(Number.NaN)).toBe('0:00.000');
-  });
-});
+import { formatUpdatedAt, validateProjectName } from './summary';
 
 describe('formatUpdatedAt', () => {
   const NOW = 1_700_000_000_000;

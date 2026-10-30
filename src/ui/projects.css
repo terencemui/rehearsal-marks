@@ -1,110 +1,201 @@
-/* The Projects workspace: list rows, inline rename, the two-step delete. */
+/* The Projects workspace (T110): a card grid in the gallery's own
+   paper-and-ink direction (ADR-0008, see gallery.css) — one card per
+   project, never grouped by recording, since the owner manages each project
+   individually. Colours and faces are consumed by name from the shell's
+   tokens (app.css); this file names none of its own. */
 
-.projects-status {
-  font-size: 14px;
-  color: #555;
+.workspace-status {
   margin: 0 0 8px;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-2);
 }
 
-.projects-notice {
-  color: #9f1239;
+.workspace-notice {
   margin: 0 0 8px;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--editorial);
 }
 
-.projects-total {
-  font-size: 14px;
-  color: #555;
-  margin: 0 0 8px;
-}
-
-.projects-list {
-  list-style: none;
+/* The first-run state (CONTEXT.md): a single plain line, matching the
+   gallery's own empty state — no heading, no call-to-action copy. */
+.workspace-empty {
   margin: 0;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-2);
+}
+
+/* The grid itself is the gallery's own `.gallery-grid` (gallery.css):
+   three across, stepping down to two and one — reused by class rather than
+   redeclared, so the two surfaces can't drift apart. */
+
+.workspace-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-thumb-button {
+  display: block;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.projects-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 8px 12px;
-}
-
-.projects-open {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  background: none;
   border: none;
-  padding: 0;
-  text-align: left;
+  background: none;
   cursor: pointer;
 }
 
-.projects-name {
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.workspace-thumb-button:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 4px;
 }
 
-.projects-badge {
-  font-size: 11px;
-  font-weight: 600;
+/* The thumbnail itself is the gallery's own `.gallery-image`/`.gallery-thumb`/
+   `.gallery-duration` (gallery.css) — this button is the one piece the
+   workspace supplies of its own, since a card here opens from a button
+   rather than the gallery's whole-card link. */
+.workspace-thumb-button:hover .gallery-thumb,
+.workspace-thumb-button:focus-visible .gallery-thumb {
+  border-color: var(--pencil);
+}
+
+.workspace-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: 600 16px/1.25 var(--serif);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.workspace-title:hover,
+.workspace-title:focus-visible {
+  color: var(--pencil);
+}
+
+.workspace-title:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 2px;
+}
+
+.workspace-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-badge,
+.workspace-tag {
+  flex: none;
+  font: 600 11px/1.4 var(--sans);
   letter-spacing: 0.02em;
   padding: 2px 7px;
-  border-radius: 999px;
-  background: #e2e8f0;
-  color: #334155;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
 }
 
-/* The Commons publication-status badges (T25) — one tint per status. */
-.projects-badge-pending {
-  background: #fef3c7;
-  color: #92400e;
+/* The Commons publication-status badges (T25) — one hairline tint per status. */
+.workspace-badge-pending,
+.workspace-badge-rejected {
+  color: var(--editorial);
+  border-color: var(--editorial);
 }
 
-.projects-badge-published {
-  background: #dcfce7;
-  color: #166534;
+.workspace-badge-published {
+  color: var(--pencil);
+  border-color: var(--pencil);
 }
 
-.projects-badge-rejected {
-  background: #fee2e2;
-  color: #991b1b;
+.workspace-recording {
+  margin: 2px 0 0;
+  font: 400 14px/1.4 var(--serif);
+  color: var(--ink-2);
 }
 
-.projects-meta {
-  font-size: 13px;
-  color: #555;
+.workspace-meta {
+  margin: 4px 0 0;
+  font: 400 13px/1.4 var(--sans);
+  color: var(--ink-2);
 }
 
-.projects-rename-input {
-  min-width: 12em;
-}
-
-.projects-confirm {
+.workspace-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  margin: 10px 0 0;
 }
 
-.projects-confirm-delete {
-  color: #9f1239;
-  border-color: #9f1239;
+/* Chrome, never a fill: a square 28px ink box, the pencil on hover or
+   focus — the gallery's own Retry treatment. */
+.workspace-action {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: none;
+  font: 600 13px/1 var(--sans);
+  color: var(--ink);
+  cursor: pointer;
 }
 
-.projects-empty {
-  border: 1px dashed #ddd;
-  border-radius: 6px;
-  padding: 24px;
-  text-align: center;
+.workspace-action:hover,
+.workspace-action:focus-visible {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+.workspace-action:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 1px;
+}
+
+.workspace-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.workspace-confirm-delete {
+  border-color: var(--editorial);
+  color: var(--editorial);
+}
+
+.workspace-rename-input {
+  box-sizing: border-box;
+  height: 28px;
+  min-width: 12em;
+  padding: 0 8px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  font: 400 13px/1 var(--sans);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.workspace-naming {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: none;
+  font: 600 13px/1 var(--sans);
+  color: var(--ink);
+}
+
+.workspace-naming:hover,
+.workspace-naming:focus-visible {
+  border-color: var(--pencil);
+}
+
+.workspace-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font: 400 13px/1.4 var(--sans);
+  color: var(--editorial);
 }
