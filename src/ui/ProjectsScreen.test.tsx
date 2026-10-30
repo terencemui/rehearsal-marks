@@ -39,12 +39,15 @@ function renderScreen(overrides: Partial<ProjectsScreenProps> = {}) {
 }
 
 describe('ProjectsScreen list', () => {
-  it('shows name, duration, marker count, and last-modified', () => {
+  it('shows name, recording title, duration, marker count, and last-modified', () => {
     renderScreen();
-    const row = screen.getByRole('listitem');
-    expect(within(row).getByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
+    const card = screen.getByRole('listitem');
+    expect(within(card).getByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
+    expect(within(card).getByText('Brahms: Klavierstücke, Op. 118')).toBeInTheDocument();
+    // Whole seconds, gallery-style — on the thumbnail's own chip.
+    expect(within(card).getByText('2:03')).toBeInTheDocument();
     // 1_700_000_000_000 ms is more than eight weeks old — the date fallback.
-    expect(within(row).getByText(/2:03\.456 · 2 markers · 2023-11-14/)).toBeInTheDocument();
+    expect(within(card).getByText(/2 markers · 2023-11-14/)).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
   });
 
@@ -297,10 +300,10 @@ describe('ProjectsScreen naming', () => {
 });
 
 describe('ProjectsScreen empty state', () => {
-  it('points at pasting a YouTube link and hides the list', () => {
+  it('shows a single plain line, matching the gallery’s own empty state', () => {
     renderScreen({ projects: [] });
-    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(screen.getByText(/paste a YouTube link/i)).toBeInTheDocument();
+    expect(screen.getByText('No projects yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /submit/i })).not.toBeInTheDocument();
   });

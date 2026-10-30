@@ -329,20 +329,22 @@ describe('App Projects workspace', () => {
     await signIn(user, auth);
 
     expect(await screen.findByText('Brahms Op. 118 No. 2')).toBeInTheDocument();
-    // The row's meta: duration · marker count · last-modified. The fixture's
+    // The duration chip, whole seconds, gallery-style.
+    expect(screen.getByText('2:03')).toBeInTheDocument();
+    // The card's meta: marker count · last-modified. The fixture's
     // updatedAt is more than eight weeks old — the date fallback.
-    expect(screen.getByText(/2:03\.456 · 2 markers · 2023-11-14/)).toBeInTheDocument();
+    expect(screen.getByText(/2 markers · 2023-11-14/)).toBeInTheDocument();
     // Byte size left the record shape, and the total line with it.
     expect(screen.queryByText(/Total used/)).not.toBeInTheDocument();
   });
 
-  it('shows the empty state pointing at pasting a YouTube link, and no library surface', async () => {
+  it('shows the empty state as a single plain line, and no library surface', async () => {
     const user = userEvent.setup();
     const { auth } = renderApp();
     await signIn(user, auth);
 
-    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
-    expect(screen.getByText(/paste a YouTube link above to start marking/i)).toBeInTheDocument();
+    expect(screen.getByText('No projects yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/paste a YouTube link/i)).not.toBeInTheDocument();
     // The Library tab and its browse surface are gone — the link is the only way in.
     expect(wordmark()).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Library' })).not.toBeInTheDocument();
@@ -472,7 +474,7 @@ describe('App Projects workspace', () => {
     ).toBeInTheDocument();
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
 
-    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(await screen.findByText('No projects yet.')).toBeInTheDocument();
     expect(await api.listMyProjects()).toEqual([]);
   });
 
@@ -506,7 +508,7 @@ describe('App Projects workspace', () => {
     // And the account menu's My projects is the way back.
     await openAccountMenu(user);
     await user.click(screen.getByRole('link', { name: 'My projects' }));
-    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByText('No projects yet.')).toBeInTheDocument();
   });
 
   it('drops an in-flight page read when the user navigates away', async () => {
@@ -851,7 +853,7 @@ describe('App pages and the persistent navbar (T44)', () => {
     expect(screen.queryByRole('link', { name: 'Gallery' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Projects' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByText('No projects yet.')).toBeInTheDocument();
   });
 
   it('renders each legal document as its own page, reachable signed out under the persistent navbar', async () => {
@@ -900,7 +902,7 @@ describe('App pages and the persistent navbar (T44)', () => {
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
 
     await go(-1);
-    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByText('No projects yet.')).toBeInTheDocument();
 
     await go(1);
     expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
@@ -1096,7 +1098,7 @@ describe('The account control (T86)', () => {
     await signIn(user, auth);
 
     await openAccountMenu(user);
-    await user.click(screen.getByRole('heading', { name: 'No projects yet' }));
+    await user.click(screen.getByText('No projects yet.'));
 
     expect(screen.queryByRole('group', { name: 'Account' })).not.toBeInTheDocument();
   });
@@ -1238,7 +1240,7 @@ describe('App public gallery (T50)', () => {
     await signIn(user, auth);
 
     // The signed-in home is the workspace; the wordmark crosses to the front door.
-    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(screen.getByText('No projects yet.')).toBeInTheDocument();
     await user.click(wordmark());
     expect(await screen.findByText('No public projects yet.')).toBeInTheDocument();
   });
@@ -1786,7 +1788,7 @@ describe('App route-as-session project page (T45)', () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Back to Projects' }));
-    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(await screen.findByText('No projects yet.')).toBeInTheDocument();
   });
 
   it('a failed record read lands home with a notice, not the not-found page', async () => {
@@ -1797,12 +1799,12 @@ describe('App route-as-session project page (T45)', () => {
     const api = fakeProjectsApi();
     const { auth, navigateTo } = renderApp({ api });
     await signIn(user, auth);
-    await screen.findByRole('heading', { name: 'No projects yet' });
+    await screen.findByText('No projects yet.');
 
     api.failNext('getProject');
     await navigateTo('/projects/p1');
 
-    expect(await screen.findByRole('heading', { name: 'No projects yet' })).toBeInTheDocument();
+    expect(await screen.findByText('No projects yet.')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent("Couldn't open that project. Try again.");
     expect(
       screen.queryByRole('heading', { name: 'This project could not be found' }),

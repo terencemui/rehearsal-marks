@@ -5,24 +5,6 @@
  */
 
 /**
- * Recording duration as mm:ss.mmm, extending to h:mm:ss.mmm from an hour up —
- * the same display precision the player shows for marker timestamps.
- * Rounding is display-only; negative and non-finite values render as zero.
- */
-export function formatDuration(seconds: number): string {
-  const clamped = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
-  const totalMs = Math.round(clamped * 1000);
-  const hours = Math.floor(totalMs / 3_600_000);
-  const minutes = Math.floor((totalMs % 3_600_000) / 60_000);
-  const secs = Math.floor((totalMs % 60_000) / 1000);
-  const ms = totalMs % 1000;
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(secs).padStart(2, '0');
-  const mmm = String(ms).padStart(3, '0');
-  return hours > 0 ? `${hours}:${mm}:${ss}.${mmm}` : `${minutes}:${ss}.${mmm}`;
-}
-
-/**
  * Last-modified as a relative stamp — "Just now", "5m ago", "3h ago",
  * "2d ago", "3w ago" — falling back to an ISO date once the stamp is eight
  * weeks old. Future timestamps (clock skew) read as "Just now".
