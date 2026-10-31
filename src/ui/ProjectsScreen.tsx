@@ -193,12 +193,18 @@ export function ProjectsScreen({
   return (
     <section aria-label="Projects" className="workspace">
       <div className="workspace-header">
-        <h2>Projects</h2>
+        <h2>My Projects</h2>
         {createControl}
       </div>
-      <p role="status" data-save-status={status} className="workspace-status">
-        {STATUS_TEXT[status]}
-      </p>
+      {/* The plain "Saved" state is dropped (T114 follow-up) — it only ever
+          repeats what the page already shows; the saving/error/returned-to-
+          review states still speak, since those tell the owner something
+          "Saved" doesn't. */}
+      {status !== 'idle' && status !== 'saved' && (
+        <p role="status" data-save-status={status} className="workspace-status">
+          {STATUS_TEXT[status]}
+        </p>
+      )}
       {notice !== null && (
         <p role="alert" className="workspace-notice">
           {notice}
