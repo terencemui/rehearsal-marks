@@ -1,5 +1,30 @@
 /* The one create surface: the YouTube link field. */
 
+/* The closed-state trigger (T109, T113): the dashed "ghost" affordance the
+   paper-and-ink direction uses for secondary triggers, matching the shell's
+   shared tokens (app.css) rather than default button chrome. */
+.create-project-trigger {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px dashed var(--ink-2);
+  border-radius: 0;
+  background: none;
+  font: 600 13px/1 var(--sans);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.create-project-trigger:hover,
+.create-project-trigger:focus-visible {
+  border-color: var(--pencil);
+  color: var(--pencil);
+}
+
+.create-project-trigger:focus-visible {
+  outline: 2px solid var(--pencil);
+  outline-offset: 1px;
+}
+
 .create-project-link {
   display: flex;
   flex-wrap: wrap;
