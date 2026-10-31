@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { filterProjects, NAMINGS } from '../projects';
 import type { Naming } from '../projects';
 import type { ProjectSummary, PublicationStatus } from '../projects/types';
@@ -87,6 +88,12 @@ export interface ProjectsScreenProps {
    * gallery already draws.
    */
   query?: string;
+  /**
+   * The create trigger (T114) — sits in the header row beside the "Projects"
+   * heading, replacing the standalone section the caller used to render
+   * above this one. This screen only places it; the caller still owns it.
+   */
+  createControl?: ReactNode;
   onOpen: (id: string) => void;
   /**
    * Opens the project's markings page (T61) — the same page the marks panel's
@@ -127,6 +134,7 @@ export function ProjectsScreen({
   busy = false,
   notice = null,
   query = '',
+  createControl,
   onOpen,
   onOpenMarkings,
   onRename,
@@ -184,6 +192,10 @@ export function ProjectsScreen({
 
   return (
     <section aria-label="Projects" className="workspace">
+      <div className="workspace-header">
+        <h2>Projects</h2>
+        {createControl}
+      </div>
       <p role="status" data-save-status={status} className="workspace-status">
         {STATUS_TEXT[status]}
       </p>

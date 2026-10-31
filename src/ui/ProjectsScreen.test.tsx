@@ -390,11 +390,29 @@ describe('ProjectsScreen naming', () => {
   });
 });
 
+describe('ProjectsScreen header (T114)', () => {
+  it('shows a "Projects" heading paired with the caller’s create control in one row', () => {
+    renderScreen({ createControl: <button type="button">+ New project</button> });
+    const heading = screen.getByRole('heading', { name: 'Projects' });
+    const trigger = screen.getByRole('button', { name: '+ New project' });
+    expect(heading).toBeInTheDocument();
+    expect(heading.parentElement).toContainElement(trigger);
+  });
+
+  it('shows the heading even with no create control supplied', () => {
+    renderScreen();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+  });
+});
+
 describe('ProjectsScreen empty state', () => {
   it('shows a single plain line, matching the gallery’s own empty state', () => {
     renderScreen({ projects: [] });
     expect(screen.getByText('No projects yet.')).toBeInTheDocument();
-    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+    // The page-level "Projects" heading (T114) sits in the header row above
+    // the grid regardless of state; the empty line itself still carries no
+    // heading or call-to-action copy of its own.
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /submit/i })).not.toBeInTheDocument();
   });
