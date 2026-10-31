@@ -29,6 +29,11 @@ function galleryPath(query: string): string {
   return query === '' ? '/' : `/?${new URLSearchParams({ q: query }).toString()}`;
 }
 
+/** The workspace's own address for a query (T112) — `galleryPath`'s analogue for `/projects`. */
+function projectsPath(query: string): string {
+  return query === '' ? '/projects' : `/projects?${new URLSearchParams({ q: query }).toString()}`;
+}
+
 /** The search glyph: the magnifier, or the close mark while the panel is open. */
 function SearchGlyph({ close = false }: { close?: boolean }) {
   return (
@@ -76,6 +81,11 @@ function SearchGlyph({ close = false }: { close?: boolean }) {
  * trims the draft and carries it to the gallery, replacing when already there.
  * When the rail is too narrow to hold the full field, it collapses into a
  * magnifier trigger whose panel drops below the navbar.
+ *
+ * Signed in at `/projects` (T112), the field is scoped to the workspace
+ * instead: it writes that route's own `?q=` the same way, searching the
+ * owner's own projects rather than the gallery. Signed out at the same
+ * address, or on any other page, it falls back to the gallery behaviour above.
  */
 export function Navbar({
   railClass,
@@ -88,6 +98,13 @@ export function Navbar({
   const navigate = useNavigate();
   const pathname = location.pathname;
   const onGallery = pathname === '/';
+  /**
+   * The search override (T112): signed in at `/projects`, the field searches
+   * the owner's own projects instead of the gallery — writing that route's
+   * own `?q=`. Signed out at the same address, or anywhere else, it keeps
+   * searching the gallery.
+   */
+  const scopedToWorkspace = pathname === '/projects' && authState.kind === 'signed-in';
   const urlQuery = new URLSearchParams(location.search).get('q') ?? '';
   const [draft, setDraft] = useState(urlQuery);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -95,13 +112,13 @@ export function Navbar({
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  // The field follows the URL on the gallery and is empty on every other
-  // page — including one page to the next, where neither the path's gallery
-  // flag nor the search changes. Typing keeps the draft locally, so a
-  // keystroke never waits on a navigation.
+  // The field follows the URL on the gallery and on the workspace-scoped
+  // `/projects`, and is empty on every other page — including one page to
+  // the next, where neither flag nor the search changes. Typing keeps the
+  // draft locally, so a keystroke never waits on a navigation.
   useEffect(() => {
-    setDraft(onGallery ? urlQuery : '');
-  }, [onGallery, urlQuery, pathname]);
+    setDraft(onGallery || scopedToWorkspace ? urlQuery : '');
+  }, [onGallery, scopedToWorkspace, urlQuery, pathname]);
 
   // The narrow trigger's disclosure: the field takes focus when it opens, and
   // a press anywhere outside the form puts the panel away.
@@ -134,6 +151,10 @@ export function Navbar({
   function handleChange(event: ChangeEvent<HTMLInputElement>): void {
     const next = event.target.value;
     setDraft(next);
+    if (scopedToWorkspace) {
+      void navigate(projectsPath(next), { replace: true });
+      return;
+    }
     if (!onGallery) return;
     void navigate(galleryPath(next), { replace: true });
   }
@@ -141,9 +162,14 @@ export function Navbar({
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     setSearchOpen(false);
+    const trimmed = draft.trim();
+    if (scopedToWorkspace) {
+      void navigate(projectsPath(trimmed), { replace: true });
+      return;
+    }
     // One path for Enter and the button: trim, and replace on the gallery so
     // Back still leaves it rather than stepping through submissions.
-    void navigate(galleryPath(draft.trim()), { replace: onGallery });
+    void navigate(galleryPath(trimmed), { replace: onGallery });
   }
 
   return (
@@ -178,8 +204,8 @@ export function Navbar({
               ref={inputRef}
               type="search"
               className="app-nav-search-input"
-              aria-label="Search the gallery"
-              placeholder="Search the gallery"
+              aria-label={scopedToWorkspace ? 'Search your projects' : 'Search the gallery'}
+              placeholder={scopedToWorkspace ? 'Search your projects' : 'Search the gallery'}
               value={draft}
               onChange={handleChange}
             />

@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router';
 import { formatRulerTime } from '../playback/ruler';
 import { filterGalleryGroups, groupGalleryProjects, sortGalleryGroups } from '../projects';
 import type { GalleryGroup, GallerySort, ProjectsApi } from '../projects';
+import { countLabel } from '../projects/summary';
 import { Thumbnail } from './Thumbnail';
 import './gallery.css';
 
@@ -34,11 +35,6 @@ function GalleryFrame({
       {children}
     </section>
   );
-}
-
-/** A count and its noun, pluralised — "21 markers", "1 recording". */
-function countLabel(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 /** The project a recording's card opens: its oldest published set. */

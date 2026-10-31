@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUpdatedAt, validateProjectName } from './summary';
+import { countLabel, formatUpdatedAt, validateProjectName } from './summary';
 
 describe('formatUpdatedAt', () => {
   const NOW = 1_700_000_000_000;
@@ -27,6 +27,14 @@ describe('formatUpdatedAt', () => {
     expect(formatUpdatedAt(NOW - 7 * DAY, NOW)).toBe('1w ago');
     expect(formatUpdatedAt(NOW - 7 * 7 * DAY, NOW)).toBe('7w ago');
     expect(formatUpdatedAt(NOW - 8 * 7 * DAY, NOW)).toBe('2023-09-19');
+  });
+});
+
+describe('countLabel', () => {
+  it('pluralises the noun for every count but one', () => {
+    expect(countLabel(0, 'project')).toBe('0 projects');
+    expect(countLabel(1, 'project')).toBe('1 project');
+    expect(countLabel(21, 'marker')).toBe('21 markers');
   });
 });
 

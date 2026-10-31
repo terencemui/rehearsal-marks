@@ -24,6 +24,15 @@
   color: var(--ink-2);
 }
 
+/* The workspace search's count line (T112) — mounted only once a query is
+   present, unlike `.gallery-status`'s always-present empty line, since this
+   surface already carries the save-status line in that role. */
+.workspace-search-status {
+  margin: 4px 0 0;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-2);
+}
+
 /* The grid itself is the gallery's own `.gallery-grid` (gallery.css):
    three across, stepping down to two and one — reused by class rather than
    redeclared, so the two surfaces can't drift apart. */

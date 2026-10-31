@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { LoadOptions } from './audio';
 import { renderApp, VIDEO_ID, VIDEO_TITLE, YOUTUBE_CANONICAL } from './test/app-fixture';
+import { mockAuth } from './test/auth-fixture';
 import type { MockAuthBackend } from './test/auth-fixture';
 import { mockController } from './test/controller-fixture';
 import { fakeProjectsApi } from './test/projects-fixture';
@@ -1527,6 +1528,107 @@ describe('The gallery search (T87)', () => {
     await navigateTo('/terms');
     expect(gallerySearch()).toHaveValue('');
     expect(currentSearch()).toBe('');
+  });
+});
+
+describe('The workspace search override (T112)', () => {
+  const owner = { id: 'u1', name: 'Ava Cellist', email: 'ava@example.com' };
+
+  /** Two of the signed-in owner's own projects, overlapping on neither field. */
+  function seedWorkspace(api: FakeProjectsApi) {
+    api.seed(
+      serverProject({
+        id: 'p1',
+        name: 'Honeck Tchaikovsky 5',
+        recordingTitle: 'Tschaikowsky: 5. Sinfonie — hr-Sinfonieorchester, Manfred Honeck',
+        videoId: 'aaa',
+        createdAt: 2_000,
+      }),
+    );
+    api.seed(
+      serverProject({
+        id: 'p2',
+        name: 'Bruckner 7, first read',
+        recordingTitle: 'Bruckner: 7. Sinfonie — hr-Sinfonieorchester, Daniel Harding',
+        videoId: 'bbb',
+        createdAt: 1_000,
+      }),
+    );
+  }
+
+  /** The navbar's search box, scoped to the workspace. */
+  function workspaceSearch(): HTMLElement {
+    return within(screen.getByRole('navigation')).getByRole('searchbox', {
+      name: 'Search your projects',
+    });
+  }
+
+  it('filters the signed-in owner’s own projects by name or recording title, writing ?q= with replace', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    seedWorkspace(api);
+    const { auth, currentSearch } = renderApp({ api });
+    await signIn(user, auth);
+    await screen.findByText('Honeck Tchaikovsky 5');
+
+    await user.type(workspaceSearch(), 'bruckner');
+
+    expect(await screen.findByText('1 project found.')).toBeInTheDocument();
+    expect(screen.getByText('Bruckner 7, first read')).toBeInTheDocument();
+    expect(screen.queryByText('Honeck Tchaikovsky 5')).not.toBeInTheDocument();
+    expect(currentSearch()).toBe('?q=bruckner');
+
+    // A recording-title match keeps the card too, not only a name match.
+    await user.clear(workspaceSearch());
+    await user.type(workspaceSearch(), 'Harding');
+    expect(await screen.findByText('1 project found.')).toBeInTheDocument();
+    expect(screen.getByText('Bruckner 7, first read')).toBeInTheDocument();
+  });
+
+  it('restores the filtered workspace and the field’s value from /projects?q=... on a refresh', async () => {
+    const api = fakeProjectsApi();
+    seedWorkspace(api);
+    renderApp({ api, auth: mockAuth(owner), initialEntry: '/projects?q=bruckner' });
+
+    expect(await screen.findByText('1 project found.')).toBeInTheDocument();
+    expect(screen.getByText('Bruckner 7, first read')).toBeInTheDocument();
+    expect(screen.queryByText('Honeck Tchaikovsky 5')).not.toBeInTheDocument();
+    expect(workspaceSearch()).toHaveValue('bruckner');
+  });
+
+  it('shows the plain empty line regardless of query, for a signed-in owner with no projects', async () => {
+    renderApp({ auth: mockAuth(owner), initialEntry: '/projects?q=anything' });
+
+    expect(await screen.findByText('No projects yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/found\./)).not.toBeInTheDocument();
+  });
+
+  it('keeps searching the gallery, signed out at /projects', async () => {
+    const api = fakeProjectsApi();
+    seedWorkspace(api);
+    const { currentSearch } = renderApp({ api, initialEntry: '/projects' });
+
+    const search = within(screen.getByRole('navigation')).getByRole('searchbox', {
+      name: 'Search the gallery',
+    });
+    // Off the gallery (signed out at /projects behaves like any other page),
+    // typing is a local draft; Enter is what carries it to the gallery.
+    await userEvent.setup().type(search, 'bruckner{Enter}');
+    expect(currentSearch()).toBe('?q=bruckner');
+  });
+
+  it('keeps searching the gallery for a signed-in owner off /projects', async () => {
+    const user = userEvent.setup();
+    const api = fakeProjectsApi();
+    seedWorkspace(api);
+    const { auth } = renderApp({ api });
+    await signIn(user, auth);
+
+    await user.click(wordmark());
+    expect(await screen.findByRole('heading', { name: 'Gallery' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation')).getByRole('searchbox', { name: 'Search the gallery' }),
+    ).toBeInTheDocument();
   });
 });
 
