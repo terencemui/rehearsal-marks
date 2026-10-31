@@ -98,7 +98,12 @@ export function CreateProject({
   if (!isOpen) {
     return (
       <section aria-label="Create project">
-        <button type="button" aria-expanded={false} onClick={() => setIsOpen(true)}>
+        <button
+          type="button"
+          className="create-project-trigger"
+          aria-expanded={false}
+          onClick={() => setIsOpen(true)}
+        >
           + New project
         </button>
       </section>
