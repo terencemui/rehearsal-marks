@@ -1,7 +1,7 @@
 /**
- * Pure helpers for the Projects screen: display formatting and the rename
- * rule. Facts in, strings out — no storage or React knowledge, so every piece
- * is testable in isolation.
+ * Pure helpers shared by the workspace and gallery screens: display
+ * formatting and the rename rule. Facts in, strings out — no storage or React
+ * knowledge, so every piece is testable in isolation.
  */
 
 /**
@@ -22,6 +22,11 @@ export function formatUpdatedAt(epochMs: number, now: number): string {
   if (age < WEEK) return `${Math.floor(age / DAY)}d ago`;
   if (age < 8 * WEEK) return `${Math.floor(age / WEEK)}w ago`;
   return new Date(epochMs).toISOString().slice(0, 10);
+}
+
+/** A count and its noun, pluralised — "21 markers", "1 recording". */
+export function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 export type ProjectNameValidation = { ok: true; name: string } | { ok: false };

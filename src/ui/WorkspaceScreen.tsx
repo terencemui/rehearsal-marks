@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import type { Naming } from '../projects';
 import { validateProjectName } from '../projects/summary';
 import type { SaveStatus } from '../projects/autosave';
@@ -80,6 +80,9 @@ export function WorkspaceScreen({
 }: WorkspaceScreenProps) {
   /** The workspace is the routed home page — navigation opens a project. */
   const navigate = useNavigate();
+  /** The navbar's workspace-scoped search (T112) — the same `?q=` the gallery reads. */
+  const [searchParams] = useSearchParams();
+  const query = searchParams.get('q') ?? '';
 
   /**
    * The create surface's one input: a pasted YouTube link becomes a bare
@@ -238,6 +241,7 @@ export function WorkspaceScreen({
         projects={projects}
         status={status}
         notice={notice}
+        query={query}
         busy={creatingFromLink}
         onOpen={(id) => navigate(`/projects/${id}`)}
         // The marks panel's own address (T61): the panel shows this same

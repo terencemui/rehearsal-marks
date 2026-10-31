@@ -193,6 +193,25 @@ export function filterGalleryGroups(
   );
 }
 
+/**
+ * The workspace search's rule (T112): a trimmed, case-insensitive substring
+ * match over a project's own name or its recording's title — the same two
+ * fields `filterGalleryGroups` matches, but per-project and ungrouped, since
+ * the workspace shows one card per project rather than one per recording.
+ */
+export function filterProjects(
+  projects: readonly ProjectSummary[],
+  query: string,
+): ProjectSummary[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return [...projects];
+  return projects.filter(
+    (project) =>
+      project.name.toLowerCase().includes(needle) ||
+      project.recordingTitle.toLowerCase().includes(needle),
+  );
+}
+
 /** A card's age: the date of its newest published project. */
 function age(group: GalleryGroup): number {
   return Math.max(...group.projects.map((project) => project.createdAt));

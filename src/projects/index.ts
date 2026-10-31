@@ -8,6 +8,7 @@
 export {
   createDefaultProjectsApi,
   filterGalleryGroups,
+  filterProjects,
   groupGalleryProjects,
   sortGalleryGroups,
 } from './api';

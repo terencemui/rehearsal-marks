@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { filterGalleryGroups, groupGalleryProjects, sortGalleryGroups } from './api';
+import { filterGalleryGroups, filterProjects, groupGalleryProjects, sortGalleryGroups } from './api';
 import type { PublicProjectSummary } from './api';
+import type { ProjectSummary } from './types';
+
+/** A workspace entry builder — defaults so tests name only what varies. */
+function projectSummary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+  return {
+    id: 'p1',
+    name: 'Honeck Tchaikovsky 5',
+    recordingTitle: 'Tschaikowsky: 5. Sinfonie — hr-Sinfonieorchester, Manfred Honeck',
+    videoId: 'a_B02BZp-5Y',
+    duration: 3036,
+    markerCount: 21,
+    naming: 'letters',
+    visibility: 'private',
+    publicationStatus: 'pending',
+    updatedAt: 1_700_000_000_000,
+    ...overrides,
+  };
+}
 
 /** A gallery entry builder — a recording's project, defaults so tests name only what varies. */
 function summary(overrides: Partial<PublicProjectSummary>): PublicProjectSummary {
@@ -117,6 +135,32 @@ describe('filterGalleryGroups', () => {
 
   it('drops a group no row and no title matches', () => {
     expect(filterGalleryGroups(groups, 'nothing like this')).toEqual([]);
+  });
+});
+
+describe('filterProjects', () => {
+  const tchaikovsky = projectSummary({ id: 'p1', name: 'Honeck Tchaikovsky 5' });
+  const bruckner = projectSummary({
+    id: 'p2',
+    name: 'First read',
+    recordingTitle: 'Bruckner: 7. Sinfonie — hr-Sinfonieorchester, Daniel Harding',
+  });
+  const projects = [tchaikovsky, bruckner];
+
+  it('keeps every project for an empty query', () => {
+    expect(filterProjects(projects, '')).toEqual(projects);
+  });
+
+  it('matches a project’s own name, case-insensitively after trimming', () => {
+    expect(filterProjects(projects, '  FIRST READ ')).toEqual([bruckner]);
+  });
+
+  it('matches a project’s recording title', () => {
+    expect(filterProjects(projects, 'bruckner')).toEqual([bruckner]);
+  });
+
+  it('drops a project neither its name nor its recording title matches', () => {
+    expect(filterProjects(projects, 'nothing like this')).toEqual([]);
   });
 });
 

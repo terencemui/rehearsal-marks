@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
-import { NAMINGS } from '../projects';
+import { filterProjects, NAMINGS } from '../projects';
 import type { Naming } from '../projects';
 import type { ProjectSummary, PublicationStatus } from '../projects/types';
-import { formatUpdatedAt, validateProjectName } from '../projects/summary';
+import { countLabel, formatUpdatedAt, validateProjectName } from '../projects/summary';
 import { formatRulerTime } from '../playback/ruler';
 import type { SaveStatus } from '../projects/autosave';
 import { STATUS_TEXT } from './status';
@@ -79,6 +79,14 @@ export interface ProjectsScreenProps {
   busy?: boolean;
   /** A transient failure the user must see (e.g. a project that won't open). */
   notice?: string | null;
+  /**
+   * The navbar's workspace-scoped search (T112) — a project's own name or its
+   * recording's title, the same two fields the gallery matches. Filters the
+   * grid live; an owner with zero projects keeps the plain empty line
+   * regardless, the same "empty server" vs "query matches nothing" split the
+   * gallery already draws.
+   */
+  query?: string;
   onOpen: (id: string) => void;
   /**
    * Opens the project's markings page (T61) — the same page the marks panel's
@@ -118,6 +126,7 @@ export function ProjectsScreen({
   status,
   busy = false,
   notice = null,
+  query = '',
   onOpen,
   onOpenMarkings,
   onRename,
@@ -135,6 +144,7 @@ export function ProjectsScreen({
    * survive their own input's removal without firing a second time.
    */
   const renameEditRef = useRef<{ committed: boolean; cancelled: boolean } | null>(null);
+  const matching = filterProjects(projects, query);
 
   function beginRename(id: string): void {
     renameEditRef.current = { committed: false, cancelled: false };
@@ -187,8 +197,18 @@ export function ProjectsScreen({
           No projects yet.
         </p>
       ) : (
-        <ol className="gallery-grid">
-          {projects.map((project) => {
+        <>
+          {/* The search result count (T112) — mirrors the gallery's own
+              "empty server" vs "query matches nothing" split: it only
+              appears once a query is present, since the owner already has
+              at least one project in this branch. */}
+          {query.trim() !== '' && (
+            <p className="workspace-search-status" role="status">
+              {countLabel(matching.length, 'project')} found.
+            </p>
+          )}
+          <ol className="gallery-grid">
+          {matching.map((project) => {
             const view = visibilityView(project);
             return (
               <li key={project.id} className="workspace-card">
@@ -366,7 +386,8 @@ export function ProjectsScreen({
               </li>
             );
           })}
-        </ol>
+          </ol>
+        </>
       )}
     </section>
   );

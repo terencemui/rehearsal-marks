@@ -81,8 +81,16 @@ export function mockAuthBackend(): MockAuthBackend {
   };
 }
 
-/** A controller over a fresh fake backend, with the backend to drive it. */
-export function mockAuth(): { controller: AuthController; backend: MockAuthBackend } {
+/**
+ * A controller over a fresh fake backend, with the backend to drive it. An
+ * `initialUser` seeds the backend before the controller restores its session
+ * — a test's way to render already signed in, the way a refresh of a
+ * restored session does, without a sign-in click.
+ */
+export function mockAuth(
+  initialUser: User | null = null,
+): { controller: AuthController; backend: MockAuthBackend } {
   const backend = mockAuthBackend();
+  if (initialUser !== null) backend.setUser(initialUser);
   return { controller: createAuthController(backend), backend };
 }

@@ -398,4 +398,36 @@ describe('ProjectsScreen empty state', () => {
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /submit/i })).not.toBeInTheDocument();
   });
+
+  it('shows the plain empty line regardless of query text, for an owner with zero projects', () => {
+    renderScreen({ projects: [], query: 'anything' });
+    expect(screen.getByText('No projects yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/found\./)).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectsScreen search (T112)', () => {
+  const brahms = summary();
+  const chopin = summary({ id: 'project-2', name: 'Chopin Op. 28', recordingTitle: 'Chopin études' });
+
+  it('shows no count line while the query is empty', () => {
+    renderScreen({ projects: [brahms, chopin], query: '' });
+    expect(screen.queryByText(/found\./)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('filters the grid by a project’s own name or its recording title, and reports the count', () => {
+    renderScreen({ projects: [brahms, chopin], query: 'chopin' });
+    expect(screen.getByText('1 project found.')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('Chopin Op. 28')).toBeInTheDocument();
+    expect(screen.queryByText('Brahms Op. 118 No. 2')).not.toBeInTheDocument();
+  });
+
+  it('reports a zero count, distinct from the "no projects at all" empty state, when nothing matches', () => {
+    renderScreen({ projects: [brahms, chopin], query: 'nothing like this' });
+    expect(screen.getByText('0 projects found.')).toBeInTheDocument();
+    expect(screen.queryByText('No projects yet.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
+  });
 });
