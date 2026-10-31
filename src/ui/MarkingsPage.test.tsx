@@ -3622,6 +3622,8 @@ describe('the way into the markings page (T55)', () => {
 
     // The row is reached from the list itself — no player was opened first,
     // which is the whole point: a project can be filled without hearing it.
+    // Markings sits behind the card's "More" disclosure (T111).
+    await user.click(screen.getByRole('button', { name: 'More for Brahms Op. 118 No. 2' }));
     await user.click(screen.getByRole('button', { name: 'Markings for Brahms Op. 118 No. 2' }));
 
     await waitFor(() => expect(currentPath()).toBe('/projects/p1/markings'));

@@ -121,11 +121,26 @@
 }
 
 .workspace-actions {
+  position: relative;
+  margin: 10px 0 0;
+}
+
+/* The "More" disclosure (T111): every card action beyond opening the project
+   collapses behind this one popover, matching the account menu's own boxed
+   treatment (user.css) rather than the row of chrome it replaces. */
+.workspace-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 10px 0 0;
+  min-width: 260px;
+  padding: 10px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
 }
 
 /* Chrome, never a fill: a square 28px ink box, the pencil on hover or
