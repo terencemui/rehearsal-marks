@@ -288,7 +288,7 @@ export function ProjectsScreen({
                     disabled={busy}
                     onClick={() => toggleMore(project.id)}
                   >
-                    More
+                    ⋯
                   </button>
                   {moreOpenId === project.id && (
                     <div className="workspace-more-menu" role="group" aria-label={`More for ${project.name}`}>
