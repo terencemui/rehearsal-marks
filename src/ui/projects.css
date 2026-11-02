@@ -4,6 +4,23 @@
    individually. Colours and faces are consumed by name from the shell's
    tokens (app.css); this file names none of its own. */
 
+/* The "Projects" heading's own row (T114) — the create trigger sits right
+   of it, mirroring the gallery's own heading-plus-control row (gallery.css's
+   .gallery-header) rather than inventing a second treatment. */
+.workspace-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace h2 {
+  margin: 0;
+  font: 600 27px/1.12 var(--serif);
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
 .workspace-status {
   margin: 0 0 8px;
   font: 400 15px/1.5 var(--serif);

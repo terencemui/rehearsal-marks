@@ -1,28 +1,29 @@
 /* The one create surface: the YouTube link field. */
 
-/* The closed-state trigger (T109, T113): the dashed "ghost" affordance the
-   paper-and-ink direction uses for secondary triggers, matching the shell's
-   shared tokens (app.css) rather than default button chrome. */
+/* The closed-state trigger (T109, T113; filled T114 follow-up): filled in
+   the pencil accent rather than the ghost outline, so the one action that
+   starts a project reads as the header row's loudest thing, the same way
+   the pencil is spent as the one accent everywhere else (player.css). */
 .create-project-trigger {
-  height: 30px;
-  padding: 0 10px;
-  border: 1px dashed var(--ink-2);
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--pencil);
   border-radius: 0;
-  background: none;
+  background: var(--pencil);
   font: 600 13px/1 var(--sans);
-  color: var(--ink);
+  color: var(--paper);
   cursor: pointer;
 }
 
 .create-project-trigger:hover,
 .create-project-trigger:focus-visible {
-  border-color: var(--pencil);
-  color: var(--pencil);
+  border-color: var(--ink);
+  background: var(--ink);
 }
 
 .create-project-trigger:focus-visible {
   outline: 2px solid var(--pencil);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .create-project-link {

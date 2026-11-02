@@ -226,33 +226,35 @@ export function WorkspaceScreen({
   // is silently dropped by the lock guard. An open is instant navigation now
   // (T45) — it holds no lock — so the only busy state left is a link create.
   return (
-    <>
-      <CreateProject
-        onLink={(url) => void handleLink(url)}
-        onLinkEdit={() => onLinkError(null)}
-        linkError={linkError}
-        busy={creatingFromLink}
-        creatingFromLink={creatingFromLink}
-        countPublished={(videoId) =>
-          projectsApi.listPublishedForVideo(videoId).then((rows) => rows.length)
-        }
-      />
-      <ProjectsScreen
-        projects={projects}
-        status={status}
-        notice={notice}
-        query={query}
-        busy={creatingFromLink}
-        onOpen={(id) => navigate(`/projects/${id}`)}
-        // The marks panel's own address (T61): the panel shows this same
-        // path as its link, so the row and the panel open one page by two
-        // ways in.
-        onOpenMarkings={(id) => navigate(markingsPath(id))}
-        onRename={(id, name) => void renameProject(id, name)}
-        onDelete={(id) => void deleteProject(id)}
-        onToggleVisibility={(id) => void toggleVisibility(id)}
-        onSetNaming={(id, naming) => void setNaming(id, naming)}
-      />
-    </>
+    <ProjectsScreen
+      projects={projects}
+      status={status}
+      notice={notice}
+      query={query}
+      busy={creatingFromLink}
+      // The "Projects" heading's own row (T114) — the create trigger sits
+      // beside it rather than in its own section above the grid.
+      createControl={
+        <CreateProject
+          onLink={(url) => void handleLink(url)}
+          onLinkEdit={() => onLinkError(null)}
+          linkError={linkError}
+          busy={creatingFromLink}
+          creatingFromLink={creatingFromLink}
+          countPublished={(videoId) =>
+            projectsApi.listPublishedForVideo(videoId).then((rows) => rows.length)
+          }
+        />
+      }
+      onOpen={(id) => navigate(`/projects/${id}`)}
+      // The marks panel's own address (T61): the panel shows this same
+      // path as its link, so the row and the panel open one page by two
+      // ways in.
+      onOpenMarkings={(id) => navigate(markingsPath(id))}
+      onRename={(id, name) => void renameProject(id, name)}
+      onDelete={(id) => void deleteProject(id)}
+      onToggleVisibility={(id) => void toggleVisibility(id)}
+      onSetNaming={(id, naming) => void setNaming(id, naming)}
+    />
   );
 }

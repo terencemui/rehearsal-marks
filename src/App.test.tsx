@@ -452,7 +452,8 @@ describe('App Projects workspace', () => {
   });
 
   it('does not claim a return to review when renaming a private project', async () => {
-    // Private work never enters review, so its save line stays plain.
+    // Private work never enters review, so its save line stays plain — and
+    // the plain "Saved" state draws no status line at all (T114 follow-up).
     const user = userEvent.setup();
     const api = fakeProjectsApi();
     api.seed(serverProject({ visibility: 'private', publicationStatus: 'pending' }));
@@ -467,7 +468,7 @@ describe('App Projects workspace', () => {
     await user.type(input, 'Brahms 2{enter}');
 
     expect(await screen.findByText('Brahms 2')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText('Saved — back to review')).not.toBeInTheDocument();
   });
 
@@ -575,7 +576,9 @@ describe('App Projects workspace', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Something went wrong deleting the project.',
     );
-    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+    // The failure goes back to idle, not an error state — and the plain
+    // idle state draws no status line at all (T114 follow-up).
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(await api.listMyProjects()).toHaveLength(1);
   });
 });
@@ -802,7 +805,6 @@ describe('App project naming', () => {
       'numbers',
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('Saved');
     expect(api.get('project-1')!.naming).toBe('numbers');
   });
 });
